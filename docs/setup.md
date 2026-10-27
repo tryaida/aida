@@ -96,6 +96,7 @@ aida brief init --config <cfg>             # app-brief.md skeleton; fill it, the
 aida outline list --config <cfg>          # the planned walkthroughs, and where the screen differs
 aida inspect /some/page --config <cfg>     # what's on screen: exact names, roles, options
 aida inspect --config <cfg> --walkthrough <id> --after <step>   # the page after a save
+aida inspect --config <cfg> --walkthrough <id> --after <pathId>/<step>   # ...after a path's step
 aida record <id> --config <cfg> --page /some/page   # click through once; get a draft walkthrough
 aida validate <walkthroughs-dir> --config <cfg>
 aida order --config <cfg>                  # capture order the walkthroughs' data implies
@@ -116,13 +117,13 @@ aida publish --to static --dry-run         # see what would deploy
 | `domain` | The app's domain model read from its schema (Drizzle, else Prisma, else SQL migrations; never a database connection): one line per entity with key columns, states and links; `--entity` for one in full, `--source` to pick a schema |
 | `brief` | The app brief, `app-brief.md` beside the config (config `brief` moves it): `sources` lists the app's own docs worth reading (paths and headings only), `init` writes the skeleton from the schema, `check` validates sections, glossary and personal data, `show [--section]` prints it. Once it passes `check` with no personal data or prompts left, `build` passes its opening sections to the help chat, an overview to the agent connector's `get_app_overview`, and its first paragraph to the home page |
 | `outline` | Outline cards in `outline.yaml` (`add`, `import`, `list`, `note`, `check`, `status`); capture records where the screen differs from a card |
-| `inspect` | Open one page signed in and list its interactive elements, read-only (`--click` repeatable); `--walkthrough <id> --after <step>` replays the steps (writes, like capture) and maps the page they leave |
+| `inspect` | Open one page signed in and list its interactive elements, read-only (`--click` repeatable); `--walkthrough <id> --after <step>` replays the steps (writes, like capture) and maps the page they leave; `--after <pathId>/<stepId>` replays a path from its own start page through its opening steps (or on to a shared main step after it joins), with the same safety checks |
 | `record` | "Show me": open the app in a browser window, signed in (`--as`), with `--needs` states set up, and turn one click-through into a draft walkthrough. A toolbar adds **Point at**, **Check shown**, **Note** (the step's narration), **New step**, **Undo** and **Finish**. Targets use on-screen names and are checked against the page as they're recorded; typed emails, phone numbers and card numbers become safe demo values; passwords are never kept. Same safety checks as capture; the draft is replayed once afterwards (`--no-replay` skips it, since a replay saves the same things again) |
-| `validate`, `import playwright` | Check walkthrough files, their states and caption and chapter line lengths; convert existing Playwright tests into draft walkthroughs |
+| `validate`, `import playwright` | Check walkthrough files, their states, caption and chapter line lengths, and every `{{placeholder}}` in reader-facing text (titles, `say`, `caption`, `page_text`, callout labels, cards, a path's `title`/`when`/`note`) has a value in `data`; convert existing Playwright tests into draft walkthroughs |
 | `order` | Print the capture order the walkthroughs' `needs`/`leaves`/`clears` imply, and where the database is reset |
 | `capture` | Replay walkthroughs in a browser against the app, in that order (`--with-deps` pulls in the walkthroughs they need); screenshots, checks, a failure report saying whether it looks like the walkthrough, the app or the setup. A walkthrough's other `paths` are each captured after a database reset, before the main steps (`capture/paths/<id>/`; without an allowed reset they're marked not captured); a path that saves differently from the main steps is warned about and recorded as `pathDiffs` |
-| `paths` | Other screens a walkthrough's task can start from: pages whose code makes the same save as its captured main path (API route, tRPC call or server action), not yet covered by its `paths` |
-| `voice`, `render` | Narrate, then render video per scene (only changed scenes re-render) |
+| `paths` | Other screens a walkthrough's task can start from: pages whose code makes the same save as its captured main path (API route, tRPC call or server action), not yet covered by its `paths`. Follows everything a page renders: layouts and templates up the App Router tree, route groups, `@slot` pages on their parent route, intercepting routes over the page the reader came from, barrel re-exports by name and tsconfig/jsconfig path aliases; a hit found through a layout names it in `via` |
+| `voice`, `render` | Narrate, then render video per scene (only changed scenes re-render). Each passing path also gets a short narrated clip, `<id>.path-<pathId>.mp4` with `.srt`/`.vtt`, beside the main video: a title card, the path's opening steps (their own `say`), then "Then continue from step N: <title>"; same brand, style and blur (blurred screens are unioned across the main run and every path) |
 | `pages`, `pdf` | Help pages with numbered screenshots; PDFs and quick reference cards (a QR code to each guide when `publish.siteUrl` is set) |
 | `qa` | Loudness, black frames, caption timing, personal-data and secret scans |
 | `build` | All of the above in order, skipping unchanged work (`--with-deps` too); `report.json` names each failed check and its files |
@@ -147,8 +148,13 @@ for; `aida order` prints the plan.
 
 Several ways to do one task: a walkthrough may list `paths`, each with its own start page and
 opening steps, joining the main steps at a named step (`joins`) and sharing the rest. Pages add
-"Other ways to do this" with when to use each; procedures, the help chat and the agent connector
-know every path. `aida paths <id>` finds screens not covered yet.
+"Other ways to do this" with when to use each and each path's clip, with a link to the main
+video's step it continues from (PDFs print the path's screenshots, and a QR code to the page when
+`publish.siteUrl` is set); procedures, the help chat and the agent connector know every path.
+`aida paths <id>` finds screens not covered yet.
+
+Text a reader sees or hears (page, PDF, card, video captions and cards, narration, search) fills
+in `{{data}}` placeholders from the walkthrough's `data`; `{{run.id}}` is never printed.
 
 One persona: `start.signed_in_as` and `start.persona.role` must agree. Config `roles` gives each
 role its reader-facing name (`roles: { admin: "an organiser" }`).

@@ -35,7 +35,14 @@ export function parseChaptersVtt(text: string): VideoChapter[] {
     const lines = block.split("\n");
     const timing = lines.findIndex((l) => l.includes("-->"));
     if (timing < 0) continue;
-    const label = lines.slice(timing + 1).join(" ").trim();
+    // Cue text is escaped VTT (`&amp;`, `&lt;`, `&gt;`): shown as plain text.
+    const label = lines
+      .slice(timing + 1)
+      .join(" ")
+      .trim()
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&");
     if (!label) continue;
     out.push({ label, seconds: parseTimestamp(lines[timing].split("-->")[0]) });
   }

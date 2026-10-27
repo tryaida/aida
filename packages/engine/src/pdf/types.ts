@@ -109,6 +109,9 @@ export interface PdfPageInput {
   /** Print figures for the "Other ways to do this" section (decision 34), by walkthrough path id;
    * each figure's `step` is the path's own step number. */
   pathFigures?: Record<string, PrintFigure[]>;
+  /** Paths with a narrated clip on the site (M35): print keeps the crops and, when the site URL
+   * is known, adds a QR code to the page so a reader can watch that way. */
+  pathClips?: string[];
   /** The guide's path on the help site (`/how-do-i/payments/record-a-payment`), for its QR code. */
   sitePath?: string;
 }

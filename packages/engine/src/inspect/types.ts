@@ -48,5 +48,5 @@ export interface InspectResult {
   /** Every click's outcome, in order, when `--click` was given more than once. */
   clicks?: (ClickOutcome & { name: string })[];
   /** Present with `--walkthrough ... --after <step>`: the page this scan saw is the one that step left. */
-  after?: { walkthrough: string; step: string };
+  after?: { walkthrough: string; step: string; /** Set for `--after <pathId>/<stepId>`. */ path?: string };
 }

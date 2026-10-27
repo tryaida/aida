@@ -4,10 +4,11 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
-import { libraryPlacement, pathWalkthrough, type Walkthrough, type WalkthroughPath } from "../walkthrough/index.js";
+import { displayWalkthrough, libraryPlacement, pathWalkthrough, type Walkthrough, type WalkthroughPath } from "../walkthrough/index.js";
 import type { CaptureManifest, ValidationResult } from "../capture/index.js";
 import { readPathCaptures, type PathCapture } from "../capture/path-files.js";
 import { redactLine } from "../capture/redact.js";
+import { pathClipLinks } from "../render/clips.js";
 import { annotateFrame, renderPrintFrame } from "./annotate.js";
 import { PNG } from "pngjs";
 import { edgeMap, focusCrop, planStepFigures, refineCrop, type StepFigurePlan } from "./focus.js";
@@ -19,6 +20,7 @@ import {
   buildLastCheckedBlock,
   buildOtherWaysHeadingBlock,
   buildPathBlock,
+  buildPathClipBlock,
   buildPathJoinBlock,
   buildPathStepBlock,
   buildStepBlock,
@@ -84,7 +86,9 @@ function videoLinks(videoDir: string | undefined, id: string, pageDir: string): 
  * markers), `index.plain.md` (markers stripped, for llms.txt), and `screenshots/step-NN.png`.
  * Refuses to mark the page publishable when the capture it's built from didn't fully pass.
  */
-export async function buildPage(wf: Walkthrough, captureDir: string, outDir: string, opts: BuildPageOptions = {}): Promise<BuildPageResult> {
+export async function buildPage(written: Walkthrough, captureDir: string, outDir: string, opts: BuildPageOptions = {}): Promise<BuildPageResult> {
+  // Every word the page prints with its `{{data}}` filled in (M35).
+  const wf = displayWalkthrough(written);
   const id = wf.walkthrough;
   const manifestPath = path.join(captureDir, "manifest.json");
   if (!existsSync(manifestPath)) {
@@ -297,6 +301,7 @@ async function buildOtherWays(
   const flagged = new Set((validation?.pathDiffs ?? []).map((d) => d.path));
   // Blur on any step, main or any path's, means no path figure swaps to an earlier frame (focus.ts).
   const blurAnywhere = [...wf.steps, ...paths.flatMap((p) => p.steps)].some((s) => (s.blur?.length ?? 0) > 0);
+  const clips = new Map(pathClipLinks(opts.videoDir, wf).map((c) => [c.pathId, c] as const));
 
   out.blocks.push(buildOtherWaysHeadingBlock());
   for (const p of paths) {
@@ -305,6 +310,9 @@ async function buildOtherWays(
     const problem = pathCaptureProblem(capture);
     if (problem) out.problems.push(`path "${p.id}": ${problem}`);
     out.blocks.push(buildPathBlock(p, { showNote: flagged.has(p.id), problem }));
+    // Its narrated clip (M35), when render made one: only for a path whose capture passed.
+    const clip = problem ? undefined : clips.get(p.id);
+    if (clip) out.blocks.push(buildPathClipBlock(p, clip));
 
     const manifest = capture?.manifest;
     const jobs: ScreenshotJob[] = [];

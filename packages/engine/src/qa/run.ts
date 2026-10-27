@@ -6,6 +6,7 @@ import { basename, extname, join } from 'node:path'
 import { captionFormatFromPath, checkCaptions, parseCaptions, type CaptionCheckOptions } from './captions.js'
 import { checkPersonalData, type PiiScanOptions } from './pii.js'
 import { checkSecrets, type SecretScanOptions } from './secrets.js'
+import { checkPlaceholders } from './placeholders.js'
 import { checkVideo, type VideoCheckOptions } from './video.js'
 import { qaCheck, type QaCheckResult } from './types.js'
 
@@ -38,6 +39,8 @@ export interface RunQaOptions {
   captions?: CaptionCheckOptions | false
   personalData?: PiiScanOptions | false
   secrets?: SecretScanOptions | false
+  /** Raw `{{placeholders}}` in reader-facing text (M35). Default on. */
+  placeholders?: false
   /** Skip directories by name (e.g. 'node_modules', '.git') when target is a directory. Defaults cover both. */
   skipDirs?: string[]
 }
@@ -107,6 +110,13 @@ export async function runQa(target: string, opts: RunQaOptions = {}): Promise<Qa
     for (const file of textFiles) {
       const content = await readFile(file, 'utf8')
       checks.push(namespaced(checkSecrets(content, opts.secrets || {}), file, files.length > 1))
+    }
+  }
+
+  if (opts.placeholders !== false) {
+    for (const file of textFiles) {
+      const content = await readFile(file, 'utf8')
+      checks.push(namespaced(checkPlaceholders(content), file, files.length > 1))
     }
   }
 

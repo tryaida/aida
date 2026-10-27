@@ -233,6 +233,36 @@ describe("index stage library layout", () => {
     expect(existsSync(path.join(helpApp, "public/screenshots/record-a-payment/step-02.png"))).toBe(true);
   });
 
+  it("publishes only the path clips the page embeds and the walkthrough still has; removes the rest (M35)", () => {
+    writeRender("record-a-payment", [".mp4", ".vtt", ".path-from-attendee.mp4", ".path-from-attendee.vtt", ".path-from-attendee.srt", ".path-failed.mp4", ".path-old.mp4"]);
+    const page = writePage("record-a-payment", "Record a payment");
+    // pages/build.ts embeds a clip only for a path whose capture passed: "failed" isn't embedded.
+    const embed = (p: string) => `<VideoEmbed src={"/videos/record-a-payment/record-a-payment.path-${p}.mp4"} title={"x"} />`;
+    writeFileSync(page.indexFile, `${readFileSync(page.indexFile, "utf8")}\n${embed("from-attendee")}\n\n${embed("old")}\n`);
+    const withPaths = {
+      ...wf("record-a-payment", "Record a payment"),
+      steps: [{ id: "save", title: "Save", actions: [] }],
+      paths: ["from-attendee", "failed"].map((id) => ({ id, title: id, when: "w", start: { page: "/x" }, steps: [], joins: "save" })),
+    } as unknown as Walkthrough;
+    const videoDir = path.join(outDir, "videos");
+    const published = path.join(helpApp, "public", "videos", "record-a-payment");
+    mkdirSync(published, { recursive: true });
+    writeFileSync(path.join(published, "record-a-payment.path-stale.mp4"), "from an older build");
+    runIndexStage({ pagesDir, outDir, helpApp, pages: [page], videoDir, walkthroughs: [withPaths] });
+    for (const ext of [".path-from-attendee.mp4", ".path-from-attendee.vtt", ".path-from-attendee.srt"]) {
+      expect(existsSync(path.join(published, `record-a-payment${ext}`))).toBe(true);
+    }
+    // Not embedded (capture failed), embedded but no longer a path, or left over: not published.
+    for (const ext of [".path-failed.mp4", ".path-old.mp4", ".path-stale.mp4"]) expect(existsSync(path.join(published, `record-a-payment${ext}`))).toBe(false);
+  });
+
+  it("writes the page description from the summary with {{data}} filled in (M35)", () => {
+    const page = writePage("record-a-payment", "Record a payment");
+    const w = { ...wf("record-a-payment", "Record a payment"), summary: "Record a payment for {{who.name}}.", data: { who: { name: "Acme Pty Ltd" } } } as unknown as Walkthrough;
+    runIndexStage({ pagesDir, outDir, helpApp, pages: [page], walkthroughs: [w] });
+    expect(fm("how-do-i/record-a-payment/index.mdx").description).toBe("Record a payment for Acme Pty Ltd.");
+  });
+
   it("drops media keys when there's no render, and removes published media once a page stops being publishable", () => {
     const page = writePage("record-a-payment", "Record a payment");
     runIndexStage({ pagesDir, outDir, helpApp, pages: [page], videoDir: path.join(outDir, "videos") });

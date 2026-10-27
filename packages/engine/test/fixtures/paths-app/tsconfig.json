@@ -1,0 +1,7 @@
+{
+  // Acme Events: aliases live in the shared base config.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "preserve", /* trailing comma below is fine in tsconfig */
+  },
+}

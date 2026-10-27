@@ -45,9 +45,9 @@ and validate YAML concurrently: capture must never run from two at once (see ste
    main`). **The page after a save**: write the steps up to the save, validate, then `AIDA
    inspect --config <cfg> --walkthrough <id> --after <saveStepId> --json`. It signs in as the
    walkthrough's persona, runs its setup and its real steps through that one (it really writes,
-   with the same safety checks as capture; nothing is recorded) and scans what's on screen then.
-   Write the next steps from that output; don't guess them or leave them marked unverified. A
-   step failing on the way prints the failure report instead (step 7).
+   with the same safety checks as capture; nothing is recorded) and scans what's on screen then
+   (a path's step: `--after <pathId>/<stepId>`). Write the next steps from that output; don't
+   guess them. A step failing on the way prints the failure report instead (step 7).
    **When a flow can't be worked out this way** (a drag, a canvas, a multi-part widget, or a
    path through the app nobody has described), ask the person to show it once: `aida record <id>
    --config <cfg> --page <start path> [--as <role>] [--needs <state>...]` opens a browser window
@@ -75,9 +75,9 @@ and validate YAML concurrently: capture must never run from two at once (see ste
    <dotted.path> <value>` changes a `data:` value (it rejects leaving a `{{...}}` unresolved).
    **Other ways to start the task** (card `paths:`, the brief's "Several ways to do one thing"):
    one walkthrough, not one per way. `aida inspect` each way's start page, then add a `paths:`
-   entry (cheat sheet → "Several ways to do one task"): its `start.page`, opening steps, `joins:`
-   (the main step where it meets the shared rest) and a `when:` sentence from the brief. Edit
-   them with `aida edit addPath`/`setPathField`/`setPathStepField`/`setPathStepActions`.
+   entry (cheat sheet → "Several ways to do one task"): `start.page`, opening steps (each with a
+   `say`: they narrate the path's own short clip), `joins:` (the main step where it meets the
+   shared rest) and a `when:` sentence from the brief. Edit with `aida edit addPath`/`setPath*`.
 4. **Demo data and state**: invented values through example.com/reserved phone ranges (see
    `references/safety.md`), written into `data:` directly when authoring, or via `aida edit
    setData` on a repair. A walkthrough that changes data declares it (from the card):

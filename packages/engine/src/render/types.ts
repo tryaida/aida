@@ -260,4 +260,22 @@ export interface RenderResult {
   scenesTotal?: number;
   scenesRendered?: number;
   scenesReused?: number;
+  /** One short clip per walkthrough path (M35), rendered or not (with the reason). */
+  clips?: PathClipResult[];
+}
+
+/** One path's short clip (M35): `<id>.path-<pathId>.mp4` + captions next to the main video. */
+export interface PathClipResult {
+  pathId: string;
+  mp4?: string;
+  srt?: string;
+  vtt?: string;
+  timelineJson?: string;
+  durationSec?: number;
+  /** True when the clip was unchanged (hash matched) or not rendered (see `notRendered`). */
+  skipped: boolean;
+  /** Why there's no clip for this path (its capture didn't pass, no narration yet, ...). */
+  notRendered?: string;
+  /** The main step the path joins and where its chapter starts in the main video (seconds). */
+  continueAt?: { step: number; stepId?: string; title?: string; t?: number };
 }

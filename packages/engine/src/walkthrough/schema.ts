@@ -326,6 +326,14 @@ export const WalkthroughDocSchema = z
   .strict()
   .superRefine((doc, ctx) => {
     checkPaths(doc, ctx);
+    // `intro` and `outro` name the title cards' narration beats (main video and each path clip).
+    const reserved = (id: string | undefined, path: (string | number)[]) => {
+      if (id !== undefined && RESERVED_STEP_IDS.has(id)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: `step id "${id}" is reserved for the video's title cards; pick another id` });
+      }
+    };
+    doc.steps.forEach((step, i) => reserved(step.id, ["steps", i, "id"]));
+    doc.paths?.forEach((p, i) => p.steps.forEach((step, j) => reserved(step.id, ["paths", i, "steps", j, "id"])));
     // Leaving and clearing the same state says two opposite things about the data afterwards.
     const leaves = new Set(doc.leaves ?? []);
     for (const [i, name] of (doc.clears ?? []).entries()) {
@@ -340,6 +348,9 @@ export const WalkthroughDocSchema = z
   });
 
 export type WalkthroughDoc = z.infer<typeof WalkthroughDocSchema>;
+
+/** Step ids the video's title-card beats use (`intro`, `outro`; render/timeline.ts `beatIds`). */
+export const RESERVED_STEP_IDS: ReadonlySet<string> = new Set(["intro", "outro"]);
 
 /** The role a raw start names, from `persona.role` or `signed_in_as`. */
 function rawRole(start: { signed_in_as?: string; persona?: { role?: string } } | undefined): string | undefined {

@@ -6,6 +6,7 @@ import type { Walkthrough } from "../walkthrough/index.js";
 import { NEUTRAL_COLORS, cssColor, fontStack, imageDataUrl, safeFontName, safeFontUrl, type ArtifactColors } from "../render/brand.js";
 import { escapeHtml, markdownToHtml } from "./markdown.js";
 import { guideUrl, qrSvg } from "./qr.js";
+import { HeadingSlugger, stripMarkdown } from "../index-search/build.js";
 import type { CardStepInput, PdfBrand, PdfPageInput, PrintFigure } from "./types.js";
 
 /** Everything the print templates need from a brand, with defaults filled in. */
@@ -308,7 +309,7 @@ export function buildPageHtml(input: PdfPageInput, brand?: PdfBrand, allowRemote
   const figures = new Map((input.figures ?? []).map((f) => [f.step, f] as const));
   const url = guideUrl(opts.siteUrl, input.sitePath);
   const { main, otherWays, tail } = splitOtherWays(stripHeader(body));
-  const steps = wrapSteps(main, figures) + (otherWays ? otherWaysHtml(otherWays, input.pathFigures ?? {}) : "") + tail;
+  const steps = wrapSteps(main, figures) + (otherWays ? otherWaysHtml(otherWays, input.pathFigures ?? {}, { guideUrl: url, pathAnchors: pathHeadingAnchors(input.markdown) }) : "") + tail.replace(PATH_CLIP_P, "");
   const html = [guideHeader(input, body, theme, url), boxSections(steps)].join("\n");
   return htmlDoc(input.title, `<main class="guide">${html}</main>`, theme, { allowRemote: allowRemoteImages, extraStyle: GUIDE_STYLE + OTHER_WAYS_STYLE });
 }
@@ -429,6 +430,9 @@ const OTHER_WAYS_STYLE = `
   .path blockquote { margin: 0 0 8pt; }
   .path-join { break-before: avoid; page-break-before: avoid; margin: -4pt 0 0 26pt; font-weight: 600; }
   .path-join a { color: inherit; text-decoration: none; }
+  .path-qr { float: right; width: 20mm; margin: 0 0 4pt 8pt; text-align: center; }
+  .path-qr .qr { display: block; width: 100%; height: auto; }
+  .path-qr p { margin: 1mm 0 0; font-size: 6.5pt; line-height: 1.2; color: var(--muted-fg); }
 `;
 
 /** Splits the guide body into the main part, the "Other ways to do this" section (from its `<h2>`
@@ -445,13 +449,43 @@ export function splitOtherWays(bodyHtml: string): { main: string; otherWays?: st
   };
 }
 
+/** Where a path's clip was on the page (pdf/input.ts `stripPathClips`): print shows a QR code to
+ * the page there when the site URL is known, else nothing. */
+export const PATH_CLIP_MARK = (pathId: string): string => `@@aida-path-clip:${pathId}@@`;
+const PATH_CLIP_P = /<p>@@aida-path-clip:([a-z0-9-]+)@@<\/p>\s*/g;
+
+/**
+ * The ids the site gives each path's `### Title` under "Other ways to do this", in order: every
+ * heading on the page counts toward github-slugger's repeat numbering (`-1`, `-2`), exactly as
+ * index-search's `HeadingSlugger` walks a page, so a path titled like a main step still links right.
+ */
+export function pathHeadingAnchors(markdown: string): string[] {
+  const slugger = new HeadingSlugger();
+  const anchors: string[] = [];
+  let inOtherWays = false;
+  let inFence = false;
+  for (const line of markdown.replace(/\{\/\*[\s\S]*?\*\/\}/g, "").split("\n")) {
+    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
+    const m = inFence ? null : /^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line);
+    if (!m) continue;
+    const anchor = slugger.slug(stripMarkdown(m[2]));
+    if (m[1].length === 2) inOtherWays = stripMarkdown(m[2]) === "Other ways to do this";
+    else if (m[1].length === 3 && inOtherWays) anchors.push(anchor);
+  }
+  return anchors;
+}
+
 const PATH_STEP_IMG = /<img alt="[^"]*" src="file:\/\/[^"]*?\/paths\/([a-z0-9-]+)-step-(\d+)\.png" \/>/;
 
 /** The "Other ways to do this" section as print HTML; see the section comment above. */
-export function otherWaysHtml(sectionHtml: string, pathFigures: Record<string, PrintFigure[]>): string {
+export function otherWaysHtml(
+  sectionHtml: string,
+  pathFigures: Record<string, PrintFigure[]>,
+  opts: { guideUrl?: string; pathAnchors?: string[] } = {},
+): string {
   const [heading, ...paths] = sectionHtml.split(/(?=<h3>)/);
   const out = [heading.replace("<h2>Other ways to do this</h2>", '<h2 class="other-ways-h">Other ways to do this</h2>')];
-  for (const chunk of paths) {
+  for (const [pi, chunk] of paths.entries()) {
     const [intro, ...steps] = chunk.split(/(?=<h4>)/);
     let join = "";
     const last = steps.length > 0 ? steps.length - 1 : -1;
@@ -461,7 +495,18 @@ export function otherWaysHtml(sectionHtml: string, pathFigures: Record<string, P
       join = `<p class="path-join">${fromLast[1]}</p>`;
       if (last >= 0) steps[last] = steps[last].replace(joinMatch, "");
     }
-    const head = (last >= 0 ? intro : intro.replace(joinMatch, "")).replace(/^(<h3>[\s\S]*?<\/h3>)\s*<p>([\s\S]*?)<\/p>/, '$1<p class="path-when">$2</p>');
+    // A path with a clip on the site: a QR code to its place on the page (M35); print keeps the crops.
+    let qr = "";
+    const anchor = opts.pathAnchors?.[pi];
+    const introNoClip = intro.replace(PATH_CLIP_P, (_m, id: string) => {
+      if (opts.guideUrl && !qr) {
+        const url = anchor ? `${opts.guideUrl}#${anchor}` : opts.guideUrl;
+        qr = `<div class="path-qr">${qrSvg(url, { label: "Watch this way online" })}<p>Scan to watch this way</p></div>`;
+      }
+      void id;
+      return "";
+    });
+    const head = (last >= 0 ? introNoClip : introNoClip.replace(joinMatch, "")).replace(/^(<h3>[\s\S]*?<\/h3>)\s*<p>([\s\S]*?)<\/p>/, `$1<p class="path-when">$2</p>${qr.replace(/\$/g, "$$$$")}`);
     const stepHtml = steps.map((part) => pathStepHtml(part, pathFigures)).join("\n");
     out.push(`<section class="path">${head.trim()}${stepHtml}${join}</section>`);
   }

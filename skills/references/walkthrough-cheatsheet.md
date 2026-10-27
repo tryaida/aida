@@ -86,6 +86,10 @@ paths:
   main run's). Paths need that reset: with no database adapter `reset()`, `--no-reset`, or a
   walkthrough inside a dependency chain (where a reset would erase an earlier walkthrough's data),
   each path is marked not captured with the reason, and the page won't publish until it is.
+- Each path gets a short narrated clip, `<id>.path-<pathId>.mp4` (+ captions) next to the main
+  video: a title card (`title`, `when`), its opening steps narrated from their own `say`, then
+  "Then continue from step N: <title>". The page embeds it under the path; PDFs keep the crops.
+- To see the screen after a path step: `aida inspect --walkthrough <id> --after <pathId>/<stepId>`.
 - A path's steps are screenshotted on their own: give them their own `mask:` and `blur:` for any
   personal data they show (the main steps' blur doesn't cover them). Blur and callout edits take
   `<pathId>/<stepId>`: `aida edit addBlur <file> from-attendee/open-attendee-payment '<json>'`.
@@ -215,7 +219,10 @@ inside it). `padUnion` on a target grows the highlight box to include another ta
 ## Interpolation
 
 `{{competitor.firstName}}` etc. pull from the walkthrough's own `data` block. Never hardcode a
-value that should come from `data` — it makes repair and demo-data swaps harder.
+value that should come from `data` — it makes repair and demo-data swaps harder. Reader-facing
+text (`title`, `say`, `caption`, `page_text`, callout labels, `intro`/`outro`, a path's `title`/
+`when`/`note`) is printed and spoken with `{{data}}` filled in; `aida validate` fails a placeholder
+there with no value. `{{run.*}}` is never printed (it is dropped from that text).
 
 ## Forbidden in user-facing fields (`title`, `say`, `caption`, `page_text`, `intro`, `outro`)
 

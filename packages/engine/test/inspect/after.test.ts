@@ -177,6 +177,99 @@ describe("inspect --walkthrough --after", () => {
   });
 });
 
+/** A second walkthrough with another way in: from the registrations list, then the shared steps. */
+function withPath(dir: string): void {
+  writeFileSync(
+    join(dir, "walkthroughs", "register-from-list.yaml"),
+    `walkthrough: register-from-list
+title: Register someone
+start:
+  signed_in_as: office_staff
+  page: /after.html
+steps:
+  - id: fill
+    actions:
+      - do: type
+        target:
+          label: Name
+        text: Ada Lovelace
+  - id: save
+    actions:
+      - do: click
+        target:
+          role: button
+          name: Save
+          exact: true
+      - do: waitFor
+        target:
+          text: Registration saved
+paths:
+  - id: from-list
+    title: From the registrations list
+    when: Use this when you're already looking at the list.
+    start:
+      page: /registrations.html
+    steps:
+      - id: open-form
+        actions:
+          - do: click
+            target:
+              role: link
+              name: New registration
+          - do: waitFor
+            target:
+              text: New registration
+    joins: fill
+`,
+  );
+}
+
+describe("inspect --walkthrough --after <pathId>/<stepId> (M35)", () => {
+  it(
+    "replays the path from its own start page up to its opening step, then scans",
+    async () => {
+      const { dir, config } = project();
+      withPath(dir);
+      const code = await runInspectCommand({ configPath: config, walkthrough: "register-from-list", after: "from-list/open-form" }, true);
+      expect(code).toBe(0);
+      const p = payload() as { url: string; snapshot: string; after: unknown };
+      expect(p.after).toEqual({ walkthrough: "register-from-list", step: "open-form", path: "from-list" });
+      expect(p.url).toMatch(/\/after\.html$/);
+      expect(p.snapshot).not.toContain("Registration saved");
+      expect(server.postCount).toBe(0);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "reaches a shared main step the way the path does",
+    async () => {
+      const { dir, config } = project();
+      withPath(dir);
+      const code = await runInspectCommand({ configPath: config, walkthrough: "register-from-list", after: "from-list/save" }, true);
+      expect(code).toBe(0);
+      const p = payload() as { snapshot: string; after: unknown };
+      expect(p.after).toEqual({ walkthrough: "register-from-list", step: "save", path: "from-list" });
+      expect(p.snapshot).toContain("Registration saved");
+      expect(server.postCount).toBe(1);
+      expect(existsSync(join(dir, ".build", "register-from-list"))).toBe(false);
+    },
+    TIMEOUT,
+  );
+
+  it("names the paths and their steps when the reference doesn't match", async () => {
+    const { dir, config } = project();
+    withPath(dir);
+    expect(await runInspectCommand({ configPath: config, walkthrough: "register-from-list", after: "from-desk/open-form" }, true)).toBe(1);
+    expect(payload().error).toBe('no path "from-desk" in walkthrough register-from-list (paths: from-list)');
+    expect(await runInspectCommand({ configPath: config, walkthrough: "register-from-list", after: "from-list/nope" }, true)).toBe(1);
+    expect(payload().error).toBe('no step "nope" in path from-list (path steps: open-form; then main steps from fill: fill, save)');
+    expect(await runInspectCommand({ configPath: config, walkthrough: "register-from-list", after: "nope" }, true)).toBe(1);
+    expect(payload().error).toMatch(/a path's step is "<pathId>\/<stepId>" \(paths: from-list\)/);
+    expect(server.postCount).toBe(0);
+  });
+});
+
 describe("inspect safety gate (decision 27)", () => {
   const REMOTE = `, database: { url: "postgresql://owner:pw@ep-main-1.us-east-2.aws.neon.tech/neondb" }`;
 

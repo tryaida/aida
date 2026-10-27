@@ -213,7 +213,7 @@ program
   .option("--check <name>", "check this radio/checkbox first, to reveal any field it conditionally shows before scanning")
   .option("--select <values...>", 'choose an option: --select "<field>" "<option>" — native <select> or custom combobox/listbox, to reveal any field it conditionally shows before scanning (non-GET requests stay blocked)')
   .option("--walkthrough <fileOrId>", "with --after: the walkthrough to replay (its file, or its id)")
-  .option("--after <stepId>", "with --walkthrough: sign in as its persona, run its setup and its real actions up to and including this step (no frames or screenshots; the same safety checks as capture), then map that page")
+  .option("--after <stepId>", "with --walkthrough: sign in as its persona, run its setup and its real actions up to and including this step (no frames or screenshots; the same safety checks as capture), then map that page. <pathId>/<stepId> replays that path instead: its start page, its opening steps, then the main steps from where it joins")
   .option("--json", "print a single JSON object instead of a summary")
   .action(async (path: string | undefined, opts: { config: string; as?: string; area?: string; click?: string[]; check?: string; select?: string[]; walkthrough?: string; after?: string; json?: boolean }) => {
     if (opts.select && opts.select.length !== 2) {

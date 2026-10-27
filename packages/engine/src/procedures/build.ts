@@ -5,7 +5,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { copyFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { libraryPlacement, pathWalkthrough, type Walkthrough } from "../walkthrough/index.js";
+import { displayWalkthrough, libraryPlacement, pathWalkthrough, type Walkthrough } from "../walkthrough/index.js";
 import type { CaptureManifest, ValidationResult } from "../capture/index.js";
 import { readPathCaptures } from "../capture/path-files.js";
 import { stripMarkdown } from "../index-search/index.js";
@@ -57,6 +57,7 @@ export function buildProcedure(
   captureDir: string,
   opts: { pagesDir?: string; videoDir?: string; publicDir?: string; lastChecked?: string; readerNames?: ReaderNames },
 ): Procedure | undefined {
+  wf = displayWalkthrough(wf);
   const manifest = readJsonIfExists<CaptureManifest>(join(captureDir, "manifest.json"));
   const validation = readJsonIfExists<ValidationResult>(join(captureDir, "validation.json"));
   if (!manifest || !validation?.ok) return undefined;

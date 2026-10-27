@@ -8,7 +8,8 @@ import { buildSearchIndex } from "../index-search/index.js";
 import type { BuildPageResult } from "../pages/index.js";
 import { buildProcedures, type ReaderNames } from "../procedures/index.js";
 import type { Procedure } from "../procedures/index.js";
-import { libraryPlacement, type LibraryPlacement, type Walkthrough } from "../walkthrough/index.js";
+import { displayWalkthrough, libraryPlacement, type LibraryPlacement, type Walkthrough } from "../walkthrough/index.js";
+import { pathClipFiles, pathClipLinks } from "../render/clips.js";
 import type { ResolvedChatConfig } from "../chat/index.js";
 import type { BriefArtifacts } from "../brief/consumers.js";
 import { readFrontmatter, setFrontmatterFields, type FrontmatterValue } from "../pages/frontmatter.js";
@@ -124,7 +125,19 @@ const MEDIA_FILES = (id: string): [string, string][] => [
  * renders), whatever an earlier build already put under `public/videos/<id>/` is linked. The
  * `poster` is the page's most detailed step screenshot, served from `/screenshots/<id>/`.
  */
-function stageMedia(id: string, pageFile: string, publicDir: string, videoDir: string | undefined): Record<string, FrontmatterValue> {
+/** Path ids whose clip the staged page embeds (`<VideoEmbed src={"/videos/<id>/<id>.path-<p>.mp4"} …`). */
+function embeddedClipPaths(pageFile: string, id: string): Set<string> {
+  if (!existsSync(pageFile)) return new Set();
+  const text = readFileSync(pageFile, "utf8");
+  const out = new Set<string>();
+  const prefix = `/videos/${id}/${id}.path-`;
+  for (const m of text.matchAll(/^<VideoEmbed\b[^\n]*?src=\{"([^"]+)"\}/gm)) {
+    if (m[1].startsWith(prefix) && m[1].endsWith(".mp4")) out.add(m[1].slice(prefix.length, -".mp4".length));
+  }
+  return out;
+}
+
+function stageMedia(id: string, pageFile: string, publicDir: string, videoDir: string | undefined, wf?: Walkthrough): Record<string, FrontmatterValue> {
   const fields: Record<string, FrontmatterValue> = {};
   const destDir = join(publicDir, "videos", id);
   const sameDir = videoDir !== undefined && resolve(join(videoDir, id)) === resolve(destDir);
@@ -140,6 +153,24 @@ function stageMedia(id: string, pageFile: string, publicDir: string, videoDir: s
       }
     }
     fields[key] = existsSync(dest) ? `/videos/${id}/${file}` : null;
+  }
+  // Each path's short clip (M35): `<id>.path-<pathId>.mp4` + captions at these same `/videos/<id>/`
+  // URLs — only the clips the page embeds (pages/build.ts embeds a clip only for a path whose
+  // capture passed) and, when the walkthrough is known, that it still has (`pathClipLinks`).
+  // Every other clip file is removed from the site, render folder or not.
+  if (videoDir && !sameDir) {
+    const isClip = (name: string) => name.startsWith(`${id}.path-`) && /\.(mp4|srt|vtt)$/.test(name);
+    const embedded = embeddedClipPaths(pageFile, id);
+    const known = wf ? new Set(pathClipLinks(videoDir, wf).map((c) => c.pathId)) : undefined;
+    const keep = new Set([...embedded].filter((p) => !known || known.has(p)));
+    const wanted: string[] = [];
+    for (const pathId of keep) {
+      const files = pathClipFiles(join(videoDir, id), id, pathId);
+      for (const f of [files.mp4, files.srt, files.vtt]) if (existsSync(f)) wanted.push(basename(f));
+    }
+    if (wanted.length > 0) mkdirSync(destDir, { recursive: true });
+    for (const name of wanted) linkOrCopy(join(videoDir, id, name), join(destDir, name));
+    if (existsSync(destDir)) for (const name of readdirSync(destDir)) if (isClip(name) && !wanted.includes(name)) rmSync(join(destDir, name), { force: true });
   }
 
   // Poster: the step screenshot with the most visual detail (largest file; earliest on a tie) —
@@ -186,7 +217,8 @@ function finishStagedPage(
 ): void {
   if (!existsSync(file)) return;
   const raw = readFileSync(file, "utf8");
-  const summary = wf?.summary?.replace(/\s+/g, " ").trim();
+  // The summary as printed: `{{data}}` filled in (M35), like the page the pages stage built.
+  const summary = wf ? displayWalkthrough(wf).summary?.replace(/\s+/g, " ").trim() : undefined;
   const next = setFrontmatterFields(raw, {
     ...(readFrontmatter(raw).walkthrough === id ? {} : { walkthrough: id }),
     kind: "walkthrough",
@@ -367,7 +399,7 @@ export function runIndexStage(opts: IndexStageOptions): IndexStageResult {
       if (opts.helpApp) removePublishedMedia(publicDir, p.id, videoDir);
       continue;
     }
-    finishStagedPage(file, p.id, placement, opts.helpApp ? stageMedia(p.id, file, publicDir, videoDir) : undefined, walkthroughs.get(p.id));
+    finishStagedPage(file, p.id, placement, opts.helpApp ? stageMedia(p.id, file, publicDir, videoDir, walkthroughs.get(p.id)) : undefined, walkthroughs.get(p.id));
   }
 
   // 2. Pages this run didn't rebuild: move to their current spot when the walkthrough is known.
@@ -377,7 +409,7 @@ export function runIndexStage(opts: IndexStageOptions): IndexStageResult {
     const keep = copies.find((c) => c.rel === placement.dir) ?? copies[0];
     for (const copy of copies) if (copy !== keep) removeStagedPage(copy.dir);
     const file = relocateStagedPage(contentDir, keep, placement);
-    finishStagedPage(file, id, placement, opts.helpApp ? stageMedia(id, file, publicDir, videoDir) : undefined, walkthroughs.get(id));
+    finishStagedPage(file, id, placement, opts.helpApp ? stageMedia(id, file, publicDir, videoDir, walkthroughs.get(id)) : undefined, walkthroughs.get(id));
   }
 
   // 3. Walkthroughs deleted from disk.

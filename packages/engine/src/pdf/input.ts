@@ -2,10 +2,10 @@
 // `BuildPageResult`) — the one place the pdf module reaches into pages' output shape, kept
 // small and isolated so pages/pdf can keep evolving independently.
 import { existsSync, readFileSync } from "node:fs";
-import { libraryPlacement, type Walkthrough } from "../walkthrough/index.js";
+import { displayWalkthrough, libraryPlacement, type Walkthrough } from "../walkthrough/index.js";
 import type { BuildPageResult } from "../pages/index.js";
 import type { ResolvedConfig } from "../config/index.js";
-import { cardStepsFor } from "./html.js";
+import { cardStepsFor, PATH_CLIP_MARK } from "./html.js";
 import { resolveArtifactBrand } from "../render/brand.js";
 import type { PdfBrand, PdfPageInput } from "./types.js";
 
@@ -24,8 +24,30 @@ function stripFrontmatter(markdown: string): string {
   return markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
 }
 
-export function pdfInputFromPage(wf: Walkthrough, page: BuildPageResult): PdfPageInput {
-  const markdown = stripFrontmatter(readFileSync(page.plainFile, "utf8"));
+/** A path clip's embed (`<VideoEmbed …/>`) and its "Watch the rest" line (pages/content.ts
+ * `buildPathClipBlock`): video on the site only, so print drops them. */
+const CLIP_EMBED = /^<VideoEmbed\b[^\n]*\/>[ \t]*\n?/gm;
+const CLIP_WATCH_REST = /^Watch the rest from \[[^\]\n]*\]\(\/videos\/[^)\n]*\)\.[ \t]*\n?/gm;
+
+/** Path ids with a clip embedded in the page, and the page Markdown without the embeds. */
+export function stripPathClips(markdown: string): { markdown: string; pathClips: string[] } {
+  const pathClips = [...markdown.matchAll(CLIP_EMBED)]
+    .map((m) => /\.path-([a-z0-9-]+)\.mp4"/.exec(m[0])?.[1])
+    .filter((id): id is string => Boolean(id));
+  // The embed becomes a marker paragraph the print HTML swaps for a QR code (or drops).
+  const stripped = markdown
+    .replace(CLIP_EMBED, (m) => {
+      const id = /\.path-([a-z0-9-]+)\.mp4"/.exec(m)?.[1];
+      return id ? `${PATH_CLIP_MARK(id)}\n` : "";
+    })
+    .replace(CLIP_WATCH_REST, "")
+    .replace(/\n{3,}/g, "\n\n");
+  return { markdown: stripped, pathClips: [...new Set(pathClips)] };
+}
+
+export function pdfInputFromPage(written: Walkthrough, page: BuildPageResult): PdfPageInput {
+  const wf = displayWalkthrough(written);
+  const { markdown, pathClips } = stripPathClips(stripFrontmatter(readFileSync(page.plainFile, "utf8")));
   const screenshotByStep = new Map<number, string>();
   for (const file of page.screenshots) {
     const m = /step-(\d+)\.png$/.exec(file);
@@ -57,6 +79,7 @@ export function pdfInputFromPage(wf: Walkthrough, page: BuildPageResult): PdfPag
     }),
     ...(figures && figures.length > 0 ? { figures } : {}),
     ...(Object.keys(pathFigures).length > 0 ? { pathFigures } : {}),
+    ...(pathClips.length > 0 ? { pathClips } : {}),
     sitePath: libraryPlacement(typeof section === "string" ? section : undefined, wf.walkthrough).url,
   };
 }

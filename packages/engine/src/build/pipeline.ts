@@ -17,6 +17,7 @@ import type { CaptureManifest, FrameDiffSummary, ValidationResult } from "../cap
 import { resolveCaptureSettings } from "../config/types.js";
 import { buildVoiceManifest } from "../commands/voice.js";
 import { loadNarrationBeats, render } from "../render/index.js";
+import { pathClipFiles, pathClipLinks } from "../render/clips.js";
 import { resolveArtifactBrand } from "../render/brand.js";
 import type { RenderResult } from "../render/index.js";
 import { buildPage } from "../pages/index.js";
@@ -330,9 +331,12 @@ async function runRenderStage(
       brand: resolveArtifactBrand(config),
     });
     state.renderResult = result;
-    state.stages.render = result.skipped
-      ? skipped(`unchanged (${result.durationSec.toFixed(1)}s)`, Date.now() - started)
-      : ok(`${result.durationSec.toFixed(1)}s, ${result.frames} frames`);
+    const clips = result.clips?.filter((c) => c.mp4) ?? [];
+    const clipNote = clips.length > 0 ? ` + ${clips.length} path clip${clips.length === 1 ? "" : "s"}` : "";
+    state.stages.render =
+      result.skipped && clips.every((c) => c.skipped)
+        ? skipped(`unchanged (${result.durationSec.toFixed(1)}s${clipNote})`, Date.now() - started)
+        : ok(`${result.durationSec.toFixed(1)}s, ${result.frames} frames${clipNote}`);
     state.stages.render.ms = Date.now() - started;
   } catch (err) {
     state.stages.render = failed(firstLine((err as Error).message ?? String(err)), Date.now() - started);
@@ -351,7 +355,7 @@ function stripImpact(manifest: CaptureManifest): CaptureManifest {
 
 /** Bumped when what `buildPage()` writes changes shape, so pages cached by an older engine
  * rebuild (M32: print figures in `BuildPageResult.printFigures`, no recap "Good to know"). */
-export const PAGES_LAYOUT_VERSION = "m33-paths";
+export const PAGES_LAYOUT_VERSION = "m35-path-clips";
 
 /** Stable summary of a capture's validation result — ok + per-step ok only, so volatile fields
  * (`ranAt`, per-step `ms`, error text) never affect the hash, but a pass->fail (or fail->pass)
@@ -385,6 +389,8 @@ export function pagesInputHash(
   videoPresent: boolean,
   roles?: ResolvedConfig["roles"],
   pathCaptures?: unknown,
+  /** Each path's clip on disk and its "continue at" time (M35): the page embeds them. */
+  clipLinks?: unknown,
 ): string {
   const captureHash = manifestHash(stripImpact(manifest), captureModule as unknown as Record<string, unknown>);
   const textFields = {
@@ -395,6 +401,8 @@ export function pagesInputHash(
     intro: wf.intro,
     outro: wf.outro,
     start: wf.start,
+    // Printed text fills in `{{data}}` (M35), so a data change is a text change.
+    data: wf.data,
     // `blur`/`callouts` decide which frame a print figure may show (pages/focus.ts) and the
     // callout labels drawn, not just the resolved boxes the manifest already carries.
     steps: wf.steps.map((s) => ({ id: s.id, title: s.title, say: s.say, caption: s.caption, page_text: s.page_text, chapter: s.chapter, blur: s.blur, callouts: s.callouts })),
@@ -411,6 +419,7 @@ export function pagesInputHash(
       layout: PAGES_LAYOUT_VERSION,
       ...(roles ? { roles } : {}),
       ...(pathCaptures !== undefined ? { pathCaptures } : {}),
+      ...(clipLinks !== undefined && !(Array.isArray(clipLinks) && clipLinks.length === 0) ? { clipLinks } : {}),
     }),
   );
 }
@@ -423,7 +432,16 @@ async function runPagesStage(wf: Walkthrough, config: ResolvedConfig, state: Wal
   }
   const cacheFile = join(config.buildDir, wf.walkthrough, "pages-cache.json");
   const videoPresent = existsSync(join(state.videoDir, wf.walkthrough, `${wf.walkthrough}.mp4`));
-  const inputHash = pagesInputHash(wf, state.manifest, state.validation, config.readers, videoPresent, config.roles, pathCapturesHash(wf, state.captureDir));
+  const inputHash = pagesInputHash(
+    wf,
+    state.manifest,
+    state.validation,
+    config.readers,
+    videoPresent,
+    config.roles,
+    pathCapturesHash(wf, state.captureDir),
+    pathClipLinks(state.videoDir, wf),
+  );
   const cache = readJsonIfExists<{ hash: string; result: BuildPageResult }>(cacheFile);
 
   if (cache && cache.hash === inputHash && existsSync(cache.result.indexFile)) {
@@ -513,6 +531,11 @@ function qaTargets(state: WalkthroughPipelineState): string[] {
       const file = join(videoStepDir, name);
       if (existsSync(file)) targets.push(file);
     }
+    // Each path's clip (M35) passes the same gates: loudness, black frames, colour range, captions.
+    for (const p of state.wf.paths ?? []) {
+      const clip = pathClipFiles(videoStepDir, id, p.id);
+      for (const file of [clip.mp4, clip.srt, clip.vtt]) if (existsSync(file)) targets.push(file);
+    }
   }
   return targets;
 }
@@ -583,7 +606,7 @@ function refusedResults(files: string[], textProblems: Map<string, WalkthroughTe
     }
     const problems = textProblems.get(file) ?? [];
     const notRun = skipped("not run: capture was refused for the whole run");
-    const qa = problems.length > 0 ? failed(`${problems.length} caption or chapter title problem(s) (aida validate shows them too)`) : notRun;
+    const qa = problems.length > 0 ? failed(`${problems.length} text problem(s) (captions, chapter titles, unresolved {{placeholders}}) (aida validate shows them too)`) : notRun;
     return [
       {
         walkthrough: id,
@@ -656,7 +679,7 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
   });
   const textFailed = (state: WalkthroughPipelineState): boolean => state.textProblems.length > 0;
   const textSkip = (state: WalkthroughPipelineState): StageResult =>
-    skipped(`${state.textProblems.length} caption or chapter title problem(s): fix them first (aida validate shows them)`);
+    skipped(`${state.textProblems.length} text problem(s) (captions, chapter titles, unresolved {{placeholders}}): fix them first (aida validate shows them)`);
 
   // Capture + voice: sequential per walkthrough (capture shares app/db state across runs).
   // Voice is the one built-in paid stage (TTS chars billed) — checked against this run's own
@@ -741,7 +764,7 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
   // so `finalPublishable(state)` below already reflects this run's QA result.
   for (const state of states) {
     // Text problems are QA problems found early: the qa stage fails with them whatever ran.
-    if (textFailed(state)) state.stages.qa = failed(`${state.textProblems.length} caption or chapter title problem(s) (aida validate shows them too)`);
+    if (textFailed(state)) state.stages.qa = failed(`${state.textProblems.length} text problem(s) (captions, chapter titles, unresolved {{placeholders}}) (aida validate shows them too)`);
     else if (stages.has("qa")) await runQaStage(state);
     else state.stages.qa = notSelected();
   }

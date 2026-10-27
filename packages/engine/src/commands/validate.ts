@@ -3,6 +3,7 @@ import { join, extname } from "node:path";
 import {
   findUnresolvedTemplates,
   loadWalkthroughText,
+  unresolvedDisplayText,
   WalkthroughValidationError,
   type Walkthrough,
 } from "../walkthrough/index.js";
@@ -102,10 +103,14 @@ function validateFile(file: string): ValidateResult {
   try {
     const source = readFileSync(file, "utf8");
     const walkthrough = loadWalkthroughText(source, file);
-    const errors: ValidateError[] = unresolvedTemplatesIn(walkthrough).map((path) => ({
-      message: `unresolved template placeholder {{${path}}}`,
-      path,
-    }));
+    // A placeholder in output-bound text is reported by the text check below, field by field.
+    const inText = new Set(unresolvedDisplayText(walkthrough).map((u) => u.placeholder));
+    const errors: ValidateError[] = unresolvedTemplatesIn(walkthrough)
+      .filter((path) => !inText.has(path))
+      .map((path) => ({
+        message: `unresolved template placeholder {{${path}}}`,
+        path,
+      }));
     for (const p of checkWalkthroughText(walkthrough, source)) {
       errors.push({
         message: `${p.step ? `step "${p.step}": ` : ""}${p.message} — "${p.text}"`,

@@ -80,23 +80,44 @@ export function wrapCaptions(captions: TimelineCaption[], opts: WrapOptions = {}
   return captions.flatMap((c) => wrapCaption(c, opts));
 }
 
+/** One line of cue text: whitespace and blank lines collapsed (a blank line ends a cue in SRT and
+ * VTT), and `-->` (a timing line) defused. */
+function cueLine(text: string): string {
+  return text.replace(/\s+/g, " ").trim().replace(/-->/g, "->");
+}
+
+/** VTT cue text is markup: `&` and `<` start entities and tags (`>` escaped for symmetry). */
+function vttEscape(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Wrapped cues, each line clean (`cueLine`), with empty cues dropped. */
+function cleanCues(captions: TimelineCaption[], opts: WrapOptions): TimelineCaption[] {
+  return wrapCaptions(
+    captions.map((c) => ({ ...c, text: cueLine(c.text) })).filter((c) => c.text.length > 0),
+    opts,
+  ).map((c) => ({ ...c, text: c.text.split("\n").map(cueLine).filter(Boolean).join("\n") }));
+}
+
 /** SRT captions from the timeline's caption cues, wrapped/split to fit subtitle line limits. */
 export function toSrt(captions: TimelineCaption[], opts: WrapOptions = {}): string {
-  const cues = wrapCaptions(captions, opts);
+  const cues = cleanCues(captions, opts);
   return cues.map((c, i) => `${i + 1}\n${srtTime(c.t0)} --> ${srtTime(c.t1)}\n${c.text}\n`).join("\n");
 }
 
 /** WebVTT captions from the same cues, wrapped/split to fit subtitle line limits. */
 export function toVtt(captions: TimelineCaption[], opts: WrapOptions = {}): string {
-  const wrapped = wrapCaptions(captions, opts);
-  const cues = wrapped.map((c, i) => `${i + 1}\n${vttTime(c.t0)} --> ${vttTime(c.t1)}\n${c.text}\n`).join("\n");
+  const wrapped = cleanCues(captions, opts);
+  const cues = wrapped.map((c, i) => `${i + 1}\n${vttTime(c.t0)} --> ${vttTime(c.t1)}\n${vttEscape(c.text)}\n`).join("\n");
   return `WEBVTT\n\n${cues}`;
 }
 
 /** WebVTT chapters track, one cue per step (the timeline's chips). */
 export function toChaptersVtt(chips: TimelineChip[]): string {
   const cues = chips
-    .map((c, i) => `${i + 1}\n${vttTime(c.t0)} --> ${vttTime(c.t1)}\n${c.title}\n`)
+    .map((c) => ({ ...c, title: cueLine(c.title) }))
+    .filter((c) => c.title.length > 0)
+    .map((c, i) => `${i + 1}\n${vttTime(c.t0)} --> ${vttTime(c.t1)}\n${vttEscape(c.title)}\n`)
     .join("\n");
   return `WEBVTT\n\n${cues}`;
 }

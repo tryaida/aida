@@ -6,13 +6,15 @@
 import { wrapCaption } from '../render/captions.js'
 import { yamlLineLocator } from '../walkthrough/loader.js'
 import type { Walkthrough } from '../walkthrough/types.js'
+import { displayWalkthrough, unresolvedDisplayText } from '../walkthrough/display.js'
 import { cueLineProblems } from './captions.js'
 
 export interface WalkthroughTextProblem {
   /** The QA check this would fail later, e.g. 'captions:line-length'. */
   check: string
-  /** Which video track the text ends up in: `<id>.vtt`/`.srt` captions or `<id>.chapters.vtt`. */
-  track: 'captions' | 'chapters'
+  /** Where the text ends up: `<id>.vtt`/`.srt` captions (and each path clip's), `<id>.chapters.vtt`,
+   * or any printed/spoken output (`text`: an unresolved `{{placeholder}}`). */
+  track: 'captions' | 'chapters' | 'text'
   /** Step id, or 'intro'/'outro' for the title cards. */
   step?: string
   /** YAML path of the field, e.g. "steps.2.title". */
@@ -28,8 +30,24 @@ export interface WalkthroughTextProblem {
  * Every caption and chapter-title problem QA would report for this walkthrough's video. Pass the
  * file's `source` text to get line numbers.
  */
-export function checkWalkthroughText(wt: Walkthrough, source?: string): WalkthroughTextProblem[] {
+export function checkWalkthroughText(written: Walkthrough, source?: string): WalkthroughTextProblem[] {
   const problems: Omit<WalkthroughTextProblem, 'line'>[] = []
+
+  // Output-bound text with no data for a `{{placeholder}}` (M35): it would print raw on the page,
+  // the PDF and the card, and be spoken as written.
+  for (const u of unresolvedDisplayText(written)) {
+    problems.push({
+      check: 'text:unresolved-placeholder',
+      track: 'text',
+      step: u.step,
+      path: u.path,
+      text: u.text,
+      message: `unresolved template placeholder {{${u.placeholder}}}: no value in this walkthrough's data, so it would print as written; add it under \`data:\` or reword`,
+    })
+  }
+
+  // Line lengths are checked on the words as shown: `{{data}}` filled in, the way every output prints them.
+  const wt = displayWalkthrough(written)
 
   // Caption cues, in render's order: intro, each step, outro (render/timeline.ts). Each is wrapped
   // and split exactly as `toVtt`/`toSrt` do, so a cue render wraps fine isn't flagged.
@@ -45,6 +63,14 @@ export function checkWalkthroughText(wt: Walkthrough, source?: string): Walkthro
     else if (s.say !== undefined) captionSources.push({ step: s.id, path: ['steps', i, 'say'], text: s.say })
   })
   cardCaption('outro')
+  // Each path's clip (M35) captions its opening steps the same way.
+  ;(wt.paths ?? []).forEach((p, pi) => {
+    p.steps.forEach((s, i) => {
+      const step = s.id ? `${p.id}/${s.id}` : undefined
+      if (s.caption !== undefined) captionSources.push({ step, path: ['paths', pi, 'steps', i, 'caption'], text: s.caption })
+      else if (s.say !== undefined) captionSources.push({ step, path: ['paths', pi, 'steps', i, 'say'], text: s.say })
+    })
+  })
 
   for (const src of captionSources) {
     const field = src.path[src.path.length - 1]

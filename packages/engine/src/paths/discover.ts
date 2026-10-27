@@ -10,14 +10,19 @@
 //   - a tRPC call (`/api/trpc/payments.create`): `.payments.create.useMutation`/`.mutate`;
 //   - a server action: `.next/server/server-reference-manifest.json` (from `next build`) names the
 //     pages that use it, and, when it records the source file and export, their call sites.
+//
+// How a call site is matched to pages (M35): a page renders its own imports and every layout and
+// template above it (screens.ts: route groups and `@slot` folders aren't URL segments; an
+// intercepting route shows over the page the reader came from), following tsconfig/jsconfig
+// aliases and barrel re-exports by name (source-graph.ts).
 import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import type { CaptureManifest, ImpactRequest } from "../capture/types.js";
 import { readPathCaptures, routePattern, writeKey } from "../capture/path-files.js";
 import type { Walkthrough } from "../walkthrough/index.js";
 import { buildDigest } from "../digest/index.js";
-import type { DigestRoute } from "../digest/types.js";
-import { ImportGraph } from "../impact/import-graph.js";
+import { SourceGraph } from "./source-graph.js";
+import { screensOf, type Screen } from "./screens.js";
 import { listApiRoutes } from "../impact/routes.js";
 import { normalizeUrlPath, routeToRegex } from "../impact/match.js";
 
@@ -52,8 +57,15 @@ export interface PathCandidate {
   /** The write key it makes. */
   write: string;
   /** `file:line` of the call site the page renders (or the page itself, for a server action
-   * found only through the build manifest). */
+   * found only through the build manifest), plus where it renders from when that isn't the page's
+   * own imports: `components/pay.tsx:4 (layout app/(dash)/layout.tsx)`. */
   via: string;
+  /** The layout, template or `_app` that renders the call site, when the page itself doesn't. */
+  layout?: string;
+  /** A parallel route's slot (`@slot`) the page is in. */
+  slot?: string;
+  /** An intercepting route: the URL it opens as over `route`. */
+  intercepts?: string;
 }
 
 export interface CoveredRoute {
@@ -235,13 +247,24 @@ function readServerActions(appRoot: string): Record<string, ServerActionEntry> |
   }
 }
 
-/** The page route a build-manifest worker key (`app/(shop)/payments/page`) names. */
-function routeForWorker(worker: string, routes: DigestRoute[]): DigestRoute | undefined {
-  const key = worker.replace(/^src\//, "");
-  return routes.find((r) => r.file.replace(/\.[tj]sx?$/, "").replace(/^src\//, "") === key);
+function moduleKey(file: string): string {
+  return file.replace(/\.[tj]sx?$/, "").replace(/^src\//, "");
 }
 
-function actionCallSites(index: SourceIndex, graph: ImportGraph, entry: ServerActionEntry): CallSite[] {
+/** The screens a build-manifest worker key (`app/(shop)/payments/page`, or a layout) names. */
+function screensForWorker(worker: string, screens: Screen[]): { screen: Screen; layout?: string }[] {
+  const key = worker.replace(/^src\//, "");
+  const page = screens.filter((s) => moduleKey(s.file) === key);
+  if (page.length > 0) return page.map((screen) => ({ screen }));
+  const out: { screen: Screen; layout?: string }[] = [];
+  for (const screen of screens) {
+    const layout = screen.wrappers.find((w) => moduleKey(w) === key);
+    if (layout) out.push({ screen, layout });
+  }
+  return out;
+}
+
+function actionCallSites(index: SourceIndex, graph: SourceGraph, entry: ServerActionEntry): CallSite[] {
   if (!entry.filename || !entry.exportedName) return [];
   const actionFile = join(index.root, entry.filename);
   const name = new RegExp(`\\b${escapeRe(entry.exportedName)}\\b`);
@@ -291,6 +314,18 @@ function coveredUrls(walkthrough: Walkthrough, manifest: CaptureManifest, captur
   return out;
 }
 
+interface Found {
+  screen: Screen;
+  via: string;
+  layout?: string;
+}
+
+/** `layout`, `template` or `_app`, from a wrapper's file name. */
+function wrapperKind(file: string): string {
+  const base = file.split("/").pop()!.replace(/\.[^.]+$/, "");
+  return base === "_app" ? "_app" : base;
+}
+
 /** See the module comment. Throws when there's no capture to start from or the app root can't be
  * settled (an ambiguous monorepo without `app`). */
 export function discoverPaths(opts: DiscoverPathsOptions): DiscoverPathsResult {
@@ -302,20 +337,20 @@ export function discoverPaths(opts: DiscoverPathsOptions): DiscoverPathsResult {
   const digest = buildDigest(opts.appRepo, { app: opts.app });
   if (digest.apps && digest.apps.length > 0) throw new Error(digest.message ?? "several apps found; pass --app to pick one");
   const root = digest.appRepo;
-  const routes = digest.routes;
+  const screens = screensOf(root, digest.routes);
   const apiRoutes = listApiRoutes(root).map((r) => ({ ...r, regex: routeToRegex(r.path) }));
   const index = indexSources(root);
-  const graph = new ImportGraph(root);
+  const graph = new SourceGraph(root);
   const notes: string[] = [];
   let serverActions: Record<string, ServerActionEntry> | undefined;
   let serverActionsRead = false;
 
   const writes: DiscoveredWrite[] = [];
-  const pagesByWrite = new Map<string, { route: DigestRoute; via: string }[]>();
+  const pagesByWrite = new Map<string, Found[]>();
   for (const { key, request, step } of mainWrites(manifest)) {
     const method = request.method.toUpperCase();
     const write: DiscoveredWrite = { key, method, ...(step ? { step } : {}), callSites: [] };
-    const direct: { route: DigestRoute; via: string }[] = [];
+    const direct: Found[] = [];
     if (request.action) {
       write.action = request.action;
       if (!serverActionsRead) {
@@ -330,8 +365,9 @@ export function discoverPaths(opts: DiscoverPathsOptions): DiscoverPathsResult {
       } else {
         write.callSites = actionCallSites(index, graph, entry);
         for (const worker of Object.keys(entry.workers ?? {})) {
-          const route = routeForWorker(worker, routes);
-          if (route) direct.push({ route, via: route.file });
+          for (const { screen, layout } of screensForWorker(worker, screens)) {
+            direct.push({ screen, via: layout ? `${screen.file} (${wrapperKind(layout)} ${layout})` : screen.file, ...(layout ? { layout } : {}) });
+          }
         }
       }
     } else {
@@ -350,15 +386,31 @@ export function discoverPaths(opts: DiscoverPathsOptions): DiscoverPathsResult {
     }
     writes.push(write);
 
-    // Pages that render a call site: the page file's own import closure reaches it.
+    // Pages that render a call site: through the page's own imports first, then through the
+    // layouts and templates around it (screens.ts).
     const found = [...direct];
+    const throughWrappers: Found[] = [];
+    const wrapperReach = new Map<string, number>();
     for (const site of write.callSites) {
       const siteFile = join(root, site.file);
-      for (const route of routes) {
-        if (graph.closure(join(root, route.file)).has(siteFile)) found.push({ route, via: `${site.file}:${site.line}` });
+      const at = `${site.file}:${site.line}`;
+      for (const screen of screens) {
+        if (graph.closure(join(root, screen.file)).has(siteFile)) {
+          found.push({ screen, via: at });
+          continue;
+        }
+        const layout = screen.wrappers.find((w) => graph.closure(join(root, w)).has(siteFile));
+        if (layout) {
+          throughWrappers.push({ screen, via: `${at} (${wrapperKind(layout)} ${layout})`, layout });
+          wrapperReach.set(`${at}\u0000${layout}`, (wrapperReach.get(`${at}\u0000${layout}`) ?? 0) + 1);
+        }
       }
     }
-    pagesByWrite.set(key, found);
+    for (const [k, n] of wrapperReach) {
+      const [at, layout] = k.split("\u0000");
+      if (n > 3) notes.push(`${at} is rendered by ${wrapperKind(layout)} ${layout}, on all ${n} pages under it: one path from the page readers start on is usually enough`);
+    }
+    pagesByWrite.set(key, [...found, ...throughWrappers]);
   }
 
   const covered = coveredUrls(opts.walkthrough, manifest, opts.captureDir);
@@ -366,13 +418,27 @@ export function discoverPaths(opts: DiscoverPathsOptions): DiscoverPathsResult {
   const coveredRoutes: CoveredRoute[] = [];
   const listed = new Set<string>();
   for (const [key, pages] of pagesByWrite) {
-    for (const { route, via } of pages) {
-      if (listed.has(route.path)) continue;
-      listed.add(route.path);
-      const regex = routeToRegex(route.path);
+    for (const { screen, via, layout } of pages) {
+      // One screen per route, slot and interception: a modal intercepting `/payments/new` over
+      // `/bookings/[id]` is a different screen from the booking page itself.
+      const screenKey = `${screen.route}\u0000${screen.intercepts ?? ""}\u0000${screen.slot ?? ""}`;
+      if (listed.has(screenKey)) continue;
+      listed.add(screenKey);
+      // The browser's URL on an intercepted screen is the URL it intercepts, not the page under it:
+      // covered only when a capture opened that URL.
+      const regex = routeToRegex(screen.intercepts ?? screen.route);
       const hit = covered.find((c) => regex.test(c.url));
-      if (hit) coveredRoutes.push({ route: route.path, by: hit.by });
-      else candidates.push({ route: route.path, file: route.file, write: key, via });
+      if (hit) coveredRoutes.push({ route: screen.route, by: hit.by });
+      else
+        candidates.push({
+          route: screen.route,
+          file: screen.file,
+          write: key,
+          via: screen.intercepts ? `${via} (opens as ${screen.intercepts})` : via,
+          ...(layout ? { layout } : {}),
+          ...(screen.slot ? { slot: screen.slot } : {}),
+          ...(screen.intercepts ? { intercepts: screen.intercepts } : {}),
+        });
     }
   }
   const limit = opts.limit ?? 20;

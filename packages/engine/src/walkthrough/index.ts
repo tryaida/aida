@@ -44,6 +44,13 @@ export {
   type RawStep,
   type RawPath,
 } from "./schema.js";
+export {
+  displayWalkthrough,
+  resolveDisplayText,
+  unresolvedDisplayText,
+  hasPlaceholder,
+  type UnresolvedDisplayText,
+} from "./display.js";
 export { pathWalkthrough, joinIndex, findPath, pathStartPage, type PathRun } from "./paths.js";
 export {
   loadWalkthroughFile,

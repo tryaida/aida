@@ -505,6 +505,16 @@ describe("pagesInputHash (bug 1: must bust the pages cache on a capture validati
     expect(pagesInputHash(wf(), withRequest, v, undefined, false)).toBe(pagesInputHash(wf(), m1, v, undefined, false));
   });
 
+  it("changes when data changes (printed text fills in {{data}}, M35) or a path clip appears", () => {
+    const v = fakeValidation(true);
+    const a = wf({ data: { filter: { status: "Unpaid" } } } as never);
+    const b = wf({ data: { filter: { status: "Overdue" } } } as never);
+    expect(pagesInputHash(a, fakeManifest(), v, undefined, false)).not.toBe(pagesInputHash(b, fakeManifest(), v, undefined, false));
+    const clip = [{ pathId: "p", src: "/videos/x/x.path-p.mp4", continueAt: { step: 1, t: 4 } }];
+    expect(pagesInputHash(a, fakeManifest(), v, undefined, false, undefined, undefined, clip)).not.toBe(pagesInputHash(a, fakeManifest(), v, undefined, false));
+    expect(pagesInputHash(a, fakeManifest(), v, undefined, false, undefined, undefined, [])).toBe(pagesInputHash(a, fakeManifest(), v, undefined, false));
+  });
+
   it("changes when a step gains blur entries (they decide which frame print may show)", () => {
     const v = fakeValidation(true);
     const blurred = wf({ steps: [{ id: "only-step", title: "Do it", blur: [{ id: "b", box: { x: 0, y: 0, w: 10, h: 10 } }] }] });
@@ -590,6 +600,48 @@ describe("report.json names each failed check and its files (M26)", () => {
     const fine = result.walkthroughs.find((x) => x.walkthrough === "fine")!;
     expect(fine.ok).toBe(true);
     expect(fine.stages.pages?.status).toBe("ok");
+  });
+
+  it("runs QA on each path's clip next to the main video (M35)", async () => {
+    const config = fakeConfig();
+    writeFileSync(
+      join(config.walkthroughsDir, "record-payment.yaml"),
+      [
+        "walkthrough: record-payment",
+        'title: "Record a payment"',
+        "start:",
+        "  page: /bookings/12",
+        "steps:",
+        "  - id: only-step",
+        '    title: "Do the thing"',
+        "paths:",
+        "  - id: from-attendee",
+        '    title: "From the attendee\'s page"',
+        '    when: "Use this when the attendee pays."',
+        "    start:",
+        "      page: /attendees/7",
+        "    steps:",
+        "      - id: open-attendee",
+        '        title: "Open the attendee"',
+        "    joins: only-step",
+      ].join("\n"),
+    );
+    const captureDir = join(config.buildDir, "record-payment", "capture");
+    mkdirSync(captureDir, { recursive: true });
+    writeFileSync(join(captureDir, "manifest.json"), JSON.stringify(fakeManifest()));
+    writeFileSync(join(captureDir, "validation.json"), JSON.stringify(fakeValidation(true)));
+    const videoStepDir = join(config.outDir, "videos", "record-payment");
+    mkdirSync(videoStepDir, { recursive: true });
+    const clipFiles = ["record-payment.path-from-attendee.mp4", "record-payment.path-from-attendee.srt", "record-payment.path-from-attendee.vtt"];
+    for (const f of ["record-payment.mp4", ...clipFiles, "path-from-attendee.timeline.json"]) writeFileSync(join(videoStepDir, f), "x");
+    vi.mocked(buildPage).mockResolvedValueOnce(fakePageResult("record-payment", join(config.outDir, "pages")));
+    vi.mocked(runQa).mockResolvedValue({ ok: true, target: "x", checks: [] });
+
+    await runPipeline(config, { configPath: "x", walkthroughIds: [], only: ["pages", "qa"], json: false });
+
+    const targets = vi.mocked(runQa).mock.calls.map((c) => c[0]);
+    for (const f of clipFiles) expect(targets).toContain(join(videoStepDir, f));
+    expect(targets).not.toContain(join(videoStepDir, "path-from-attendee.timeline.json"));
   });
 
   it("runs no text check when no selected stage uses the text (--only capture)", async () => {

@@ -8,7 +8,8 @@
 // `aida inspect --walkthrough <file-or-id> --after <stepId>` (M28) is the one mode that writes:
 // it replays the walkthrough's real actions up to and including that step through the capture
 // runner itself (no frames, no screenshots), then scans the page the step left, so a writer sees
-// the screen after a save instead of guessing. Same safety gate as capture.
+// the screen after a save instead of guessing. Same safety gate as capture. `--after
+// <pathId>/<stepId>` (M35) replays one of the walkthrough's other ways in up to that step.
 //
 // Reuses capture's own building blocks rather than re-implementing them: `config.signIn` (the
 // same adapter capture uses) and a session file under `config.buildDir/.aida-session` keyed
@@ -29,6 +30,7 @@ import { formatFailureLines, isLocalBaseUrl, isSignInPath, runCapture, runLevelF
 import type { FailureReport } from "../capture/index.js";
 import { captureSafetyRefusal } from "../safety/index.js";
 import { loadRunWalkthroughs, personaLookup } from "../states/index.js";
+import { resolveAfterTarget } from "../inspect/after.js";
 import { scanPage, clickToOpen, checkToReveal, selectOption, InspectClickRefusedError } from "../inspect/index.js";
 import type { ClickOutcome, InspectResult } from "../inspect/index.js";
 
@@ -45,7 +47,8 @@ export interface RunInspectOptions {
   select?: [string, string];
   /** `--walkthrough <file-or-id>`: replay this walkthrough, with `after`. */
   walkthrough?: string;
-  /** `--after <stepId>`: replay up to and including this step, then scan. */
+  /** `--after <stepId>`: replay up to and including this step, then scan. `<pathId>/<stepId>`
+   * replays that path instead: its start page, its opening steps, then the main steps from `joins`. */
   after?: string;
   /** Caps every wait while replaying (tests and quick probes). */
   maxWaitMs?: number;
@@ -194,7 +197,9 @@ function clickLines(click: ClickOutcome, name?: string): string[] {
 }
 
 function formatText(result: InspectResult): string {
-  const after = result.after ? `  (after step "${result.after.step}" of ${result.after.walkthrough})` : "";
+  const after = result.after
+    ? `  (after step "${result.after.step}" of ${result.after.path ? `path ${result.after.path} of ` : ""}${result.after.walkthrough})`
+    : "";
   const header = `${result.url}${result.area ? `  (area: ${result.area})` : ""}${after}`;
   const lines: string[] = [];
   if (result.clicks) for (const c of result.clicks) lines.push(...clickLines(c, c.name));
@@ -276,11 +281,14 @@ async function runInspectAfter(config: ResolvedConfig, opts: RunInspectOptions, 
     printError((err as Error).message.split("\n")[0], json);
     return 1;
   }
-  if (!walkthrough.steps.some((s) => s.id === after)) {
-    const ids = walkthrough.steps.map((s) => s.id).filter(Boolean);
-    printError(`no step "${after}" in walkthrough ${walkthrough.walkthrough} (steps: ${ids.join(", ") || "none with an id"})`, json);
+  // A main step id, or `<pathId>/<stepId>`: a path replays from its own start page through its
+  // opening steps (and the main steps from `joins` on), as capture runs it (inspect/after.ts).
+  const target = resolveAfterTarget(walkthrough, after);
+  if ("error" in target) {
+    printError(target.error, json);
     return 1;
   }
+  const replayed = target.walkthrough;
 
   const baseUrl = walkthrough.start?.baseUrl ?? config.app.baseUrl;
   const storageStatePath = join(
@@ -297,14 +305,14 @@ async function runInspectAfter(config: ResolvedConfig, opts: RunInspectOptions, 
   const gate: WriteGate = { passThrough: true };
   try {
     const result = await runCapture({
-      walkthrough,
+      walkthrough: replayed,
       config,
       // Nothing is written there: `record: false` keeps frames, screenshots and failure.json off disk.
       outDir: join(config.buildDir, walkthrough.walkthrough, "inspect"),
       storageStatePath,
       runId: process.env.AIDA_RUN_ID || newRunId(),
       personaFor: personaLookup(loadRunWalkthroughs(config.walkthroughsDir).map((w) => w.walkthrough)),
-      stopAfterStep: after,
+      stopAfterStep: target.stopAfterStep,
       record: false,
       maxWaitMs: opts.maxWaitMs,
       blockServiceWorkers: true,
@@ -320,7 +328,7 @@ async function runInspectAfter(config: ResolvedConfig, opts: RunInspectOptions, 
     });
     failure = result.failure;
     if (!failure && !result.stopped) {
-      printError(`the walkthrough ended without reaching step "${after}"`, json);
+      printError(`the walkthrough ended without reaching step "${target.stopAfterStep}"${target.path ? ` of path ${target.path}` : ""}`, json);
       return 1;
     }
   } catch (err) {
@@ -336,7 +344,10 @@ async function runInspectAfter(config: ResolvedConfig, opts: RunInspectOptions, 
     printError(message, json, { refused: scanError instanceof InspectClickRefusedError });
     return 1;
   }
-  const result: InspectResult = { ...scanned, after: { walkthrough: walkthrough.walkthrough, step: after } };
+  const result: InspectResult = {
+    ...scanned,
+    after: { walkthrough: walkthrough.walkthrough, step: target.stopAfterStep, ...(target.path ? { path: target.path } : {}) },
+  };
   if (json) console.log(JSON.stringify({ ok: true, ...result }));
   else console.log(formatText(result));
   return 0;

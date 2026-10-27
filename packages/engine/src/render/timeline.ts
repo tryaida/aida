@@ -2,7 +2,9 @@
 // off its one app and typed. Step length = max(narration + gap, actions); intro/outro cards; chapters
 // per step; `hold` (on a step, or a `hold` capture event) is respected.
 import type { Walkthrough, Step } from "../walkthrough/types.js";
+import { displayWalkthrough } from "../walkthrough/display.js";
 import type { CaptureManifest } from "../capture/index.js";
+import { routePattern } from "../capture/path-files.js";
 import type {
   Box,
   CameraFrame,
@@ -58,6 +60,14 @@ export interface BuildTimelineOptions {
   brand?: ArtifactBrand;
   /** Push the camera in toward each step's target (default true). */
   zoomToTarget?: boolean;
+  /** Blur boxes the task's other captures resolved (M35: main run + every path), unioned per
+   * screen with this one's (`blurWindowsByScreen`). */
+  sharedBlur?: RouteBlur;
+  /** True when a step in another of the task's captures declares blur: no app screenshot on the
+   * title cards (the cards show raw frames). */
+  blurDeclaredElsewhere?: boolean;
+  /** A path clip (M35): its shorter title card and the facts shown on it. */
+  clip?: { introMinSeconds: number; facts: string[] };
 }
 
 type Style = "minimal" | "friendly" | "bold";
@@ -138,13 +148,93 @@ function resolvedBlur(step: Step, cap: CaptureManifest["steps"][number]): Box[] 
   return boxes;
 }
 
+/** A URL as a screen key: its pathname as a route pattern, record ids as `:id`
+ * (`/bookings/8f3a…/pay` -> `/bookings/:id/pay`; capture/path-files.ts `routePattern`), so the
+ * main run and each path (every run with its own records) name the same screen the same way. */
 function pathnameOf(url: string | undefined): string | undefined {
   if (!url) return undefined;
   try {
-    return new URL(url, "http://aida.invalid").pathname.replace(/\/+$/, "") || "/";
+    const pathname = new URL(url, "http://aida.invalid").pathname.replace(/\/+$/, "") || "/";
+    return routePattern(pathname);
   } catch {
     return undefined;
   }
+}
+
+/**
+ * True when two screen keys may be the same screen template: the same key, or the same depth
+ * under the same first segment (`/bookings/spring-gala` and `/bookings/autumn-fair`: a record named
+ * by a slug `routePattern` can't tell from a word). Used for boxes from another capture of the task,
+ * whose records differ from this one's; over-blurring a sibling screen beats a leak.
+ */
+export function maySameScreen(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (a === UNKNOWN_ROUTE || b === UNKNOWN_ROUTE) return false;
+  const sa = a.split("/").filter(Boolean);
+  const sb = b.split("/").filter(Boolean);
+  return sa.length >= 2 && sa.length === sb.length && sa[0] === sb[0];
+}
+
+/** Which screens (route pathnames) each step's frames show, and which routes scroll: a step that
+ * changes page belongs to both routes; with no route information a step is on `UNKNOWN_ROUTE`. */
+export const UNKNOWN_ROUTE = "\u0000unknown";
+
+function stepRoutes(
+  wf: Pick<Walkthrough, "start" | "steps">,
+  manifest: Pick<CaptureManifest, "steps">,
+): { routesOf: string[][]; scrolled: Set<string> } {
+  const byId = new Map(manifest.steps.map((s) => [s.id, s]));
+  let route = pathnameOf(wf.start?.page) ?? UNKNOWN_ROUTE;
+  const routesOf: string[][] = [];
+  const scrolled = new Set<string>();
+  wf.steps.forEach((step) => {
+    const m = byId.get(step.id);
+    const visited = (m?.impact?.urls ?? []).map(pathnameOf).filter((p): p is string => Boolean(p));
+    const before = route;
+    // A step's first known route also names the screen it started on when nothing earlier did.
+    const routes = new Set<string>(before === UNKNOWN_ROUTE && visited.length > 0 ? [visited[0]] : [before]);
+    for (const p of visited) routes.add(p);
+    route = visited.length > 0 ? visited[visited.length - 1] : before;
+    routesOf.push([...routes]);
+    if (m?.events.some((e) => e.type === "scrollFrames")) for (const r of routes) scrolled.add(r);
+  });
+  return { routesOf, scrolled };
+}
+
+/** Blur boxes per screen from one or more captures (M35: the main run and every path's), before
+ * any banding: `boxes` by route, and the routes on which any capture scrolled. */
+export interface RouteBlur {
+  boxes: Map<string, Box[]>;
+  scrolled: Set<string>;
+}
+
+/** One capture's blur boxes by route: each step's own resolved `blur:` boxes on every route its
+ * frames show. Merge several with `mergeRouteBlur`. */
+export function routeBlurFor(
+  wf: Pick<Walkthrough, "start" | "steps">,
+  manifest: Pick<CaptureManifest, "steps">,
+): RouteBlur {
+  const { routesOf, scrolled } = stepRoutes(wf, manifest);
+  const byId = new Map(manifest.steps.map((s) => [s.id, s]));
+  const boxes = new Map<string, Box[]>();
+  wf.steps.forEach((step, i) => {
+    const cap = byId.get(step.id);
+    const own = cap ? resolvedBlur(step, cap) : [];
+    if (own.length === 0) return;
+    for (const r of routesOf[i] ?? [UNKNOWN_ROUTE]) boxes.set(r, [...(boxes.get(r) ?? []), ...own]);
+  });
+  return { boxes, scrolled };
+}
+
+export function mergeRouteBlur(...all: (RouteBlur | undefined)[]): RouteBlur {
+  const boxes = new Map<string, Box[]>();
+  const scrolled = new Set<string>();
+  for (const rb of all) {
+    if (!rb) continue;
+    for (const [r, b] of rb.boxes) boxes.set(r, [...(boxes.get(r) ?? []), ...b]);
+    for (const r of rb.scrolled) scrolled.add(r);
+  }
+  return { boxes, scrolled };
 }
 
 /**
@@ -159,47 +249,47 @@ function pathnameOf(url: string | undefined): string | undefined {
  * vertically under it). With no route information everything is one screen: over-blurring beats
  * a leak. The first window reaches back to 0 and the last on to the end, so no frame of the stage
  * is uncovered.
+ *
+ * `shared` (M35) adds the boxes other captures of the same task resolved — the main run's and
+ * every path's — so a screen blurred in one video is blurred in all of them. A box from a step
+ * whose screen isn't known (in `shared`) could be on any screen, so it's applied to every step.
  */
 export function blurWindowsByScreen(
   wf: Pick<Walkthrough, "start" | "steps">,
   manifest: Pick<CaptureManifest, "steps"> & { viewport?: { width: number; height: number } },
   stepWindows: { t0: number; t1: number; boxes: Box[] }[],
   duration: number,
+  shared?: RouteBlur,
 ): TimelineBlurWindow[] {
-  if (stepWindows.every((w) => w.boxes.length === 0)) return [];
-  const byId = new Map(manifest.steps.map((s) => [s.id, s]));
-  const UNKNOWN = "\u0000unknown";
-  let route = pathnameOf(wf.start?.page) ?? UNKNOWN;
-  const routesOf: string[][] = [];
-  const scrolled = new Set<string>();
-  wf.steps.forEach((step) => {
-    const m = byId.get(step.id);
-    const visited = (m?.impact?.urls ?? []).map(pathnameOf).filter((p): p is string => Boolean(p));
-    const before = route;
-    // A step's first known route also names the screen it started on when nothing earlier did.
-    const routes = new Set<string>(before === UNKNOWN && visited.length > 0 ? [visited[0]] : [before]);
-    for (const p of visited) routes.add(p);
-    route = visited.length > 0 ? visited[visited.length - 1] : before;
-    routesOf.push([...routes]);
-    if (m?.events.some((e) => e.type === "scrollFrames")) for (const r of routes) scrolled.add(r);
-  });
+  const sharedHasBoxes = shared !== undefined && [...shared.boxes.values()].some((b) => b.length > 0);
+  if (stepWindows.every((w) => w.boxes.length === 0) && !sharedHasBoxes) return [];
+  const { routesOf, scrolled: ownScrolled } = stepRoutes(wf, manifest);
+  const scrolledKeys = [...new Set([...ownScrolled, ...(shared?.scrolled ?? [])])];
+  // A route scrolls when this capture or any other scrolled on it (or on a screen like it).
+  const scrolls = (r: string) => scrolledKeys.some((k) => k === r || maySameScreen(k, r));
   const VH = manifest.viewport?.height ?? 100_000;
+  const bands = (boxes: Box[]) => boxes.map((b) => ({ x: b.x, y: 0, w: b.w, h: VH }));
+  const band = (r: string, boxes: Box[]) => (scrolls(r) ? bands(boxes) : boxes);
   const routeBoxes = new Map<string, Box[]>();
   stepWindows.forEach((w, i) => {
-    for (const r of routesOf[i] ?? [UNKNOWN]) {
-      const boxes = scrolled.has(r) ? w.boxes.map((b) => ({ x: b.x, y: 0, w: b.w, h: VH })) : w.boxes;
-      routeBoxes.set(r, [...(routeBoxes.get(r) ?? []), ...boxes]);
-    }
+    for (const r of routesOf[i] ?? [UNKNOWN_ROUTE]) routeBoxes.set(r, [...(routeBoxes.get(r) ?? []), ...band(r, w.boxes)]);
   });
+  // Other captures' boxes (their own records): matched to a screen by template, `maySameScreen`.
+  const sharedEntries = [...(shared?.boxes ?? [])].filter(([r]) => r !== UNKNOWN_ROUTE);
+  const sharedOn = (route: string): Box[] =>
+    sharedEntries.filter(([r]) => maySameScreen(r, route)).flatMap(([r, boxes]) => (scrolls(route) || scrolls(r) ? bands(boxes) : boxes));
   // A step on a screen whose route isn't known could be showing any of them: it gets every box
   // (so with no route information at all, everything is one screen).
-  const everything = [...routeBoxes.values()].flat();
+  const anywhere = shared?.boxes.get(UNKNOWN_ROUTE) ?? [];
+  const everything = [...[...routeBoxes.values()].flat(), ...sharedEntries.flatMap(([r, b]) => band(r, b)), ...band(UNKNOWN_ROUTE, anywhere)];
   const windows: TimelineBlurWindow[] = [];
   stepWindows.forEach((w, i) => {
     const seen = new Set<string>();
     const boxes: Box[] = [];
-    const routes = routesOf[i] ?? [UNKNOWN];
-    const pool = routes.includes(UNKNOWN) ? everything : routes.flatMap((r) => routeBoxes.get(r) ?? []);
+    const routes = routesOf[i] ?? [UNKNOWN_ROUTE];
+    const pool = routes.includes(UNKNOWN_ROUTE)
+      ? everything
+      : [...routes.flatMap((r) => routeBoxes.get(r) ?? []), ...routes.flatMap(sharedOn), ...routes.flatMap((r) => band(r, anywhere))];
     for (const b of pool) {
       const key = `${b.x},${b.y},${b.w},${b.h}`;
       if (!seen.has(key)) {
@@ -217,11 +307,13 @@ export function blurWindowsByScreen(
 
 /** Builds the deterministic Timeline the player renders, from a Walkthrough + its capture + narration. */
 export function buildTimeline(
-  wf: Walkthrough,
+  written: Walkthrough,
   manifest: CaptureManifest,
   narration: Record<string, NarrationBeat>,
   opts: BuildTimelineOptions,
 ): Timeline {
+  // Captions, chips and cards show `{{data}}` filled in (M35).
+  const wf = displayWalkthrough(written);
   const FPS = opts.fps;
   const frameSrc = opts.frameSrc ?? ((f: string) => `../capture/frames/${f}`);
   const VW = manifest.viewport.width;
@@ -246,7 +338,7 @@ export function buildTimeline(
       titleHtml: escapeHtml(wf.intro?.title ?? wf.title),
       subtitle: wf.intro?.subtitle ?? "",
       ...(reader ? { reader } : {}),
-      facts: [`${stepCount} step${stepCount === 1 ? "" : "s"}`],
+      facts: opts.clip?.facts ?? [`${stepCount} step${stepCount === 1 ? "" : "s"}`],
     },
     outro: { title: wf.outro?.title ?? "", recap: wf.outro?.recap ?? [], ...(site ? { site } : {}) },
     chapters: [...new Set(wf.steps.map((s) => s.chapter ?? ""))],
@@ -279,7 +371,7 @@ export function buildTimeline(
   {
     const introBeat = beat(narration, "intro");
     const d = introBeat.durationMs / 1000;
-    const introEnd = Math.max(5.5, 0.7 + d + 1.0);
+    const introEnd = Math.max(opts.clip?.introMinSeconds ?? 5.5, 0.7 + d + 1.0);
     tl.audio.push({ id: "intro", file: introBeat.audioPath, t: 0.7 });
     tl.captions.push({ t0: 0.7, t1: 0.7 + d + 0.3, text: wf.intro?.caption ?? wf.intro?.say ?? "" });
     tl.stageIn = { t0: introEnd - 0.85, t1: introEnd };
@@ -496,10 +588,10 @@ export function buildTimeline(
   }
   tl.duration = Number(t.toFixed(3));
   scenes.push({ id: "outro", t0: outroStart, t1: tl.duration });
-  blurWindows.push(...blurWindowsByScreen(wf, manifest, stepBlur, tl.duration));
+  blurWindows.push(...blurWindowsByScreen(wf, manifest, stepBlur, tl.duration, opts.sharedBlur));
   // A screenshot of the app beside the title on the cards (minimal, bold) — only when no step
   // declares blur at all (resolved or not): the cards show raw frames, with no mosaic over them.
-  const declaresBlur = wf.steps.some((st) => (st.blur?.length ?? 0) > 0);
+  const declaresBlur = Boolean(opts.blurDeclaredElsewhere) || wf.steps.some((st) => (st.blur?.length ?? 0) > 0);
   const hero = style !== "friendly" && !declaresBlur && blurWindows.length === 0 && tl.frames.length > 0;
   tl.cards = cardReveals(style, tl.stageOut.t0, tl.outro.recap.length, hero);
 

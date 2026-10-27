@@ -58,5 +58,12 @@ export async function runRender(walkthroughFile: string, opts: RunRenderOptions,
       `${result.id}: ${result.durationSec.toFixed(1)}s, ${result.frames} frames, ${(result.wallTimeMs / 1000).toFixed(1)}s wall${scenesPart} -> ${result.mp4}`,
     );
   }
+  // One short clip per path (M35).
+  if (!json) {
+    for (const clip of result.clips ?? []) {
+      if (clip.notRendered) console.log(`  path ${clip.pathId}: no clip: ${clip.notRendered}`);
+      else console.log(`  path ${clip.pathId}: ${clip.skipped ? "unchanged" : `${clip.durationSec?.toFixed(1)}s`} -> ${clip.mp4}`);
+    }
+  }
   return 0;
 }

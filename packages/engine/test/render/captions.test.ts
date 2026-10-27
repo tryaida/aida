@@ -109,3 +109,25 @@ describe("checkCaptions on generated SRT", () => {
     expect(failed).toEqual([]);
   });
 });
+
+describe("cue text is clean and escaped (M35 review)", () => {
+  it("collapses whitespace and blank lines, drops empty cues, defuses -->", () => {
+    const srt = toSrt([
+      { t0: 0, t1: 2, text: "Pick  the\n\nfirst one" },
+      { t0: 2, t1: 3, text: "  \n " },
+      { t0: 3, t1: 5, text: "Then --> Save" },
+    ]);
+    expect(srt).toBe("1\n00:00:00,000 --> 00:00:02,000\nPick the first one\n\n2\n00:00:03,000 --> 00:00:05,000\nThen -> Save\n");
+  });
+
+  it("escapes & < > in VTT captions and chapters, but not in SRT", () => {
+    const cues = [{ t0: 0, t1: 2, text: "Terms & <conditions>" }];
+    expect(toVtt(cues)).toContain("\nTerms &amp; &lt;conditions&gt;\n");
+    expect(toSrt(cues)).toContain("\nTerms & <conditions>\n");
+    const chapters = toChaptersVtt([
+      { t0: 0, t1: 1, num: "1", eyebrow: "", title: "Fees & <tax>\n\nrates" },
+      { t0: 1, t1: 2, num: "2", eyebrow: "", title: "  " },
+    ]);
+    expect(chapters).toBe("WEBVTT\n\n1\n00:00:00.000 --> 00:00:01.000\nFees &amp; &lt;tax&gt; rates\n");
+  });
+});

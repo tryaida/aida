@@ -247,3 +247,29 @@ export function buildPathJoinBlock(pathId: string, joinStep: Step, joinNumber: n
   const text = `step ${joinNumber} (${escapeMdxText(title)})`;
   return { key: `path-${pathId}-join`, content: `Then continue from [${text}](#${stepAnchor(joinNumber, title)}).` };
 }
+
+/** A path's short clip on the site (M35; render/clips.ts `pathClipLinks`). */
+export interface PathClipEmbed {
+  src: string;
+  vtt?: string;
+  srt?: string;
+  continueAt: { step: number; title?: string; t?: number };
+  mainVideoAt?: string;
+}
+
+function clock(seconds: number): string {
+  return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+}
+
+/** The path's narrated clip, and where the main video carries on. Attributes are JS string
+ * expressions, so no title can break the MDX. PDFs drop this block (pdf/input.ts) and print the
+ * path's crops instead. */
+export function buildPathClipBlock(path: { id: string; title: string }, clip: PathClipEmbed): GeneratedBlock {
+  const attr = (name: string, value: string | undefined) => (value ? ` ${name}={${JSON.stringify(value)}}` : "");
+  const lines = [`<VideoEmbed${attr("src", clip.src)}${attr("vtt", clip.vtt)}${attr("srt", clip.srt)}${attr("title", path.title)} />`];
+  if (clip.mainVideoAt) {
+    const at = clip.continueAt.t !== undefined ? ` (${clock(clip.continueAt.t)})` : "";
+    lines.push("", `Watch the rest from [step ${clip.continueAt.step} in the main video${at}](${clip.mainVideoAt}).`);
+  }
+  return { key: `path-${path.id}-clip`, content: lines.join("\n") };
+}

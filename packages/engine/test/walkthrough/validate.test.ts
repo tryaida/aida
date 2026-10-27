@@ -41,7 +41,9 @@ describe("validatePath", () => {
     const [result] = validatePath(file);
     expect(result.ok).toBe(false);
     expect(result.errors?.[0]?.message).toMatch(/unresolved template placeholder/);
-    expect(result.errors?.[0]?.path).toBe("competitor.lastName");
+    // Reported on the field it would print from (M35), not just by name.
+    expect(result.errors?.[0]?.path).toBe("steps.0.say");
+    expect(result.errors?.[0]?.message).toContain("{{competitor.lastName}}");
   });
 
   it("passes when every template resolves", async () => {
