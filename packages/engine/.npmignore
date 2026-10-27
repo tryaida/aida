@@ -1,0 +1,6 @@
+# `files` in package.json lists what ships. This file exists so npm doesn't fall back to
+# .gitignore, which lists the folders scripts/prepack.mjs bundles in (templates/, skills/).
+*.map
+*.tsbuildinfo
+.env
+.env.*

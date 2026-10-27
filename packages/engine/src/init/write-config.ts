@@ -106,9 +106,10 @@ export function writeAidaConfig(opts: WriteConfigOptions): WriteConfigResult {
   }
 
   const appDir = opts.appDir ? relative(opts.destDir, opts.appDir).split(sep).join("/") || "." : undefined;
-  const content = `// Written by \`aida init\`; safe to edit by hand afterwards. See
-// packages/engine/src/config/types.ts for every field, and docs/scope.md
-// ("The help app", "Swappable providers") for what each one does.
+  const content = `// Written by \`aida init\`; safe to edit by hand afterwards. Every field:
+// https://github.com/tryaida/aida/blob/main/packages/engine/src/config/types.ts
+// What each one does: https://github.com/tryaida/aida/blob/main/docs/scope.md
+// ("The help app", "Swappable providers").
 ${routesComment(opts.detected)}import { defineConfig } from "aida-docs";
 
 export default defineConfig({

@@ -3,34 +3,25 @@
 // (docs/scope.md "Working with any agent": "Claude Code and Codex read these natively").
 // Never overwrites a file a person has edited since it was installed — only files that are
 // missing, or byte-identical to what aida would write, are touched.
+//
+// The skills are `skills/` at the root of a clone of the aida repo, and `<package root>/skills`
+// in the published package, copied there at pack time (scripts/prepack.mjs). A clone always uses
+// the live root `skills/` (package-root.ts says why).
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { ENGINE_ROOT, findResource, resourceCandidates } from "../package-root.js";
 
-// Skills live at the monorepo root (`skills/`), a sibling of `packages/`, not inside this
-// package — there's nothing to publish yet (see init/copy-template.ts's TODO(publish) for the
-// same situation with the help-app template). Once aida ships as the package `aida-docs`, add a
-// bundled `<package root>/skills` candidate ahead of the monorepo one below.
-const here = dirname(fileURLToPath(import.meta.url));
-
-function candidateSkillsDirs(): string[] {
-  // `here` is .../packages/engine/src/commands (tsx) or .../packages/engine/dist/commands (built).
-  // Either way, the monorepo root is 4 levels up.
-  return [
-    join(here, "skills"), // bundled next to this file, if ever packaged that way
-    join(here, "..", "skills"), // bundled at package root
-    join(here, "..", "..", "skills"), // packages/engine/skills
-    join(here, "..", "..", "..", "..", "skills"), // monorepo root (packages/engine/{src,dist} -> ../../../../skills)
-  ];
+/** Where the skills may be, in lookup order. */
+export function candidateSkillsDirs(engineRoot: string = ENGINE_ROOT): string[] {
+  return resourceCandidates("skills", "skills", engineRoot);
 }
 
-/** Locates the aida skills directory, working whether this module is running from `src` or `dist`. */
-export function findSkillsDir(): string {
-  for (const dir of candidateSkillsDirs()) {
-    if (existsSync(dir) && existsSync(join(dir, "agents"))) return dir;
-  }
-  const checked = candidateSkillsDirs().join(", ");
-  throw new Error(`could not locate the aida skills directory (checked: ${checked})`);
+/** Locates the aida skills directory (one with an `agents/` folder), from a clone or an install. */
+export function findSkillsDir(engineRoot: string = ENGINE_ROOT): string {
+  const candidates = candidateSkillsDirs(engineRoot);
+  const found = findResource(candidates, (dir) => existsSync(join(dir, "agents")));
+  if (existsSync(join(found, "agents"))) return found;
+  throw new Error(`could not locate the aida skills directory (checked: ${candidates.join(", ")})`);
 }
 
 export interface InstallSkillsResult {

@@ -6,8 +6,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { ENGINE_DIR } from "./install.js";
 
-/** Templates live in src/ (tsc doesn't copy .mjs into dist); the engine runs from the monorepo
- * either way, same as the help-app template (copy-template.ts). */
+/** Templates live in src/ (tsc doesn't copy .mjs into dist); the published package ships
+ * `src/init/templates` too (package.json `files`), so the path is the same in a clone and an install. */
 export const SIGN_IN_TEMPLATE_DIR = join(ENGINE_DIR, "src", "init", "templates");
 
 /** The config's `signIn` value for the written adapter, relative to aida.config.ts. */

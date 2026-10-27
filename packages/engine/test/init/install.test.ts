@@ -78,11 +78,14 @@ describe("packEngine", () => {
     expect(result.spec).toMatch(/^file:vendor\/aida-docs-0\.0\.2-[0-9a-f]{10}\.tgz$/);
     expect(result.file).toBe(join(help, "vendor", name));
     expect(readdirSync(join(help, "vendor")).sort()).toEqual(["aida-0.0.1.tgz", "aida-docs-0.0.1-0123456789.tgz", name, "other.tgz"]);
-    // npm packs into a temporary folder, never straight into vendor/.
+    // npm packs into a temporary folder under the help app's node_modules/.cache (not the system
+    // temp dir), never straight into vendor/, and the folder is gone afterwards.
     const dest = f.calls[0].args[f.calls[0].args.indexOf("--pack-destination") + 1];
     expect(f.calls[0]).toMatchObject({ command: "npm", args: ["pack", "--json", "--pack-destination", dest] });
-    expect(dest.startsWith(help)).toBe(false);
+    expect(dest.startsWith(join(help, "node_modules", ".cache", "aida-pack-"))).toBe(true);
     expect(existsSync(dest)).toBe(false);
+    // node_modules/.cache was only made for the pack, so it's removed again.
+    expect(existsSync(join(help, "node_modules"))).toBe(false);
 
     expect(pruneOldTarballs(help, result.spec).sort()).toEqual(["aida-0.0.1.tgz", "aida-docs-0.0.1-0123456789.tgz"]);
     expect(readdirSync(join(help, "vendor")).sort()).toEqual([name, "other.tgz"]);
@@ -102,6 +105,14 @@ describe("packEngine", () => {
     for (const key of ["bin", "scripts", "devDependencies", "peerDependencies", "peerDependenciesMeta"]) {
       expect(f.packed).not.toHaveProperty(key);
     }
+  });
+
+  it("keeps a help app's existing node_modules, removing only its own staging folder", () => {
+    const help = tmpDir();
+    mkdirSync(join(help, "node_modules", "next"), { recursive: true });
+    const f = fakeRunner(tmpDir());
+    packEngine(help, f.run, f.engineDir);
+    expect(readdirSync(join(help, "node_modules"))).toEqual(["next"]);
   });
 
   it("leaves vendor/ untouched when npm pack fails or writes a partial tarball", () => {

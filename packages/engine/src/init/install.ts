@@ -10,7 +10,7 @@
 // `next build`). The help app only loads the search, chat, agent connector, Studio edit and
 // walkthrough modules, so the packed package.json keeps only the npm dependencies those reach
 // (HELP_APP_RUNTIME_DEPENDENCIES) and has no `bin`: capture, voice, render and PDFs run from the
-// aida checkout (later the published package), which loads the help app's config from here. That
+// aida checkout or the installed `aida-docs` package, which loads the help app's config from here. That
 // leaves out Playwright, Kokoro/onnxruntime, ffmpeg and pdf-lib (~830 MB). The same `dist/` ships,
 // so any module the help app imports is there; test/package/runtime-imports.test.ts fails when one
 // of them starts importing a dependency outside the list.
@@ -25,8 +25,7 @@
 // install.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AIDA_PACKAGE, LEGACY_AIDA_PACKAGE } from "../package-name.js";
@@ -60,7 +59,9 @@ export const defaultCommandRunner: CommandRunner = (command, args, opts) => {
 
 const here = dirname(fileURLToPath(import.meta.url));
 /** The engine package root: this file is `src/init/install.ts` under tsx, `dist/init/install.js`
- * when built. */
+ * when built (in a clone, or installed as `node_modules/aida-docs`). Packing only reads from it,
+ * so an installed, read-only package works: the engine there is already built and its `dist`
+ * is staged into the help app's own folder (see `packEngine`). */
 export const ENGINE_DIR = join(here, "..", "..");
 
 /** True when this process runs the engine from its TypeScript sources (tsx), so `dist` may be
@@ -179,13 +180,21 @@ export function hashStagedPackage(dir: string): string {
 }
 
 /** `npm pack`s the engine's help-app runtime build (see `stageRuntimePackage`) into
- * `<helpDir>/vendor/<name>-<version>-<hash>.tgz` (e.g. `aida-docs-0.0.1-<hash>.tgz`). npm packs
+ * `<helpDir>/vendor/<name>-<version>-<hash>.tgz` (e.g. `aida-docs-0.1.0-<hash>.tgz`). npm packs
  * into a temporary folder; the tarball is checked there and only then copied into vendor/ (via a
  * temporary name and a rename), so a failed pack never leaves a partial tarball behind. Older tarballs stay until
- * `pruneOldTarballs`, which runs after package.json points at the new one. */
+ * `pruneOldTarballs`, which runs after package.json points at the new one.
+ *
+ * The temporary folder is `<helpDir>/node_modules/.cache/aida-pack-*`, not the system temp dir:
+ * it sits on the same disk as vendor/ (the system temp dir can be small or quota-limited), and if
+ * a crash leaves it behind, git, TypeScript and Next.js all ignore `node_modules`. Nothing is
+ * written to the engine package, which may be a read-only install. */
 export function packEngine(helpDir: string, runner: CommandRunner = defaultCommandRunner, engineDir: string = ENGINE_DIR): PackResult {
   const vendor = join(helpDir, "vendor");
-  const work = mkdtempSync(join(tmpdir(), "aida-pack-"));
+  const nodeModules = join(helpDir, "node_modules");
+  const cache = join(nodeModules, ".cache");
+  mkdirSync(cache, { recursive: true });
+  const work = mkdtempSync(join(cache, "aida-pack-"));
   try {
     const stage = join(work, "stage");
     const out = join(work, "out");
@@ -226,6 +235,15 @@ export function packEngine(helpDir: string, runner: CommandRunner = defaultComma
     return { file, spec: `file:vendor/${filename}` };
   } finally {
     rmSync(work, { recursive: true, force: true });
+    // Leave no empty node_modules/.cache behind (one created just for this would make `aida
+    // doctor` think the help app's packages were installed).
+    for (const dir of [cache, nodeModules]) {
+      try {
+        rmdirSync(dir);
+      } catch {
+        break; // not empty (or already gone): keep it and its parent
+      }
+    }
   }
 }
 

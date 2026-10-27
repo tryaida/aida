@@ -1,0 +1,5 @@
+# Bundled into the package by scripts/prepack.mjs and removed by scripts/postpack.mjs; the
+# sources are packages/help-app, the repo's skills/ and LICENSE.
+/templates/
+/skills/
+/LICENSE
