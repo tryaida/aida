@@ -30,6 +30,7 @@ needs: [session-full]          # optional: data states that must hold before ste
 leaves: [alex-on-waitlist]     # optional: states true once this walkthrough succeeds
 clears: [alex-in-morning]      # optional: states no longer true after it
 setup: { as: admin, steps: [ ... ] }   # optional: unrecorded steps run before capture
+paths: [ ... ]                 # optional: other ways to start this task (see below)
 ```
 
 ### Data this walkthrough needs and changes
@@ -56,6 +57,49 @@ will use, and `capture`/`build` (`--with-deps`) and `ci` follow it.
 - **Capturing a walkthrough that saves data twice** ("Add a session" types "Morning session"):
   keep the typed name fixed. Give it a `needs` state whose setup hook deletes the earlier
   "Morning session" if it's there, or rely on the database reset before it.
+
+### Several ways to do one task: `paths:`
+
+One walkthrough per task. When the task can start from more than one screen (a payment from the
+booking, from the attendee, or from Payments), the main `steps` are one way and `paths` lists the
+others. Each path has its own start page and opening steps, then joins the main steps at the step
+named by `joins:` and shares the rest.
+
+```yaml
+paths:
+  - id: from-attendee                    # kebab-case, unique in the walkthrough
+    title: From the attendee's page       # reader-facing
+    when: Use this when the attendee is paying for several bookings at once.   # one plain sentence
+    start: { page: /attendees/7 }         # signed_in_as only if it repeats the walkthrough's; no persona
+    steps:                                # same step schema as `steps`; ids differ from main step ids
+      - id: open-attendee-payment
+        title: Open the payment form
+        do: click "Pay" button
+        page_text: On the attendee's page, select **Pay**.
+    joins: fill-amount                    # a main step id
+    note: Paying here spreads the amount across the attendee's bookings.   # only when capture flags it
+```
+
+- A path can't have `needs`/`leaves`/`clears`/`setup`/`validate`: it shares the walkthrough's data.
+  Capture runs reset → each path → reset → main, so every run starts from the same data, each path
+  with its own `{{run.id}}`, and the main run goes last (walkthroughs that need its data see the
+  main run's). Paths need that reset: with no database adapter `reset()`, `--no-reset`, or a
+  walkthrough inside a dependency chain (where a reset would erase an earlier walkthrough's data),
+  each path is marked not captured with the reason, and the page won't publish until it is.
+- A path's steps are screenshotted on their own: give them their own `mask:` and `blur:` for any
+  personal data they show (the main steps' blur doesn't cover them). Blur and callout edits take
+  `<pathId>/<stepId>`: `aida edit addBlur <file> from-attendee/open-attendee-payment '<json>'`.
+- Capture compares the saves each path makes with the main path's. A different one prints
+  `path from-attendee saves differently: POST /api/payments/allocate vs POST /api/payments` and is
+  recorded as `pathDiffs` in `validation.json`; it doesn't fail the capture. Find out what the
+  difference means, then write `note:`. The page shows the note only for a flagged path.
+- `aida paths <id> --config <cfg> --json` lists other screens whose code makes the same save as the
+  captured main path, not yet covered by `paths`. Candidates only: ask before adding one.
+- Edit with `aida edit addPath <file> '<json>'`, `removePath`, `setPathField <file> <pathId>
+  <title|when|note|joins|page> <value>`, `setPathStepField` and `setPathStepActions`. Lock keys:
+  `path:<walkthroughId>:<pathId>` (whole path), `...:<field>`, `...:step:<stepId>`.
+- Pages show the main path in full, then "Other ways to do this": each path's title, `when`, its
+  opening steps with screenshots and "Then continue from step N". The video follows the main path.
 
 ### Who it signs in as
 

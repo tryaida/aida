@@ -128,6 +128,7 @@ describe("writeHelpAppTheme", () => {
       logoDark: "/brand/logo-dark.png",
       icon: "/brand/icon.png",
       fontUrl: ACME.fontUrl,
+      style: "bold", // 10px corners, no shadow reading: the default preset (M34)
     });
     expect(JSON.parse(readFileSync(join(helpApp, "public", "brand", "theme.json"), "utf8"))).toEqual({
       name: "Acme Events",
@@ -191,7 +192,7 @@ describe("writeHelpAppTheme", () => {
   it("writes defaults for a config with no brand", () => {
     const configDir = tmpDir();
     writeHelpAppTheme({ configDir }, configDir);
-    expect(JSON.parse(readFileSync(join(configDir, "lib", "brand.json"), "utf8"))).toEqual({ name: "Help", logo: null, logoDark: null, icon: null, fontUrl: null });
+    expect(JSON.parse(readFileSync(join(configDir, "lib", "brand.json"), "utf8"))).toEqual({ name: "Help", logo: null, logoDark: null, icon: null, fontUrl: null, style: "bold" });
     expect(JSON.parse(readFileSync(join(configDir, "public", "brand", "theme.json"), "utf8")).fontFamily).toBeNull();
   });
 

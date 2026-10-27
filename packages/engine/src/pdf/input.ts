@@ -34,6 +34,11 @@ export function pdfInputFromPage(wf: Walkthrough, page: BuildPageResult): PdfPag
   const section = (wf as { section?: unknown }).section;
   const figures = page.printFigures?.filter((f) => existsSync(f.full) && (!f.crop || existsSync(f.crop)));
   const figureByStep = new Map((figures ?? []).map((f) => [f.step, f] as const));
+  const pathFigures = Object.fromEntries(
+    Object.entries(page.pathFigures ?? {})
+      .map(([id, figs]) => [id, figs.filter((f) => existsSync(f.full) && (!f.crop || existsSync(f.crop)))] as const)
+      .filter(([, figs]) => figs.length > 0),
+  );
   return {
     id: wf.walkthrough,
     title: wf.title,
@@ -51,6 +56,7 @@ export function pdfInputFromPage(wf: Walkthrough, page: BuildPageResult): PdfPag
       return figure ? { ...s, figure } : s;
     }),
     ...(figures && figures.length > 0 ? { figures } : {}),
+    ...(Object.keys(pathFigures).length > 0 ? { pathFigures } : {}),
     sitePath: libraryPlacement(typeof section === "string" ? section : undefined, wf.walkthrough).url,
   };
 }

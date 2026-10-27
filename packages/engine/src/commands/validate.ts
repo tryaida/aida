@@ -59,6 +59,7 @@ function unresolvedTemplatesIn(wt: Walkthrough): string[] {
   const data = wt.data ?? {};
   const unresolved = new Set<string>();
   for (const p of findUnresolvedTemplates(wt.steps, data)) unresolved.add(p);
+  for (const path of wt.paths ?? []) for (const p of findUnresolvedTemplates(path.steps, data)) unresolved.add(p);
   if (wt.intro) for (const p of findUnresolvedTemplates(wt.intro, data)) unresolved.add(p);
   if (wt.outro) for (const p of findUnresolvedTemplates(wt.outro, data)) unresolved.add(p);
   if (wt.validate) for (const p of findUnresolvedTemplates(wt.validate, data)) unresolved.add(p);

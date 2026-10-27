@@ -21,6 +21,9 @@ export interface PdfTheme {
   logoDark?: string;
   /** Local `@font-face` rules (fonts.ts) that replace `fontUrl` when its files are cached. */
   fontFaceCss?: string;
+  /** House style preset: cover layout, screenshot framing, ring shape. */
+  style: "minimal" | "friendly" | "bold";
+  tagline?: string;
 }
 
 /** `PdfBrand` (any vintage) -> a fully-populated theme. */
@@ -46,6 +49,8 @@ export function pdfTheme(brand?: PdfBrand): PdfTheme {
     logo: brand?.logoSrc ?? imageDataUrl(brand?.logoPath),
     logoDark: brand?.logoDarkSrc ?? imageDataUrl(brand?.logoDarkPath),
     fontFaceCss: brand?.fontFaceCss,
+    style: brand?.style === "minimal" || brand?.style === "friendly" ? brand.style : "bold",
+    ...(brand?.tagline ? { tagline: brand.tagline } : {}),
   };
 }
 
@@ -117,6 +122,33 @@ const BASE_STYLE = (t: PdfTheme): string => `
   ${FIGURE_STYLE}
 `;
 
+/** House style presets in print (M34): screenshot framing and ring shape. `bold` frames full
+ * screens in a browser bar and marks targets with corner brackets; `minimal` is a thin plain
+ * frame and ring; `friendly` a soft rounded frame and a pill-shaped ring. */
+const STYLE_VARIANTS = `
+  .style-minimal .shot-frame { border-radius: 3pt; box-shadow: none; }
+  .style-minimal .ring { border-width: 1.25pt; border-radius: 3pt; box-shadow: 0 0 0 1pt rgba(255, 255, 255, 0.92); }
+  .style-minimal .pin { width: 13pt; height: 13pt; font-size: 7pt; border-width: 1pt; }
+  .style-friendly .shot-frame { border: 0; border-radius: 9pt; box-shadow: 0 0 0 0.6pt rgba(15, 23, 42, 0.08), 0 2pt 9pt rgba(15, 23, 42, 0.12); }
+  .style-friendly .ring { border-width: 2pt; border-radius: 999pt;
+    box-shadow: 0 0 0 1.25pt rgba(255, 255, 255, 0.92), 0 0 0 4.5pt color-mix(in srgb, var(--primary) 20%, transparent); }
+  .style-friendly .pin { width: 17pt; height: 17pt; font-size: 8.5pt; }
+  .style-bold .ring { border: 0; border-radius: 0; box-shadow: none;
+    --c: var(--primary); --l: 9pt; --w: 2pt;
+    background:
+      linear-gradient(var(--c), var(--c)) left top / var(--l) var(--w) no-repeat, linear-gradient(var(--c), var(--c)) left top / var(--w) var(--l) no-repeat,
+      linear-gradient(var(--c), var(--c)) right top / var(--l) var(--w) no-repeat, linear-gradient(var(--c), var(--c)) right top / var(--w) var(--l) no-repeat,
+      linear-gradient(var(--c), var(--c)) left bottom / var(--l) var(--w) no-repeat, linear-gradient(var(--c), var(--c)) left bottom / var(--w) var(--l) no-repeat,
+      linear-gradient(var(--c), var(--c)) right bottom / var(--l) var(--w) no-repeat, linear-gradient(var(--c), var(--c)) right bottom / var(--w) var(--l) no-repeat; }
+  .style-bold .pin { border-radius: 4pt; }
+  .style-bold .shot-full .shot-bar { display: flex; align-items: center; gap: 1.6pt; height: 11pt; padding: 0 5pt;
+    background: linear-gradient(#f3f4f6, #e7e9ed); border-bottom: 0.6pt solid #d5d8de; }
+  .style-bold .shot-full .shot-bar i { width: 4pt; height: 4pt; border-radius: 50%; background: #d1d5db; }
+  .style-bold .shot-full .shot-bar i:nth-child(1) { background: #f87171; }
+  .style-bold .shot-full .shot-bar i:nth-child(2) { background: #fbbf24; }
+  .style-bold .shot-full .shot-bar i:nth-child(3) { background: #34d399; }
+`;
+
 /** A step screenshot with its ring(s) and number drawn as vector overlays (decision 36: no
  * whole-frame dimming in print — the target gets an outline and a badge instead). */
 const FIGURE_STYLE = `
@@ -133,6 +165,9 @@ const FIGURE_STYLE = `
   .legend { margin: 4pt 0 0; padding: 0; list-style: none; font-size: 8.5pt; color: var(--muted-fg); }
   .legend li { margin: 0 0 1pt; }
   .legend b { color: #dc2626; }
+  .shot-img { position: relative; }
+  .shot-bar { display: none; }
+  ${STYLE_VARIANTS}
 `;
 
 /** Content-Security-Policy for every print document: this HTML is loaded by Chromium straight
@@ -149,12 +184,13 @@ function cspMeta(allowRemote?: boolean, fontUrl?: string): string {
 }
 
 function htmlDoc(title: string, bodyHtml: string, theme: PdfTheme, opts: { allowRemote?: boolean; extraStyle?: string } = {}): string {
+  const bodyClass = `style-${theme.style}`;
   // Cached local font files win over the remote stylesheet: static files embed as real fonts.
   const remoteFont = theme.fontFaceCss ? undefined : theme.fontUrl;
   const fontLink = remoteFont ? `<link rel="stylesheet" href="${escapeHtml(remoteFont)}">` : "";
   const faces = theme.fontFaceCss ? `<style>${theme.fontFaceCss}</style>` : "";
   return `<!doctype html><html><head><meta charset="utf-8">${cspMeta(opts.allowRemote, remoteFont)}<title>${escapeHtml(title)}</title>
-    ${fontLink}${faces}<style>${BASE_STYLE(theme)}${opts.extraStyle ?? ""}</style></head><body>${bodyHtml}</body></html>`;
+    ${fontLink}${faces}<style>${BASE_STYLE(theme)}${opts.extraStyle ?? ""}</style></head><body class="${bodyClass}">${bodyHtml}</body></html>`;
 }
 
 export interface PageHtmlOptions {
@@ -245,7 +281,7 @@ function figureHtml(fig: PrintFigure, stepNumber: number, layout: "split" | "sta
   const legend = labelled.length > 0
     ? `<ul class="legend">${labelled.map((c) => `<li><b>${c.n}.</b> ${escapeHtml(c.label!)}</li>`).join("")}</ul>`
     : "";
-  return `<figure class="shot shot-${view.mode}" style="width:${width}"><div class="shot-frame"><img src="${fileUrl(view.src)}" alt="" />${overlayHtml(view, stepNumber)}</div>${legend}</figure>`;
+  return `<figure class="shot shot-${view.mode}" style="width:${width}"><div class="shot-frame"><div class="shot-bar"><i></i><i></i><i></i></div><div class="shot-img"><img src="${fileUrl(view.src)}" alt="" />${overlayHtml(view, stepNumber)}</div></div>${legend}</figure>`;
 }
 
 /** Steps whose text is short enough to sit beside a focus crop rather than above it. */
@@ -271,8 +307,10 @@ export function buildPageHtml(input: PdfPageInput, brand?: PdfBrand, allowRemote
   if (isSinglePart(body)) body = body.replace(/<h3>Part \d+:[\s\S]*?<\/h3>\s*/, "");
   const figures = new Map((input.figures ?? []).map((f) => [f.step, f] as const));
   const url = guideUrl(opts.siteUrl, input.sitePath);
-  const html = [guideHeader(input, body, theme, url), boxSections(wrapSteps(stripHeader(body), figures))].join("\n");
-  return htmlDoc(input.title, `<main class="guide">${html}</main>`, theme, { allowRemote: allowRemoteImages, extraStyle: GUIDE_STYLE });
+  const { main, otherWays, tail } = splitOtherWays(stripHeader(body));
+  const steps = wrapSteps(main, figures) + (otherWays ? otherWaysHtml(otherWays, input.pathFigures ?? {}) : "") + tail;
+  const html = [guideHeader(input, body, theme, url), boxSections(steps)].join("\n");
+  return htmlDoc(input.title, `<main class="guide">${html}</main>`, theme, { allowRemote: allowRemoteImages, extraStyle: GUIDE_STYLE + OTHER_WAYS_STYLE });
 }
 
 const GUIDE_STYLE = `
@@ -378,6 +416,77 @@ function wrapSteps(bodyHtml: string, figures: Map<number, PrintFigure>): string 
     .join("\n");
 }
 
+// ---- Other ways to do this (decision 34; build-plan.md M33) ------------------------------------
+// The page's "Other ways to do this" section: per walkthrough path, its title, when to use it, the
+// writer's note, its opening steps laid out like the main steps (with the path's own print
+// figures) and the "Then continue from step N" line. Kept apart from the main step wrapping.
+
+const OTHER_WAYS_STYLE = `
+  h2.other-ways-h { margin-top: 16pt; }
+  .path { margin: 0 0 14pt; padding: 0 0 0 12pt; border-left: 3pt solid var(--primary-line); }
+  .path > h3 { margin: 8pt 0 3pt; }
+  .path-when { margin: 0 0 8pt; color: var(--muted-fg); }
+  .path blockquote { margin: 0 0 8pt; }
+  .path-join { break-before: avoid; page-break-before: avoid; margin: -4pt 0 0 26pt; font-weight: 600; }
+  .path-join a { color: inherit; text-decoration: none; }
+`;
+
+/** Splits the guide body into the main part, the "Other ways to do this" section (from its `<h2>`
+ * up to the closing rule before the "verified" line) and what follows. */
+export function splitOtherWays(bodyHtml: string): { main: string; otherWays?: string; tail: string } {
+  const start = bodyHtml.indexOf("<h2>Other ways to do this</h2>");
+  if (start === -1) return { main: bodyHtml, tail: "" };
+  const rest = bodyHtml.slice(start);
+  const end = rest.search(/<hr \/>|<h2>(?!Other ways)/);
+  return {
+    main: bodyHtml.slice(0, start),
+    otherWays: end === -1 ? rest : rest.slice(0, end),
+    tail: end === -1 ? "" : rest.slice(end),
+  };
+}
+
+const PATH_STEP_IMG = /<img alt="[^"]*" src="file:\/\/[^"]*?\/paths\/([a-z0-9-]+)-step-(\d+)\.png" \/>/;
+
+/** The "Other ways to do this" section as print HTML; see the section comment above. */
+export function otherWaysHtml(sectionHtml: string, pathFigures: Record<string, PrintFigure[]>): string {
+  const [heading, ...paths] = sectionHtml.split(/(?=<h3>)/);
+  const out = [heading.replace("<h2>Other ways to do this</h2>", '<h2 class="other-ways-h">Other ways to do this</h2>')];
+  for (const chunk of paths) {
+    const [intro, ...steps] = chunk.split(/(?=<h4>)/);
+    let join = "";
+    const last = steps.length > 0 ? steps.length - 1 : -1;
+    const joinMatch = /<p>(Then continue from [\s\S]*?)<\/p>\s*$/;
+    const fromLast = last >= 0 ? joinMatch.exec(steps[last]) : joinMatch.exec(intro);
+    if (fromLast) {
+      join = `<p class="path-join">${fromLast[1]}</p>`;
+      if (last >= 0) steps[last] = steps[last].replace(joinMatch, "");
+    }
+    const head = (last >= 0 ? intro : intro.replace(joinMatch, "")).replace(/^(<h3>[\s\S]*?<\/h3>)\s*<p>([\s\S]*?)<\/p>/, '$1<p class="path-when">$2</p>');
+    const stepHtml = steps.map((part) => pathStepHtml(part, pathFigures)).join("\n");
+    out.push(`<section class="path">${head.trim()}${stepHtml}${join}</section>`);
+  }
+  return out.join("\n");
+}
+
+/** One path step: badge, text and the path's own print figure (or its site screenshot). */
+function pathStepHtml(part: string, pathFigures: Record<string, PrintFigure[]>): string {
+  const badged = part.replace(
+    /^<h4>(\d+)\.\s*([\s\S]*?)<\/h4>/,
+    (_m, n: string, title: string) => `<h4 class="step-h"><span class="step-num">${n}</span><span>${title}</span></h4>`,
+  );
+  const img = PATH_STEP_IMG.exec(badged);
+  const fig = img ? pathFigures[img[1]]?.find((f) => f.step === Number(img[2])) : undefined;
+  const text = img ? badged.replace(img[0], "") : badged;
+  const chars = text.replace(/<h4[\s\S]*?<\/h4>/, "").replace(/<[^>]+>/g, "").trim().length;
+  const layout = stepLayout(fig, chars);
+  const shot = fig
+    ? figureHtml(fig, Number(img![2]), layout)
+    : img
+      ? `<figure class="shot" style="width:min(100%, ${Math.round(FULL_SHOT_MAX_MM * 16 / 9)}mm)"><div class="shot-frame">${img[0]}</div></figure>`
+      : "";
+  return `<div class="step ${layout}"><div class="step-text">${text.trim()}</div>${shot}</div>`;
+}
+
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 /** `2026-10-26` -> `26 October 2026`; anything else is returned as-is. */
@@ -459,6 +568,58 @@ export function buildCoverHtml(title: string, date: string, brand?: PdfBrand, op
     </div>
     ${hero}
   </div>`;
+  if (theme.style !== "bold") return lightCoverHtml(title, date, theme, name, opts, lede, facts);
+  return htmlDoc(title, body, theme, { extraStyle: style });
+}
+
+/** A logo for a light background: the light logo bare, else the dark-background one on a tile. */
+function logoOnLight(theme: PdfTheme, cls: string): string {
+  if (theme.logo) return `<img class="${cls}" src="${theme.logo}" alt="" />`;
+  if (theme.logoDark) return `<span class="${cls}-tile"><img class="${cls}" src="${theme.logoDark}" alt="" /></span>`;
+  return "";
+}
+
+/** The `minimal` and `friendly` covers: light pages. Minimal is a quiet, left-aligned title with
+ * a short brand rule and a plainly framed screenshot; friendly puts the title in a rounded white
+ * panel on a tinted page, the screenshot in a soft rounded frame below. */
+function lightCoverHtml(title: string, date: string, theme: PdfTheme, name: string | undefined, opts: CoverOptions, lede: string, facts: string): string {
+  const friendly = theme.style === "friendly";
+  const style = `
+    @page { margin: 0; }
+    html, body { height: 100%; }
+    .cover { position: relative; height: 100vh; overflow: hidden; display: flex; flex-direction: column; padding: 24mm 22mm 16mm;
+      background: ${friendly
+        ? "radial-gradient(120mm 100mm at 100% 100%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%), radial-gradient(130mm 100mm at 0% 0%, color-mix(in srgb, var(--primary) 16%, transparent), transparent 70%), color-mix(in srgb, var(--primary) 7%, white)"
+        : "var(--bg)"}; }
+    .brand { display: flex; align-items: center; gap: 4mm; font-family: var(--heading-font); font-size: 16pt; font-weight: 800; letter-spacing: -0.01em; color: var(--fg); }
+    .brand .logo { height: 12mm; width: auto; max-width: 60mm; object-fit: contain; display: block; margin: 0; border: 0; border-radius: 0; }
+    .brand .logo-tile { display: inline-flex; padding: 2mm 2.5mm; background: var(--primary); border-radius: 3mm; }
+    .titles { margin-top: ${friendly ? "0" : "38mm"}; max-width: 150mm; }
+    .rule { width: 14mm; height: 1.2mm; border-radius: 1mm; background: var(--primary); margin-bottom: 6mm; }
+    .eyebrow { font-size: 9.5pt; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--primary); }
+    .cover h1 { color: var(--fg); font-size: ${friendly ? "38pt" : "42pt"}; line-height: 1.05; margin: 3mm 0 0; letter-spacing: -0.03em; font-weight: ${friendly ? 800 : 700}; }
+    .cover h1::after { display: none; }
+    .lede { font-size: 12.5pt; color: var(--muted-fg); max-width: 120mm; margin: 6mm 0 8mm; }
+    .facts { display: flex; gap: 12mm; }
+    .fact span { display: block; font-size: 7.5pt; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted-fg); }
+    .fact strong { display: block; margin-top: 1.2mm; font-size: 12pt; color: var(--fg); }
+    .tagline { margin: 0 0 6mm; font-size: 11pt; font-style: italic; color: var(--muted-fg); }
+    .panel { margin-top: 26mm; background: #fff; border-radius: 9mm; padding: 14mm 14mm 12mm; box-shadow: 0 6mm 18mm -8mm color-mix(in srgb, var(--primary) 45%, transparent), 0 0 0 0.3mm rgba(15, 23, 42, 0.05); }
+    .panel .eyebrow { display: inline-block; padding: 1.6mm 4mm; border-radius: 10mm; background: color-mix(in srgb, var(--primary) 11%, white); margin-top: 8mm; }
+    .hero { display: block; margin: auto 0 0; width: ${friendly ? "100%" : "132mm"}; align-self: ${friendly ? "center" : "flex-end"};
+      ${friendly ? "border-radius: 5mm; box-shadow: 0 5mm 14mm -6mm rgba(15, 23, 42, 0.3), 0 0 0 1.4mm #fff;" : "margin-right: -22mm; border-radius: 2.5mm 0 0 2.5mm; border: 0.3mm solid var(--border); border-right: 0; box-shadow: 0 4mm 12mm -6mm rgba(15, 23, 42, 0.22);"} }
+    .foot { margin-top: ${opts.heroImage ? "8mm" : "auto"}; display: flex; justify-content: space-between; font-size: 8.5pt; color: var(--muted-fg);
+      border-top: 0.75pt solid ${friendly ? "color-mix(in srgb, var(--primary) 18%, white)" : "var(--border)"}; padding-top: 4mm; }
+  `;
+  const brandRow = name || theme.logo || theme.logoDark ? `<div class="brand">${logoOnLight(theme, "logo")}${name ? `<span>${escapeHtml(name)}</span>` : ""}</div>` : "";
+  const eyebrow = `<div class="eyebrow">${name ? `${escapeHtml(name)} · ` : ""}Printable manual</div>`;
+  const tagline = theme.tagline ? `<p class="tagline">${escapeHtml(theme.tagline)}</p>` : "";
+  const text = `${friendly ? "" : '<div class="rule"></div>'}${eyebrow}<h1>${escapeHtml(title)}</h1><p class="lede">${lede}</p>${tagline}<div class="facts">${facts}</div>`;
+  const hero = opts.heroImage ? `<img class="hero" src="${fileUrl(opts.heroImage)}" alt="" />` : "";
+  const foot = `<div class="foot"><span>${name ? `${escapeHtml(name)} help guide` : "Help guide"}</span><span>Generated ${escapeHtml(date)}</span></div>`;
+  const body = friendly
+    ? `<div class="cover v-friendly"><div class="panel">${brandRow}<div class="titles">${text}</div></div>${hero}${foot}</div>`
+    : `<div class="cover v-minimal">${brandRow}<div class="titles">${text}</div>${hero}${foot}</div>`;
   return htmlDoc(title, body, theme, { extraStyle: style });
 }
 

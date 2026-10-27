@@ -10,6 +10,10 @@ export { classifyFailure, classifyErrorMessage, isSignInPath, StepWatch } from "
 export type { ClassifyInput, Classification } from "./diagnose.js";
 export { ImpactTracker } from "./impact.js";
 export { stableHash } from "./stable-hash.js";
+export { capturePaths, diffPaths, markPathsNotCaptured, pathClipSources, pathsPassed, prunePathDirs, recordPathDiffs } from "./paths.js";
+export type { CapturePathsOptions, CapturePathsResult, PathCaptureSummary, PathClipSource } from "./paths.js";
+export { comparePathWrites, countFrames, pathCaptureDir, readPathCaptures, routePattern, writeKey, writeKeys } from "./path-files.js";
+export type { PathCapture } from "./path-files.js";
 export { diffPngBuffers, stabilizeFrames, snapshotPrevFrames, finishStabilization, withFrameStabilization } from "./frame-diff.js";
 export type { FrameDiffResult, StabilizeOptions, StabilizeResult } from "./frame-diff.js";
 export type {
@@ -33,4 +37,5 @@ export type {
   FailureActionRef,
   CaptureSummary,
   FrameDiffSummary,
+  PathDiff,
 } from "./types.js";

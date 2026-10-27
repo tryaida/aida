@@ -300,3 +300,15 @@ export function videoFileFor(id: string, kind: VideoKind): string | undefined {
   }
   return undefined;
 }
+
+export type ProofKind = "json" | "png";
+
+/** The latest proof sheet (`aida proof`, decision 35): `<buildDir>/proof/proof.<kind>`. Fixed
+ * names; nothing from the request but a two-value kind. */
+export function proofFileFor(kind: ProofKind): string | undefined {
+  const buildDir = configuredBuildDir();
+  const dir = join(/* turbopackIgnore: true */ isAbsolute(buildDir) ? buildDir : join(/* turbopackIgnore: true */ helpRoot(), buildDir), "proof");
+  const file = join(/* turbopackIgnore: true */ dir, `proof.${kind}`);
+  assertInside(dir, file);
+  return existsSync(/* turbopackIgnore: true */ file) ? file : undefined;
+}

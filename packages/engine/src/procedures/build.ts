@@ -5,12 +5,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { copyFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { libraryPlacement, type Walkthrough } from "../walkthrough/index.js";
+import { libraryPlacement, pathWalkthrough, type Walkthrough } from "../walkthrough/index.js";
 import type { CaptureManifest, ValidationResult } from "../capture/index.js";
+import { readPathCaptures } from "../capture/path-files.js";
 import { stripMarkdown } from "../index-search/index.js";
-import { readerNameForRole, screenshotFile, type RoleNames } from "../pages/content.js";
+import { pathScreenshotFile, readerNameForRole, screenshotFile, type RoleNames } from "../pages/content.js";
 import { personaRole } from "../walkthrough/persona.js";
-import type { BuildProceduresResult, Procedure, ProcedureStep } from "./types.js";
+import type { BuildProceduresResult, Procedure, ProcedurePath, ProcedureStep } from "./types.js";
 
 function readJsonIfExists<T>(file: string): T | undefined {
   return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as T) : undefined;
@@ -103,6 +104,7 @@ export function buildProcedure(
     });
   }
 
+  const paths = buildProcedurePaths(wf, captureDir, validation, steps, opts);
   const roleId = personaRole(wf.start);
   return {
     id,
@@ -119,7 +121,66 @@ export function buildProcedure(
     steps,
     ...(impactRoutes.size > 0 ? { impactRoutes: [...impactRoutes].sort() } : {}),
     ...(opts.lastChecked ? { lastChecked: opts.lastChecked } : {}),
+    ...(paths.length > 0 ? { paths } : {}),
   };
+}
+
+/** Copies a page's already-annotated screenshot into `<publicDir>/screenshots/<id>/<name>`,
+ * returning its site URL; undefined when there's no such screenshot. */
+function publishScreenshot(src: string, id: string, name: string, publicDir: string): string | undefined {
+  if (!existsSync(src)) return undefined;
+  const destRel = join("screenshots", id, name);
+  const dest = join(publicDir, destRel);
+  mkdirSync(dirname(dest), { recursive: true });
+  copyFileSync(src, dest);
+  return `/${destRel.split("\\").join("/")}`;
+}
+
+/**
+ * The walkthrough's other ways in (decision 34), for `get_procedure`: each path whose capture
+ * passed, with its start page, its opening steps (screenshots copied from the page's own
+ * annotated `screenshots/paths/` files, never raw frames) and the main step it joins. A path that
+ * didn't pass is left out, as a failed main step is.
+ */
+function buildProcedurePaths(
+  wf: Walkthrough,
+  captureDir: string,
+  validation: ValidationResult,
+  mainSteps: ProcedureStep[],
+  opts: { pagesDir?: string; publicDir?: string },
+): ProcedurePath[] {
+  if (!wf.paths?.length) return [];
+  const captures = new Map(readPathCaptures(captureDir, wf).map((c) => [c.pathId, c] as const));
+  const flagged = new Set((validation.pathDiffs ?? []).map((d) => d.path));
+  const out: ProcedurePath[] = [];
+  for (const path of wf.paths) {
+    const capture = captures.get(path.id);
+    if (!capture?.manifest || !capture.validation?.ok) continue;
+    const run = pathWalkthrough(wf, path);
+    const joinsAt = run.joinIndex + 1;
+    if (!mainSteps.some((s) => s.n === joinsAt)) continue; // the step it joins isn't a verified one
+    const steps: ProcedureStep[] = path.steps.map((step, i) => {
+      const n = i + 1;
+      const rel = pathScreenshotFile(path.id, n);
+      const screenshot =
+        capture.manifest!.steps[i]?.doc.image && opts.publicDir && opts.pagesDir
+          ? publishScreenshot(join(opts.pagesDir, wf.walkthrough, rel), wf.walkthrough, rel.replace(/^screenshots\//, ""), opts.publicDir)
+          : undefined;
+      return { n, title: step.title ?? `Step ${n}`, instruction: instructionFor(step), ...(screenshot ? { screenshot } : {}) };
+    });
+    const joinStep = wf.steps[run.joinIndex];
+    out.push({
+      id: path.id,
+      title: path.title,
+      when: path.when,
+      start: { page: path.start.page },
+      steps,
+      joinsAt,
+      joinsTitle: joinStep.title ?? `Step ${joinsAt}`,
+      ...(flagged.has(path.id) && path.note ? { note: path.note } : {}),
+    });
+  }
+  return out;
 }
 
 export interface BuildProceduresOptions {

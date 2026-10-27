@@ -240,4 +240,59 @@ describe.skipIf(!SLOW)("frameSignature vs real Chromium render (parity)", () => 
     },
     30_000,
   );
+
+  // M34: the presets add card reveal schedules (friendly's overshoot), a numbered highlight badge,
+  // a browser bar, transition transforms and the lower-third wipe — same parity rule for each.
+  for (const style of ["friendly", "bold", "minimal"] as const) {
+    it(`holds for the ${style} preset (card reveals, badge, transitions)`, async () => {
+      const tl = baseTimeline({
+        fps: 10,
+        duration: 4.0,
+        brand: { name: "Acme", style },
+        chrome: style === "bold" ? 38 : 0,
+        stageIn: { t0: 1.6, t1: 2.2 },
+        cards: {
+          intro: [
+            { id: "intro-panel", t0: 0.05, d: 0.6, dy: 30 },
+            { id: "intro-title", t0: 0.3, d: 0.6, dy: 30 },
+            { id: "intro-facts", t0: 0.8, d: 0.5, dy: 20 },
+          ],
+          outro: [{ id: "outro-title", t0: 100.4, d: 0.7, dy: 30 }],
+        },
+        intro: { eyebrow: "E", titleHtml: "T", subtitle: "S", facts: ["2 steps"], reader: "Office staff" },
+        frames: [
+          { t: 0, src: "f0.png", transition: "cut" },
+          { t: 2.6, src: "f1.png", transition: "fade" },
+        ],
+        highlights: [{ t0: 2.4, t1: 3.4, box: { x: 10, y: 10, w: 30, h: 30 }, num: 2 }],
+        chips: [{ t0: 2.2, t1: 4.0, num: "2", eyebrow: "Step 2 of 2", title: "T2" }],
+        captions: [{ t0: 2.3, t1: 3.6, text: "Hello" }],
+      });
+      bundleDir = await mkdtemp(path.join(os.tmpdir(), "aida-state-parity-"));
+      await writePlayerBundle(bundleDir, tl);
+      await writeFile(path.join(bundleDir, "f0.png"), TINY_PNG);
+      await writeFile(path.join(bundleDir, "f1.png"), TINY_PNG);
+      const frameCount = Math.ceil(tl.duration * tl.fps);
+      const { pages, close } = await openRenderBrowser(bundleDir, 0.3, 1);
+      const buffers: Buffer[] = [];
+      try {
+        for (let i = 0; i < frameCount; i++) {
+          await pages[0].evaluate((t) => (window as any).renderAt(t), i / tl.fps);
+          buffers.push(await pages[0].screenshot({ type: "jpeg", quality: 60 }));
+        }
+      } finally {
+        await close();
+      }
+      let equalPairs = 0;
+      let unequalPairs = 0;
+      for (let i = 1; i < frameCount; i++) {
+        if (frameSignature(tl, (i - 1) / tl.fps) === frameSignature(tl, i / tl.fps)) {
+          equalPairs++;
+          expect(buffers[i].equals(buffers[i - 1]), `frame ${i}`).toBe(true);
+        } else unequalPairs++;
+      }
+      expect(equalPairs).toBeGreaterThan(0);
+      expect(unequalPairs).toBeGreaterThan(0);
+    }, 30_000);
+  }
 });

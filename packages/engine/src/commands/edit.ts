@@ -4,6 +4,12 @@
 import {
   addBlur,
   addCallout,
+  addPath,
+  removePath,
+  setPathField,
+  setPathStepActions,
+  setPathStepField,
+  type PathField,
   catchUp,
   EditLockedError,
   EditValidationError,
@@ -50,6 +56,11 @@ const EDIT_ACTIONS = [
   "addBlur",
   "updateBlur",
   "removeBlur",
+  "addPath",
+  "removePath",
+  "setPathField",
+  "setPathStepField",
+  "setPathStepActions",
 ] as const;
 type EditAction = (typeof EDIT_ACTIONS)[number];
 
@@ -148,6 +159,30 @@ function dispatchEdit(action: EditAction, args: string[], by: EditBy): EditResul
     case "removeBlur": {
       const [file, stepId, blurId] = requireArgs(args, 3, "removeBlur <walkthroughFile> <stepId> <blurId>");
       return removeBlur(file, stepId, blurId, { by });
+    }
+    case "addPath": {
+      const [file, pathJson] = requireArgs(args, 2, "addPath <walkthroughFile> <pathJson>");
+      return addPath(file, parseJsonArg<unknown>(pathJson, "addPath"), { by });
+    }
+    case "removePath": {
+      const [file, pathId] = requireArgs(args, 2, "removePath <walkthroughFile> <pathId>");
+      return removePath(file, pathId, { by });
+    }
+    case "setPathField": {
+      const [file, pathId, field, value] = requireArgs(args, 4, "setPathField <walkthroughFile> <pathId> <title|when|note|joins|page> <value>");
+      return setPathField(file, pathId, field as PathField, value, { by });
+    }
+    case "setPathStepField": {
+      const [file, pathId, stepId, field, value] = requireArgs(
+        args,
+        5,
+        "setPathStepField <walkthroughFile> <pathId> <stepId> <say|caption|page_text|title|hold|do|check> <value>",
+      );
+      return setPathStepField(file, pathId, stepId, field as StepField, field === "hold" ? Number(value) : value, { by });
+    }
+    case "setPathStepActions": {
+      const [file, pathId, stepId, actionsJson] = requireArgs(args, 4, "setPathStepActions <walkthroughFile> <pathId> <stepId> <actionsJson>");
+      return setPathStepActions(file, pathId, stepId, parseJsonArg<unknown>(actionsJson, "setPathStepActions"), { by });
     }
     case "lock": {
       const [anchor, item] = requireArgs(args, 2, "lock <anchorFile> <item>");

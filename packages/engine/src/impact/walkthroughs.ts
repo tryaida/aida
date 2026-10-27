@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { loadWalkthroughFile } from "../walkthrough/index.js";
 import type { CaptureManifest } from "../capture/types.js";
+import { readPathCaptures } from "../capture/path-files.js";
 
 export interface WalkthroughEntry {
   id: string;
@@ -10,6 +11,9 @@ export interface WalkthroughEntry {
   file: string;
   /** Parsed from `<buildDir>/<id>/capture/manifest.json`, when a capture has run. */
   manifest: CaptureManifest | undefined;
+  /** Each walkthrough path's last capture manifest (`capture/paths/<pathId>/`), when it has paths
+   * that were captured (decision 34). A change on a screen only a path visits affects it too. */
+  pathManifests?: { pathId: string; manifest: CaptureManifest }[];
 }
 
 /** Every `*.yaml`/`*.yml` walkthrough file directly under `walkthroughsDir`, with its id (the
@@ -34,6 +38,9 @@ export function listWalkthroughs(walkthroughsDir: string, buildDir: string): Wal
         manifest = undefined;
       }
     }
-    return { id: wt.walkthrough, file, manifest };
+    const pathManifests = readPathCaptures(join(buildDir, wt.walkthrough, "capture"), wt)
+      .filter((p) => p.manifest)
+      .map((p) => ({ pathId: p.pathId, manifest: p.manifest! }));
+    return { id: wt.walkthrough, file, manifest, ...(pathManifests.length > 0 ? { pathManifests } : {}) };
   });
 }

@@ -6,7 +6,7 @@ import path from "node:path";
 import type { Walkthrough } from "../walkthrough/types.js";
 import { resolveFfmpegTools } from "../qa/ffmpeg.js";
 import { buildNarrationTrack } from "./audio.js";
-import { writePlayerBundle } from "./bundle.js";
+import { playerAssetFiles, writePlayerBundle } from "./bundle.js";
 import type { CaptureManifest, ValidationResult } from "../capture/index.js";
 import { captionsFor } from "./captions.js";
 import {
@@ -73,7 +73,11 @@ function hashCachePath(captureDir: string): string {
  * keyed by a hash of exactly that scene's own inputs, rendered concurrently, then concatenated
  * (ffmpeg concat demuxer, `-c copy`) before muxing in the narration track.
  */
-export async function render(wf: Walkthrough, options: RenderOptions): Promise<RenderResult> {
+export async function render(wf: Walkthrough, optionsIn: RenderOptions): Promise<RenderResult> {
+  // Frame paths end up in the player bundle as absolute paths; a relative capture dir (e.g. a
+  // `--capture .build/x/capture` typed on the command line) would make them relative to the
+  // bundle instead and render blank screens.
+  const options: RenderOptions = { ...optionsIn, captureDir: path.resolve(optionsIn.captureDir) };
   const id = wf.walkthrough;
   const manifest = readJson<CaptureManifest>(path.join(options.captureDir, "manifest.json"));
   const validationPath = path.join(options.captureDir, "validation.json");
@@ -91,7 +95,12 @@ export async function render(wf: Walkthrough, options: RenderOptions): Promise<R
   const draft = Boolean(options.draft);
   const quality = qualityFor(draft, options.fps);
   const frameSrc = (f: string) => path.join(options.captureDir, "frames", f);
-  const timeline = buildTimeline(wf, manifest, options.narration, { fps: quality.fps, frameSrc, brand: options.brand });
+  const timeline = buildTimeline(wf, manifest, options.narration, {
+    fps: quality.fps,
+    frameSrc,
+    brand: options.brand,
+    zoomToTarget: options.zoomToTarget,
+  });
 
   const stepOutDir = path.join(options.outDir, id);
   await mkdir(stepOutDir, { recursive: true });
@@ -115,6 +124,7 @@ export async function render(wf: Walkthrough, options: RenderOptions): Promise<R
     ...new Set([
       ...timeline.frames.map((f) => frameSrcToPath(f.src, options.captureDir)),
       ...timeline.audio.map((a) => a.file),
+      ...(await playerAssetFiles()),
     ]),
   ];
   const hash = computeContentHash(timeline, referencedFiles, settings, fileHashCache);

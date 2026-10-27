@@ -206,7 +206,10 @@ async function cardStepImages(browser: Browser, steps: PdfPageInput["cardSteps"]
 
 /** Every print image a walkthrough's PDFs embed — part of their cache key. */
 function figureFiles(input: PdfPageInput): string[] {
-  return (input.figures ?? []).flatMap((f) => [f.full, ...(f.crop ? [f.crop] : [])]);
+  // Main steps' figures and every path's (M33 "Other ways to do this"): a re-blurred path figure
+  // must re-render the PDF too.
+  const all = [...(input.figures ?? []), ...Object.values(input.pathFigures ?? {}).flat()];
+  return all.flatMap((f) => [f.full, ...(f.crop ? [f.crop] : [])]);
 }
 
 /** Cache key for one walkthrough's PDFs: its Markdown, screenshots and print figures, paper,
@@ -219,7 +222,7 @@ export function walkthroughHash(input: PdfPageInput, paper: string, brand: PdfBr
     paper,
     brand: brandFingerprint(brand),
     lastChecked: input.lastChecked,
-    extra: [input.product, input.figures ?? null, guideUrl(siteUrl, input.sitePath) ?? null, PRINT_LAYOUT_VERSION, fontState(prepared)],
+    extra: [input.product, input.figures ?? null, input.pathFigures ?? null, guideUrl(siteUrl, input.sitePath) ?? null, PRINT_LAYOUT_VERSION, fontState(prepared)],
   });
 }
 
@@ -231,7 +234,7 @@ export function fontState(prepared: PdfBrand | undefined): string {
 }
 
 /** Bumped when the print layout changes, so cached PDFs from an older layout re-render. */
-const PRINT_LAYOUT_VERSION = "m32";
+const PRINT_LAYOUT_VERSION = "m33";
 
 /** Finds a card rendering that fits: the image grid on the pages `cardLayout` plans for (one,
  * or two for a long guide) with every word showing (measured — `cardOverflows`), at smaller text
@@ -288,7 +291,7 @@ export async function buildManualPdf(
     paper,
     brand: brandFingerprint(opts.brand),
     extra: [
-      included.map((i) => [i.lastChecked, i.product, i.section, i.summary, i.figures ?? null, guideUrl(opts.siteUrl, i.sitePath) ?? null]),
+      included.map((i) => [i.lastChecked, i.product, i.section, i.summary, i.figures ?? null, i.pathFigures ?? null, guideUrl(opts.siteUrl, i.sitePath) ?? null]),
       PRINT_LAYOUT_VERSION,
       fontState(brand),
     ],

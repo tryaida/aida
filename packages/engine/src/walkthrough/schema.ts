@@ -3,7 +3,7 @@ import { TargetSchema, BoxSchema } from "./target.js";
 import { ActionSchema } from "./action.js";
 import { parseDoString } from "./parse-do.js";
 import { sectionProblems } from "./placement.js";
-import type { Step, Walkthrough } from "./types.js";
+import type { Step, Walkthrough, WalkthroughPath } from "./types.js";
 
 const ViewportSchema = z.object({ width: z.number(), height: z.number() }).strict();
 
@@ -210,6 +210,62 @@ const SetupSchema = z
   })
   .strict();
 
+/**
+ * Where an alternative way in starts (decision 34): its own page, signed in as the walkthrough's
+ * own persona. `signed_in_as` may only repeat that persona's role — a path never switches who is
+ * signed in, or its shared steps would run as someone else. No `persona`: the walkthrough's
+ * `start.persona` is the one persona, used as written.
+ */
+const PathStartSchema = z
+  .object({
+    page: z.string().min(1, "a path's start needs a page, e.g. /attendees"),
+    signed_in_as: z.string().min(1).optional(),
+  })
+  .strict();
+
+// Fields a path can't have: the data a walkthrough needs and changes belongs to the whole
+// walkthrough (every path starts from the same data and should leave the same states).
+const PATH_FORBIDDEN_FIELDS = ["needs", "leaves", "clears", "setup", "validate"] as const;
+
+/** Path ids name a build directory (`capture/paths/<id>/`), so they're slugs like walkthrough ids. */
+export const PATH_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/**
+ * One other way to do the task (decision 34): its own start and opening steps, then the main
+ * steps from `joins` on. `when` is one plain sentence a reader uses to pick this way.
+ */
+const PathSchema = z
+  .object({
+    id: z.string().regex(PATH_ID_PATTERN, "path ids are kebab-case, like walkthrough ids: from-attendee"),
+    title: z.string().min(1),
+    when: z.string().min(1, "say in one plain sentence when to use this way"),
+    start: PathStartSchema,
+    steps: z.array(RawStepSchema).min(1, "a path needs at least one opening step before it joins the main steps"),
+    joins: z.string().min(1),
+    // Shown on the page only when capture flagged this path as saving differently (pathDiffs).
+    note: z.string().optional(),
+    // Accepted only so the refinement below can explain why they're not allowed.
+    needs: z.unknown().optional(),
+    leaves: z.unknown().optional(),
+    clears: z.unknown().optional(),
+    setup: z.unknown().optional(),
+    validate: z.unknown().optional(),
+  })
+  .strict()
+  .superRefine((raw, ctx) => {
+    for (const key of PATH_FORBIDDEN_FIELDS) {
+      if (raw[key] !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: `a path shares the walkthrough's data, so it can't have \`${key}\`; put it on the walkthrough itself`,
+        });
+      }
+    }
+  });
+
+export type RawPath = z.infer<typeof PathSchema>;
+
 /** Data keys the engine fills in itself; `{{run.id}}` is a short id unique to each capture run. */
 export const RESERVED_DATA_KEYS = ["run"] as const;
 
@@ -264,9 +320,12 @@ export const WalkthroughDocSchema = z
     leaves: StateListSchema.optional(),
     clears: StateListSchema.optional(),
     setup: SetupSchema.optional(),
+    // Other ways to do the same task (decision 34).
+    paths: z.array(PathSchema).optional(),
   })
   .strict()
   .superRefine((doc, ctx) => {
+    checkPaths(doc, ctx);
     // Leaving and clearing the same state says two opposite things about the data afterwards.
     const leaves = new Set(doc.leaves ?? []);
     for (const [i, name] of (doc.clears ?? []).entries()) {
@@ -281,6 +340,70 @@ export const WalkthroughDocSchema = z
   });
 
 export type WalkthroughDoc = z.infer<typeof WalkthroughDocSchema>;
+
+/** The role a raw start names, from `persona.role` or `signed_in_as`. */
+function rawRole(start: { signed_in_as?: string; persona?: { role?: string } } | undefined): string | undefined {
+  return start?.persona?.role ?? start?.signed_in_as;
+}
+
+/**
+ * Cross-checks `paths` against the main steps: unique path ids, `joins` names a main step, path
+ * step ids that don't clash with main step ids (a captured path run holds both), and one persona
+ * (a path's start may only repeat the walkthrough's own).
+ */
+function checkPaths(
+  doc: {
+    start?: { signed_in_as?: string; persona?: { role?: string } };
+    steps: { id?: string }[];
+    paths?: { id: string; start: { signed_in_as?: string }; steps: { id?: string }[]; joins: string }[];
+  },
+  ctx: z.RefinementCtx,
+): void {
+  if (!doc.paths) return;
+  const mainIds = new Set(doc.steps.map((s) => s.id).filter((id): id is string => Boolean(id)));
+  const mainRole = rawRole(doc.start);
+  const pathIds = new Set<string>();
+  doc.paths.forEach((path, i) => {
+    if (pathIds.has(path.id)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["paths", i, "id"], message: `path id "${path.id}" is used twice; give each path its own id` });
+    }
+    pathIds.add(path.id);
+    if (!mainIds.has(path.joins)) {
+      const ids = [...mainIds];
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["paths", i, "joins"],
+        message: `path "${path.id}" joins "${path.joins}", which isn't a main step id${ids.length > 0 ? ` (main steps: ${ids.join(", ")})` : " (give the main steps ids)"}`,
+      });
+    }
+    const seen = new Set<string>();
+    path.steps.forEach((step, j) => {
+      if (!step.id) return;
+      if (mainIds.has(step.id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["paths", i, "steps", j, "id"],
+          message: `path "${path.id}" step id "${step.id}" is also a main step id; path steps need their own ids`,
+        });
+      }
+      if (seen.has(step.id)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["paths", i, "steps", j, "id"], message: `path "${path.id}" has two steps with id "${step.id}"` });
+      }
+      seen.add(step.id);
+    });
+    const role = path.start.signed_in_as;
+    if (role !== undefined && role !== mainRole) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["paths", i, "start", "signed_in_as"],
+        message: mainRole
+          ? `path "${path.id}" signs in as "${role}" but the walkthrough signs in as "${mainRole}"; a path uses the walkthrough's persona — leave it out or make it match`
+          : `path "${path.id}" signs in as "${role}" but the walkthrough's start names no persona; set it on the walkthrough's start instead`,
+      });
+    }
+  });
+}
+
 
 /** Turns a step's `do:` / `check:` / `actions:` fields into one action list. */
 export function rawStepToStep(raw: RawStep): Step {
@@ -353,5 +476,22 @@ export function docToWalkthrough(doc: WalkthroughDoc): Walkthrough {
     outro: doc.outro,
     steps: doc.steps.map(rawStepToStep),
     validate: doc.validate,
+    ...(doc.paths !== undefined ? { paths: doc.paths.map(rawPathToPath) } : {}),
+  };
+}
+
+/** A validated raw path as its typed form (steps resolved to action lists). */
+export function rawPathToPath(raw: RawPath): WalkthroughPath {
+  return {
+    id: raw.id,
+    title: raw.title,
+    when: raw.when,
+    start: {
+      page: raw.start.page,
+      ...(raw.start.signed_in_as !== undefined ? { signed_in_as: raw.start.signed_in_as } : {}),
+    },
+    steps: raw.steps.map(rawStepToStep),
+    joins: raw.joins,
+    ...(raw.note !== undefined ? { note: raw.note } : {}),
   };
 }

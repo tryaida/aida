@@ -160,6 +160,13 @@ export async function computeAffected(opts: ComputeAffectedOptions): Promise<Aff
             const stepLabel = hit.stepId ? `step "${hit.stepId}"` : `step ${hit.stepNumber}`;
             addReason(reasons, wt.id, `${file} -> ${rc.matcher.path} -> ${stepLabel} (${hit.via})`);
           }
+          // Other ways in (decision 34): a screen only a path visits still belongs to this walkthrough.
+          for (const p of wt.pathManifests ?? []) {
+            for (const hit of findStepHits(p.manifest, rc.matcher)) {
+              const stepLabel = hit.stepId ? `step "${hit.stepId}"` : `step ${hit.stepNumber}`;
+              addReason(reasons, wt.id, `${file} -> ${rc.matcher.path} -> path ${p.pathId} ${stepLabel} (${hit.via})`);
+            }
+          }
         }
       }
     }

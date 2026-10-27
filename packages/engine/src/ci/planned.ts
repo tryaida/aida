@@ -63,7 +63,8 @@ export async function* captureInPlannedOrder(
       runId: run.runId,
       personaFor: run.personaFor,
     });
-    run.tracker.record(id, captured.ok, { category: captured.failure?.category });
+    // Dependants wait on the main run only: a failed path doesn't take their data away.
+    run.tracker.record(id, captured.mainOk ?? captured.ok, { category: captured.failure?.category });
     yield { id, captured };
   }
 }

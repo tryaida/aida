@@ -36,6 +36,11 @@ export interface PdfBrand {
    * build.ts's `prepareBrand`; when set, the print HTML uses these instead of `fontUrl`. */
   fontFaceCss?: string;
   configured?: boolean;
+  /** House style preset (theme/style.ts): cover layout, screenshot framing, ring shape. Default
+   * `bold`. */
+  style?: "minimal" | "friendly" | "bold";
+  /** `brand.md`'s tagline, on the manual's cover. */
+  tagline?: string;
 }
 
 export interface BuildPdfOptions {
@@ -101,6 +106,9 @@ export interface PdfPageInput {
   /** Print figures from pages (`BuildPageResult.printFigures`): clean screenshots, focus crops
    * and target boxes. Absent for pages built before M32 — the site screenshots are used then. */
   figures?: PrintFigure[];
+  /** Print figures for the "Other ways to do this" section (decision 34), by walkthrough path id;
+   * each figure's `step` is the path's own step number. */
+  pathFigures?: Record<string, PrintFigure[]>;
   /** The guide's path on the help site (`/how-do-i/payments/record-a-payment`), for its QR code. */
   sitePath?: string;
 }

@@ -16,6 +16,7 @@ import type {
   TimelineChip,
   TimelineFrameCue,
   TimelineHighlight,
+  TimelineReveal,
 } from "./types.js";
 
 function lastAtOrBefore<T>(list: T[], t: number, key: (item: T) => number): number {
@@ -94,6 +95,28 @@ export function chipAt(tl: Timeline, t: number): TimelineChip | undefined {
   return tl.chips.find((c) => t >= c.t0 && t < c.t1);
 }
 
+/** The title cards' reveal schedule: the timeline's own (M34), else the original fixed one —
+ * mirrors player.js's `CARDS` fallback. */
+export function cardRevealsOf(tl: Timeline): { intro: TimelineReveal[]; outro: TimelineReveal[] } {
+  if (tl.cards) return tl.cards;
+  const o0 = tl.stageOut.t0 + 0.35;
+  const n = tl.outro.recap.length;
+  return {
+    intro: [
+      { id: "intro-brand", t0: 0.15, d: 0.7, dy: 26 },
+      { id: "intro-eyebrow", t0: 0.45, d: 0.7, dy: 26 },
+      { id: "intro-title", t0: 0.65, d: 0.8, dy: 40 },
+      { id: "intro-sub", t0: 1.15, d: 0.7, dy: 26 },
+      { id: "intro-facts", t0: 1.6, d: 0.7, dy: 26 },
+    ],
+    outro: [
+      { id: "outro-title", t0: o0, d: 0.7, dy: 40 },
+      ...Array.from({ length: n }, (_, i) => ({ id: `recap-${i}`, t0: o0 + 0.5 + i * 0.35, d: 0.6, dy: 18 })),
+      { id: "outro-foot", t0: o0 + 0.6 + n * 0.35, d: 0.7, dy: 26 },
+    ],
+  };
+}
+
 /** Everything `renderAt(t0)` depends on that isn't already in the scene's own sliced cues —
  * i.e. state carried in from earlier timeline activity: the frame still visible from a previous
  * step, a cursor/camera move that started earlier and is still animating in, or a highlight
@@ -130,7 +153,6 @@ export function frameSignature(tl: Timeline, t: number): string {
   const push = (...vals: Array<number | string>) => {
     parts.push(...vals);
   };
-  const revealP = (start: number, dur = 0.7): number => easeOut(ramp(t, start, dur));
 
   // Stage envelope (intro card -> stage -> outro card).
   const sIn = ease(ramp(t, tl.stageIn.t0, tl.stageIn.t1 - tl.stageIn.t0));
@@ -138,17 +160,15 @@ export function frameSignature(tl: Timeline, t: number): string {
   const stageVis = sIn * (1 - sOut);
   push(stageVis, sIn, sOut);
 
-  // Intro card.
+  // Intro and outro cards: every element's reveal progress (player.js styles each from its raw
+  // ramp alone, whatever the preset's easing).
+  const cards = cardRevealsOf(tl);
   const iOut = ease(ramp(t, tl.stageIn.t0 - 0.45, 0.5));
-  push(iOut, revealP(0.15), revealP(0.45), revealP(0.65, 0.8), revealP(1.15), revealP(1.6));
-
-  // Outro card.
+  push(iOut);
+  for (const r of cards.intro) push(ramp(t, r.t0, r.d));
   const oIn = ease(ramp(t, tl.stageOut.t0 + 0.25, 0.7));
-  const o0 = tl.stageOut.t0 + 0.35;
-  const recapLen = tl.outro.recap.length;
-  push(oIn, revealP(o0, 0.7));
-  for (let i = 0; i < recapLen; i++) push(revealP(o0 + 0.5 + i * 0.35, 0.6));
-  push(revealP(o0 + 0.6 + recapLen * 0.35, 0.7));
+  push(oIn);
+  for (const r of cards.outro) push(ramp(t, r.t0, r.d));
 
   if (stageVis > 0.001) {
     const fi = Math.max(0, lastAtOrBefore(tl.frames, t, (f) => f.t));
@@ -168,7 +188,7 @@ export function frameSignature(tl: Timeline, t: number): string {
     const hi = highlightAt(tl, t);
     if (hi) {
       const a = Math.min(easeOut(ramp(t, hi.t0, 0.3)), 1 - ramp(t, hi.t1 - 0.25, 0.25));
-      push(hi.box.x, hi.box.y, hi.box.w, hi.box.h, a);
+      push(hi.box.x, hi.box.y, hi.box.w, hi.box.h, a, hi.num ?? "");
     } else push("none");
 
     // M22: callouts/blur are static for a step's whole window (no ramp/animation), so their

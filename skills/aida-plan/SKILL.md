@@ -37,7 +37,14 @@ code, and not the full discover transcript.
    Put an on-screen name the card relies on in quotes, or in `labels:`, only when discover
    actually reported that label. Capture checks each one against the real screen. When the
    brief's "Several ways to do one thing" lists the task, add its other starting screens:
-   `paths: from the entry, from the competitor, from Payments` (one card, not one per path).
+   `paths: from the entry, from the competitor, from "Payments"` (one card, not one per path; a
+   quoted screen name is checked against capture like a label). The writer turns each into a
+   walkthrough `paths:` entry with its own start page and opening steps, joining the shared rest
+   (the payment form), and a `when` sentence from the brief: when a reader picks that way. Also
+   check the domain model: a thing reachable from two others (a payment against a booking or an
+   attendee) usually means two ways in. If the brief says two ways save differently (paying
+   against an attendee spreads it across their bookings), note it on the card; capture will
+   compare them.
 5. **Data each card needs, leaves or clears.** Most tasks change data, so say it on the card in
    kebab-case state names (`needs session-full`, `leaves alex-on-waitlist`, `clears
    alex-in-morning`); the writer turns them into the walkthrough's `needs`/`leaves`/`clears`.

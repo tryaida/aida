@@ -201,3 +201,49 @@ export function buildLastCheckedBlock(lastChecked: string | undefined, passed: b
     content: `---\n\n*Steps ${verb} on ${date}.*`,
   };
 }
+
+// ---- Other ways to do this (decision 34) ------------------------------------------------------
+
+export function buildOtherWaysHeadingBlock(): GeneratedBlock {
+  return { key: "other-ways-heading", content: "## Other ways to do this" };
+}
+
+/** Where a path's screenshot sits, relative to the page: `screenshots/paths/<pathId>-step-NN.png`.
+ * Never `.../step-NN.png` after a slash, which the PDFs read as a main step's figure. */
+export function pathScreenshotFile(pathId: string, stepNumber: number): string {
+  return `screenshots/paths/${pathId}-step-${String(stepNumber).padStart(2, "0")}.png`;
+}
+
+/** A path's heading, its `when` sentence and — only when capture flagged that it saves
+ * differently and the writer explained it — the writer's own note. Never generated wording. */
+export function buildPathBlock(
+  path: { id: string; title: string; when: string; note?: string },
+  opts: { showNote: boolean; problem?: string },
+): GeneratedBlock {
+  const lines = [`### ${escapeMdxText(path.title)}`, "", escapeMdxText(path.when.trim())];
+  if (opts.problem) lines.push("", `> **Not verified.** ${opts.problem}`);
+  if (opts.showNote && path.note?.trim()) lines.push("", `> **Note:** ${escapeMdxText(path.note.trim())}`);
+  return { key: `path-${path.id}`, content: lines.join("\n") };
+}
+
+/** One opening step of a path: the same block as a main step, keyed under the path. */
+export function buildPathStepBlock(pathId: string, step: Step, stepNumber: number, status: StepStatus): GeneratedBlock {
+  const block = buildStepBlock(step, stepNumber, status);
+  return { ...block, key: `path-${pathId}-${stepBlockKey(step, stepNumber)}` };
+}
+
+/** The heading id the site gives a main step's `#### N. Title` heading (github-slugger, as
+ * index-search's HeadingSlugger), so "continue from step N" can link to it. */
+function stepAnchor(stepNumber: number, title: string): string {
+  return `${stepNumber}. ${title}`
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}\p{Pc} -]/gu, "")
+    .replace(/ /g, "-");
+}
+
+/** "Then continue from step N (title)." — where the path joins the main steps. */
+export function buildPathJoinBlock(pathId: string, joinStep: Step, joinNumber: number): GeneratedBlock {
+  const title = joinStep.title ?? joinStep.id ?? `Step ${joinNumber}`;
+  const text = `step ${joinNumber} (${escapeMdxText(title)})`;
+  return { key: `path-${pathId}-join`, content: `Then continue from [${text}](#${stepAnchor(joinNumber, title)}).` };
+}

@@ -28,6 +28,8 @@ export interface PlanInput {
   leaves?: string[];
   clears?: string[];
   validate?: { database?: unknown[] };
+  /** Other ways in (decision 34): each is captured after its own reset, so they want one too. */
+  paths?: unknown[];
 }
 
 /** The part of the config the planner reads: which states have hooks. */
@@ -37,7 +39,8 @@ export interface PlanConfig {
 
 /**
  * When the database is reset:
- * - `database-checks`: before walkthroughs with `validate.database` checks (local `capture`/`build`)
+ * - `database-checks`: before walkthroughs with `validate.database` checks or `paths` (local
+ *   `capture`/`build`; every path is captured from the same reset data)
  * - `every`: before every walkthrough (`aida ci`)
  * - `none`: never (`--no-reset`, or no database adapter)
  * Either way a reset only ever happens at the start of a dependency chain.
@@ -249,7 +252,7 @@ export function planCaptureRun<W extends PlanInput>(
   }
   const policy = opts.reset ?? "none";
   const wants = (w: PlanInput): boolean =>
-    policy === "every" ? true : policy === "database-checks" ? Boolean(w.validate?.database?.length) : false;
+    policy === "every" ? true : policy === "database-checks" ? Boolean(w.validate?.database?.length || w.paths?.length) : false;
   const byId = new Map(run.map((w) => [w.walkthrough, w]));
   const chainMembers = new Map<string, string[]>();
   for (const id of orderIds) {

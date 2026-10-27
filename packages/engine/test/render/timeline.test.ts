@@ -260,7 +260,8 @@ describe("buildTimeline", () => {
       ],
     });
     const tl = buildTimeline(withBlur, m, narration, { fps: 30 });
-    const stepScene = tl.scenes!.find((s) => s.id === "step-one")!;
-    expect(tl.blur).toEqual([{ t0: stepScene.t0, t1: stepScene.t1, boxes: [{ x: 5, y: 6, w: 70, h: 20 }] }]);
+    // The only step's window covers the whole video (M34): the stage slides in before the step
+    // starts and out after it ends, showing the same screen.
+    expect(tl.blur).toEqual([{ t0: 0, t1: tl.duration, boxes: [{ x: 5, y: 6, w: 70, h: 20 }] }]);
   });
 });

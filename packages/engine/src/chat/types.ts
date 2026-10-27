@@ -41,6 +41,9 @@ export interface RetrievedPage {
   score: number;
   sections: SearchIndexEntry[];
   procedure?: Procedure;
+  /** The procedure path (decision 34) that starts on the reader's current screen, when one does:
+   * the answer should lead with that way. */
+  currentPathId?: string;
 }
 
 /** Everything retrieved for one question, before the model sees it (chat/retrieve.ts). */

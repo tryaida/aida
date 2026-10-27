@@ -17,6 +17,7 @@ Only the output, never the conversation that produced it:
 - Screenshots / video stills.
 - The QA report (`aida qa <path>`): video, captions, personal-data, and secrets checks.
 - `aida outline list --drift` output: names a card promised that the screen didn't have.
+- Each walkthrough's `validation.json` `pathDiffs` (paths that save differently), if any.
 - The app brief's words and rules: `aida brief show --config <cfg> --section "Words it uses"
   --section "Rules that matter"`. The brief is a finished artifact, not the writer's reasoning.
 - Nothing else — no walkthrough-writing chat, no discover/plan summaries.
@@ -40,6 +41,14 @@ Only the output, never the conversation that produced it:
    of the app's own, contradicting a rule, or leaving out a rule that changes what the reader
    should do (a payment that can't be undone). A page that says only which button, never when or
    why, is a finding too.
+
+7. **Other ways to do this** (walkthroughs with `paths:`): every path is in the page's "Other
+   ways to do this" section with its own screenshots, none marked not verified; each `when`
+   sentence says when to pick that way, not just where it starts. A path capture flagged as
+   saving differently (`pathDiffs` in the walkthrough's `validation.json`, or a "saves
+   differently" warning) needs a short neutral note on the page that says what happens, and
+   nothing speculative: missing or guessing is a finding. Path screenshots get the same
+   personal-data check: a path step needs its own blur/mask.
 
 ## Output
 

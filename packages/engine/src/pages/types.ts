@@ -48,6 +48,11 @@ export interface BuildPageResult {
   /** One print figure per captured step (decision 36), for the PDFs. Absent on pages built
    * before M32 — the PDFs then fall back to the site screenshots. */
   printFigures?: PrintFigure[];
+  /** Screenshots of the other ways' opening steps (decision 34), `screenshots/paths/<id>-step-NN.png`.
+   * Kept apart from `screenshots`, which is the main steps only. */
+  pathScreenshots?: string[];
+  /** Print figures for each path's opening steps, by path id; `step` is the path's own step number. */
+  pathFigures?: Record<string, PrintFigure[]>;
 }
 
 type FigureBox = { x: number; y: number; w: number; h: number };

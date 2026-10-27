@@ -6,6 +6,7 @@ import {
   captureStatus,
   listWalkthroughs,
   pageAssetFile,
+  proofFileFor,
   siteUrlFor,
   videoFileFor,
 } from "../../app/studio/_lib/server";
@@ -79,6 +80,15 @@ describe("Studio server helpers", () => {
     expect(pageAssetFile("record-a-payment", "index.mdx")).toBeUndefined();
     expect(pageAssetFile("record-a-payment", "missing.png")).toBeUndefined();
     expect(() => pageAssetFile("../pages", "step-01.png")).toThrow();
+  });
+
+  it("finds the latest proof sheet in <buildDir>/proof only", () => {
+    expect(proofFileFor("png")).toBeUndefined();
+    mkdirSync(join(root, ".build", "proof"), { recursive: true });
+    writeFileSync(join(root, ".build", "proof", "proof.png"), "png");
+    writeFileSync(join(root, ".build", "proof", "proof.json"), "{}");
+    expect(proofFileFor("png")).toBe(join(root, ".build", "proof", "proof.png"));
+    expect(proofFileFor("json")).toBe(join(root, ".build", "proof", "proof.json"));
   });
 
   it("finds the rendered video by id only", () => {

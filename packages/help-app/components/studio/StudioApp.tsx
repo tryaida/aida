@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { getJson, postJson } from "./api";
 import { HistoryPanel } from "./HistoryPanel";
+import { ProofPanel } from "./ProofPanel";
 import { Icon } from "./icons";
 import { PagePreview } from "./PagePreview";
 import { ScreenshotEditor } from "./ScreenshotEditor";
@@ -34,6 +35,8 @@ export function StudioApp({ studioToken }: { studioToken: string }) {
   const [page, setPage] = useState<PageData>();
   const [pageLoading, setPageLoading] = useState(false);
   const [previewWidth, setPreviewWidth] = useState<number>();
+  const [proofOpen, setProofOpen] = useState(false);
+  const closeProof = useCallback(() => setProofOpen(false), []);
   const cardRefs = useRef(new Map<string, HTMLElement>());
   // Selection made by clicking/typing in a card shouldn't scroll the list under the pointer;
   // selection from the strip, the preview, history or the keyboard should.
@@ -252,6 +255,7 @@ export function StudioApp({ studioToken }: { studioToken: string }) {
         lastChecked={wt?.lastChecked ?? summary?.lastChecked}
         siteUrl={wt?.siteUrl}
         loading={listLoading}
+        onOpenProof={() => setProofOpen(true)}
       />
 
       <div className="flex min-h-0 flex-1">
@@ -374,6 +378,7 @@ export function StudioApp({ studioToken }: { studioToken: string }) {
         </aside>
       </div>
 
+      <ProofPanel open={proofOpen} onClose={closeProof} studioToken={studioToken} />
       <ToastStack toasts={toasts} onDismiss={dismiss} />
     </div>
   );

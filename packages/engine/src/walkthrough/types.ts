@@ -131,6 +131,35 @@ export interface WalkthroughSetup {
   steps: Step[];
 }
 
+/** Where another way in starts: its own page, as the walkthrough's own persona. */
+export interface PathStart {
+  page: string;
+  /** May only repeat the walkthrough's own role (validate rejects anything else). The persona
+   * itself is always the walkthrough's `start.persona`. */
+  signed_in_as?: string;
+}
+
+/**
+ * Another way to do the same task (decision 34): e.g. recording a payment from the attendee's page
+ * instead of the booking. Its own start and opening `steps`, then the walkthrough's main steps from
+ * the one named by `joins` to the end. Captured on its own from the same starting data.
+ */
+export interface WalkthroughPath {
+  /** kebab-case, unique in the walkthrough, e.g. "from-attendee". */
+  id: string;
+  /** Reader-facing, e.g. "From the attendee's page". */
+  title: string;
+  /** One plain sentence: when to use this way. */
+  when: string;
+  start: PathStart;
+  /** The opening steps, before the path joins the main steps. Same step schema. */
+  steps: Step[];
+  /** Id of the main step where this path joins the shared rest. */
+  joins: string;
+  /** Written by the writer when capture flags that this path saves differently (pathDiffs). */
+  note?: string;
+}
+
 /** A task a user does, replayed against the real app. The single source of truth. */
 export interface Walkthrough {
   /** Slug id, e.g. "add-competitor". */
@@ -161,4 +190,6 @@ export interface Walkthrough {
   outro?: TitleCard;
   steps: Step[];
   validate?: Validate;
+  /** Other ways to do this task, each sharing the main steps from its `joins` step on. */
+  paths?: WalkthroughPath[];
 }

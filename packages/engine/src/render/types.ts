@@ -35,6 +35,18 @@ export interface TimelineHighlight {
   t0: number;
   t1: number;
   box: Box;
+  /** Step number drawn in the badge on the ring (M34: matches print's ring + number badge). */
+  num?: number;
+}
+
+/** One element of a title card easing in (M34): `id` is the element's DOM id, `t0`/`d` when and
+ * how long, `dy` how far it rises. In the timeline so player.js and state.ts's frameSignature
+ * read the same schedule (each preset has its own). */
+export interface TimelineReveal {
+  id: string;
+  t0: number;
+  d: number;
+  dy: number;
 }
 
 /** One numbered, optionally-labelled callout box, active for a step's whole on-screen window
@@ -109,11 +121,19 @@ export interface TimelineBrand {
   /** True when `logoSrc` came from `logoDark` (made for dark backgrounds); otherwise the player
    * puts a light logo on a light tile if it would be too dark to read on the night canvas. */
   logoForDark?: boolean;
-  colors?: { primary: string; accent: string; primaryForeground?: string };
+  colors?: { primary: string; accent: string; primaryForeground?: string; background?: string; foreground?: string };
   font?: string;
   headingFont?: string;
   /** https stylesheet the player loads (capped wait) before the first frame. */
   fontUrl?: string;
+  /** data: URL of the logo for light backgrounds (the minimal/friendly cards). */
+  logoLightSrc?: string;
+  /** House style preset (theme/style.ts). Unset: `bold`. Static styling only. */
+  style?: "minimal" | "friendly" | "bold";
+  /** `brand.md`'s tagline, under the outro. */
+  tagline?: string;
+  /** The app's corner radius in px (0-24), for the caption box and frame. */
+  radius?: number;
 }
 
 export interface Timeline {
@@ -122,8 +142,26 @@ export interface Timeline {
   stage: { x: number; y: number; w: number; h: number };
   fade: number;
   brand: TimelineBrand;
-  intro: { eyebrow: string; titleHtml: string; subtitle: string };
-  outro: { title: string; recap: string[] };
+  intro: {
+    eyebrow: string;
+    titleHtml: string;
+    subtitle: string;
+    /** Who the guide is for (the walkthrough's `for:`), M34. */
+    reader?: string;
+    /** Short facts shown on the card, e.g. "3 steps". */
+    facts?: string[];
+  };
+  outro: {
+    title: string;
+    recap: string[];
+    /** "Find this guide at <site>" when `publish.siteUrl` is set (M34). */
+    site?: string;
+  };
+  /** Title-card reveal schedules (M34). Optional for hand-built fixtures: player.js and
+   * state.ts fall back to the original fixed schedule. */
+  cards?: { intro: TimelineReveal[]; outro: TimelineReveal[] };
+  /** Browser-chrome bar height above the stage in px (0 = plain frame), M34. */
+  chrome?: number;
   chapters: string[];
   frames: TimelineFrameCue[];
   moves: TimelineMove[];
@@ -198,6 +236,9 @@ export interface RenderOptions {
   ffprobePath?: string;
   /** Browser pages to render scenes concurrently. Default `min(4, cpus/2)`. */
   concurrency?: number;
+  /** Push the camera in toward each step's target (M34). Default true; steps with their own
+   * `camera: { focus }` keep it. */
+  zoomToTarget?: boolean;
 }
 
 export interface RenderResult {

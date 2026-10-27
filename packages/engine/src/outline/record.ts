@@ -4,6 +4,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { CaptureManifest, ValidationResult } from "../capture/types.js";
+import { readPathCaptures } from "../capture/path-files.js";
 import { loadWalkthroughFile, type Walkthrough } from "../walkthrough/index.js";
 import { computeDrift, describeDrift, quotedStrings, seenNames, type DriftResult } from "./drift.js";
 import {
@@ -28,8 +29,17 @@ function stepsPassed(walkthrough: Walkthrough, validation: Pick<ValidationResult
 }
 
 /** Applies one passing capture to a card in the loaded document. Returns whether anything changed. */
-function applyCapture(loaded: LoadedOutline, card: OutlineCard, manifest: CaptureManifest, walkthrough: Walkthrough, at: string): { changed: boolean; result: DriftResult } {
-  const result = computeDrift(card, seenNames(manifest, walkthrough), at);
+function applyCapture(
+  loaded: LoadedOutline,
+  card: OutlineCard,
+  manifest: CaptureManifest,
+  walkthrough: Walkthrough,
+  at: string,
+  pathManifests: CaptureManifest[] = [],
+): { changed: boolean; result: DriftResult } {
+  // A label may be on any way in (decision 34): the main run's screens and every passing path's.
+  const seen = [...seenNames(manifest, walkthrough), ...pathManifests.flatMap((m) => seenNames(m))];
+  const result = computeDrift(card, seen, at);
   let changed = false;
   if (card.status !== "captured") {
     setStatus(loaded.doc, card.id, "captured");
@@ -59,6 +69,8 @@ export interface CaptureDriftInput {
   walkthrough: Walkthrough;
   manifest: CaptureManifest;
   validation: Pick<ValidationResult, "steps">;
+  /** Manifests of the walkthrough's paths that passed this run (decision 34). */
+  pathManifests?: CaptureManifest[];
   now?: Date;
 }
 
@@ -77,7 +89,7 @@ export function recordCaptureDrift(input: CaptureDriftInput): string | null {
       if (!loaded) return null;
       const card = findCard(loaded.outline, input.walkthrough.walkthrough);
       if (!card || card.status === "dropped") return null;
-      const { result } = applyCapture(loaded, card, input.manifest, input.walkthrough, (input.now ?? new Date()).toISOString());
+      const { result } = applyCapture(loaded, card, input.manifest, input.walkthrough, (input.now ?? new Date()).toISOString(), input.pathManifests);
       return driftLine(card.id, result);
     });
   } catch (err) {
@@ -194,7 +206,10 @@ function checkLoaded(
       out.push(row("capture-failed"));
       continue;
     }
-    const applied = applyCapture(loaded, card, manifest, walkthrough, at);
+    const pathManifests = readPathCaptures(captureDir, walkthrough)
+      .filter((p) => p.manifest && p.validation?.ok)
+      .map((p) => p.manifest!);
+    const applied = applyCapture(loaded, card, manifest, walkthrough, at, pathManifests);
     out.push(row("checked", applied.result.cleared));
   }
 

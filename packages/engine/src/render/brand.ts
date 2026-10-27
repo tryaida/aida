@@ -8,6 +8,8 @@ import type { BrandConfig } from "../config/types.js";
 import { DEFAULT_BRAND_PRIMARY, brandFontUrl } from "../theme/write.js";
 import { isGrayish, isPale, isReadable, readableForeground, toCssColor } from "../theme/color.js";
 import type { TimelineBrand } from "./types.js";
+import { withAppBrand } from "../theme/app-brand.js";
+import { radiusPx, readBrandNotes, resolveBrandStyle, type BrandStyle } from "../theme/style.js";
 
 /** `config.brand` (config/types.ts, Contract 1). */
 export type BrandConfigLike = BrandConfig;
@@ -40,6 +42,23 @@ export interface ArtifactBrand {
   logoDarkPath?: string;
   /** False when `config.brand` was absent — the neutral fallback look. */
   configured: boolean;
+  /** House style preset (theme/style.ts): motion, callouts, covers, framing. Always set. */
+  style: BrandStyle;
+  /** `brand.md`'s `tagline:`, for outros and covers. */
+  tagline?: string;
+  /** Corner radius in px (from `brand.radius`), for frames and caption boxes. */
+  radiusPx?: number;
+  /** `publish.siteUrl` (http/https only): the video outro says where to find the guide. */
+  siteUrl?: string;
+}
+
+function safeSiteUrl(value: string | undefined): string | undefined {
+  try {
+    const u = new URL(value ?? "");
+    return u.protocol === "https:" || u.protocol === "http:" ? u.toString().replace(/\/+$/, "") : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Fallback palette when nothing is configured: the help app's own default primary
@@ -97,9 +116,15 @@ export function fontStack(font: string | undefined): string {
 
 /** `config.brand` -> the one brand every artifact renders with. Logo paths are resolved against
  * `config.configDir`. Always returns a brand (neutral defaults when nothing is configured). */
-export function resolveArtifactBrand(config: { configDir: string; brand?: BrandConfigLike }): ArtifactBrand {
+export function resolveArtifactBrand(configIn: { configDir: string; brand?: BrandConfigLike; publish?: { siteUrl?: string } }): ArtifactBrand {
+  // The running app's brand (brand/from-app.json) merged under the config — same as the site.
+  const config = withAppBrand(configIn);
   const b = config.brand;
-  if (!b) return { colors: { ...NEUTRAL_COLORS }, configured: false };
+  const notes = readBrandNotes(config);
+  const { style, tagline } = resolveBrandStyle(b, notes);
+  const siteUrl = safeSiteUrl(configIn.publish?.siteUrl);
+  const extras = { style, ...(tagline ? { tagline } : {}), ...(siteUrl ? { siteUrl } : {}) };
+  if (!b) return { colors: { ...NEUTRAL_COLORS }, configured: false, ...extras };
   const c = b.colors ?? {};
   const primary = cssColor(b.primaryColor) ?? cssColor(c.primary);
   // shadcn-style themes often set `accent` to a pale tint (a hover fill, not a brand colour) —
@@ -131,6 +156,8 @@ export function resolveArtifactBrand(config: { configDir: string; brand?: BrandC
     logoPath: abs(b.logo),
     logoDarkPath: abs(b.logoDark),
     configured: true,
+    ...extras,
+    ...(radiusPx(b.radius) !== undefined ? { radiusPx: radiusPx(b.radius) } : {}),
   };
 }
 
@@ -182,9 +209,22 @@ export function timelineBrand(brand: ArtifactBrand | undefined, productName?: st
     out.logoSrc = logoSrc;
     out.logoForDark = Boolean(dark);
   }
-  out.colors = { primary: brand.colors.primary, accent: brand.colors.accent, primaryForeground: brand.colors.primaryForeground };
+  // Light cards (minimal/friendly) want the light-background logo; only worth a second copy when
+  // the dark-background one took `logoSrc`.
+  const light = dark ? imageDataUrl(brand.logoPath) : undefined;
+  if (light) out.logoLightSrc = light;
+  out.colors = {
+    primary: brand.colors.primary,
+    accent: brand.colors.accent,
+    primaryForeground: brand.colors.primaryForeground,
+    background: brand.colors.background,
+    foreground: brand.colors.foreground,
+  };
   if (brand.font) out.font = brand.font;
   if (brand.headingFont) out.headingFont = brand.headingFont;
   if (brand.fontUrl) out.fontUrl = brand.fontUrl;
+  out.style = brand.style;
+  if (brand.tagline) out.tagline = brand.tagline;
+  if (brand.radiusPx !== undefined) out.radius = Math.max(0, Math.min(24, brand.radiusPx));
   return out;
 }

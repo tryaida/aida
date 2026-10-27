@@ -33,9 +33,15 @@ export function quotedStrings(text: string | undefined): string[] {
   return out;
 }
 
-/** A card's promised on-screen names: `labels`, plus quoted strings in its title and purpose. */
-export function cardLabels(card: Pick<OutlineCard, "labels" | "title" | "purpose">): string[] {
-  const all = [...(card.labels ?? []), ...quotedStrings(card.title), ...quotedStrings(card.purpose)];
+/** A card's promised on-screen names: `labels`, plus quoted strings in its title, purpose and
+ * `paths` (decision 34: `from "Payments"` promises a Payments screen). */
+export function cardLabels(card: Pick<OutlineCard, "labels" | "title" | "purpose" | "paths">): string[] {
+  const all = [
+    ...(card.labels ?? []),
+    ...quotedStrings(card.title),
+    ...quotedStrings(card.purpose),
+    ...(card.paths ?? []).flatMap((p) => quotedStrings(p)),
+  ];
   const seen = new Set<string>();
   return all.filter((l) => {
     const key = l.trim().toLowerCase();

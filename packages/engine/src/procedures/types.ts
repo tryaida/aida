@@ -15,6 +15,30 @@ export interface ProcedureStep {
   videoTimeSec?: number;
 }
 
+/**
+ * Another way to do the task (decision 34): where it starts, its own opening steps, and the main
+ * step it joins. Only paths whose capture passed are listed.
+ */
+export interface ProcedurePath {
+  id: string;
+  /** e.g. "From the attendee's page". */
+  title: string;
+  /** One plain sentence: when to use this way. */
+  when: string;
+  start: {
+    /** Path this way starts on, e.g. "/attendees/[id]" or "/payments". */
+    page: string;
+  };
+  /** The path's own opening steps, numbered from 1. */
+  steps: ProcedureStep[];
+  /** The main step (`Procedure.steps[].n`) to continue from once these are done. */
+  joinsAt: number;
+  /** That main step's title. */
+  joinsTitle: string;
+  /** The writer's note, when capture found this way saves differently (validation `pathDiffs`). */
+  note?: string;
+}
+
 export interface Procedure {
   id: string;
   title: string;
@@ -42,6 +66,8 @@ export interface Procedure {
   impactRoutes?: string[];
   /** ISO timestamp this procedure's page was last checked against the real app. */
   lastChecked?: string;
+  /** Other ways to start this task, each joining `steps` part-way (decision 34). */
+  paths?: ProcedurePath[];
 }
 
 export interface BuildProceduresResult {

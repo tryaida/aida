@@ -333,6 +333,24 @@ export interface BrandConfig {
   headingFont?: string;
   /** Corner radius, e.g. "0.5rem" or "10px". */
   radius?: string;
+  /** How much the app's cards and buttons lift off the page; read from the running app
+   * (`aida theme --from-app`). Picks the default `style`. */
+  shadow?: "none" | "soft" | "strong";
+  /** How tightly the app packs its controls; read from the running app. */
+  density?: "compact" | "regular" | "comfortable";
+  /**
+   * House style every output starts from (docs/scope.md "House styles"): motion, transitions,
+   * zoom, cursor, callout shape, caption box, PDF cover and screenshot framing. Unset: picked
+   * from `radius` and `shadow` (large radius -> `friendly`, square and flat -> `minimal`, else
+   * `bold`), or from `brand.md`'s `style:`.
+   */
+  style?: "minimal" | "friendly" | "bold";
+  /**
+   * A free-text design note for agents (`brand.md`), relative to the config file. Default
+   * `brand.md` next to the config when it exists. The engine reads only its optional frontmatter:
+   * `style:` (as above) and `tagline:` (a short line for video outros and PDF covers).
+   */
+  notes?: string;
 }
 
 /**

@@ -1,4 +1,5 @@
 import type { Camera, Viewport } from "../walkthrough/index.js";
+import type { PathCaptureSummary } from "./paths.js";
 
 export interface Box {
   x: number;
@@ -33,6 +34,8 @@ export type CaptureEvent =
 export interface ImpactRequest {
   method: string;
   path: string;
+  /** A Next.js server action's id (the `Next-Action` request header), when the request was one. */
+  action?: string;
 }
 
 /** aida addition: what a step touched, for the CI impact map. */
@@ -124,6 +127,26 @@ export interface DatabaseCheckResult {
   error?: string;
 }
 
+/**
+ * A walkthrough path whose writes differ from the main run's (decision 34): e.g. paying from the
+ * attendee's page spreads the money across their bookings. Keys are `writeKey` strings
+ * (capture/paths.ts): `POST /api/payments/:id`, or `POST action <id>` for a server action.
+ */
+export interface PathDiff {
+  /** The path's id. */
+  path: string;
+  /** Every write the main run made, one key per request, sorted. */
+  main: string[];
+  /** Every write the path's run made, likewise. */
+  pathWrites: string[];
+  /** Keys whose count differs, as the path made them (`POST /api/x ×2` for more than one). */
+  onlyInPath: string[];
+  /** The same keys as the main run made them. */
+  onlyInMain: string[];
+  /** One line: "path from-attendee saves differently: POST /api/payments/allocate vs POST /api/payments". */
+  message: string;
+}
+
 /** Same shape as the original pipeline's `capture/validation.json`. */
 export interface ValidationResult {
   workflow: string;
@@ -138,6 +161,8 @@ export interface ValidationResult {
     page: ProblemEntry[];
     server: ProblemEntry[];
   };
+  /** Paths whose writes differ from this (main) run's; absent when none do (decision 34). */
+  pathDiffs?: PathDiff[];
 }
 
 /**
@@ -233,4 +258,8 @@ export interface CaptureSummary {
   dependency?: boolean;
   /** e.g. a state it should leave whose check says it isn't true. */
   warnings?: string[];
+  /** One entry per walkthrough path (decision 34), when it has any. */
+  paths?: PathCaptureSummary[];
+  /** Paths whose writes differ from the main run's. Never fails the capture. */
+  pathDiffs?: PathDiff[];
 }

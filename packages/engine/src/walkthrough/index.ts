@@ -16,6 +16,8 @@ export type {
   DatabaseCheck,
   Validate,
   WalkthroughSetup,
+  WalkthroughPath,
+  PathStart,
 } from "./types.js";
 export { TargetSchema, HighlightSchema, BoxSchema } from "./target.js";
 export { ActionSchema } from "./action.js";
@@ -34,11 +36,15 @@ export {
   WalkthroughDocSchema,
   docToWalkthrough,
   rawStepToStep,
+  rawPathToPath,
+  PATH_ID_PATTERN,
   STATE_NAME_PATTERN,
   RESERVED_DATA_KEYS,
   type WalkthroughDoc,
   type RawStep,
+  type RawPath,
 } from "./schema.js";
+export { pathWalkthrough, joinIndex, findPath, pathStartPage, type PathRun } from "./paths.js";
 export {
   loadWalkthroughFile,
   loadWalkthroughText,

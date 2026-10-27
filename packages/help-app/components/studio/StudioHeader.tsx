@@ -24,12 +24,15 @@ export function StudioHeader({
   lastChecked,
   siteUrl,
   loading,
+  onOpenProof,
 }: {
   title?: string;
   status?: CaptureStatus;
   lastChecked?: string;
   siteUrl?: string;
   loading: boolean;
+  /** Opens the proof sheet (`aida proof`). */
+  onOpenProof?: () => void;
 }) {
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-fd-border studio-surface px-4">
@@ -64,6 +67,12 @@ export function StudioHeader({
           <kbd className="studio-kbd">↓</kbd>
           steps
         </span>
+        {onOpenProof ? (
+          <button type="button" onClick={onOpenProof} className="studio-btn h-8 px-3" title="How the brand looks on every output">
+            <Icon name="sparkles" className="size-3.5" />
+            Proof sheet
+          </button>
+        ) : null}
         {siteUrl ? (
           <a href={siteUrl} target="_blank" rel="noreferrer" className="studio-btn h-8 px-3">
             View on help site

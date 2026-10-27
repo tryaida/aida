@@ -1,5 +1,5 @@
 import type { Page, Request } from "playwright";
-import type { StepImpact } from "./types.js";
+import type { ImpactRequest, StepImpact } from "./types.js";
 
 /**
  * Tracks same-origin navigations and API requests while a step runs, for the
@@ -7,7 +7,7 @@ import type { StepImpact } from "./types.js";
  */
 export class ImpactTracker {
   private urls = new Set<string>();
-  private requests: { method: string; path: string }[] = [];
+  private requests: ImpactRequest[] = [];
   private origin: string;
 
   constructor(private page: Page, baseUrl: string) {
@@ -20,7 +20,10 @@ export class ImpactTracker {
     try {
       const u = new URL(req.url());
       if (u.origin !== this.origin) return;
-      this.requests.push({ method: req.method(), path: u.pathname + (u.search || "") });
+      // A Next.js server action posts to the page's own URL, so the path alone can't tell two
+      // actions apart (or one action called from two pages): its id is in the Next-Action header.
+      const action = req.method() === "GET" ? undefined : req.headers()["next-action"];
+      this.requests.push({ method: req.method(), path: u.pathname + (u.search || ""), ...(action ? { action } : {}) });
     } catch {
       // ignore unparsable URLs
     }

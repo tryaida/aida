@@ -19,6 +19,7 @@
 // the site has one, it's the first system block, ahead of the rules, so turning caching on later
 // needs no reordering. Still no `cache_control` here.
 import type { ChatHistoryTurn, ChatCitation, RetrievedContext } from "./types.js";
+import { HeadingSlugger } from "../index-search/index.js";
 
 /** The stable system prompt: the rules never change between requests (no timestamps, no
  * request-specific data), so this exact string is what provider prompt caching keys on.
@@ -86,18 +87,45 @@ export function buildCitations(context: RetrievedContext): ChatCitation[] {
 export function buildContextBlock(context: RetrievedContext, citations: ChatCitation[]): string {
   const parts = context.pages.map((page, i) => {
     const lines = [`[${citations[i].n}] Guide: ${citations[i].title}`];
-    for (const section of page.sections) {
+    const pathSections = page.procedure?.paths?.length ? otherWaysSections(page.sections, page.procedure.paths) : new Set<number>();
+    for (const [i, section] of page.sections.entries()) {
       if (page.procedure && section.heading && STEP_SECTION_HEADING.test(section.heading)) continue;
+      // The procedure's paths below carry these in full.
+      if (pathSections.has(i)) continue;
       if (!section.text.trim()) continue;
       lines.push(section.heading ? `${section.heading}: ${section.text}` : section.text);
     }
     if (page.procedure) {
       lines.push("Steps:");
       for (const s of page.procedure.steps) lines.push(`  ${s.n}. ${s.title}${s.instruction ? ` — ${s.instruction}` : ""}`);
+      // Other ways to start the same task (decision 34), marking the one on the reader's screen.
+      for (const path of page.procedure.paths ?? []) {
+        const here = page.currentPathId === path.id ? " (the reader is on this screen now: lead with this way)" : "";
+        lines.push(`Other way: ${path.title}, starting on ${path.start.page}${here}. When: ${path.when}`);
+        for (const s of path.steps) lines.push(`  ${s.n}. ${s.title}${s.instruction ? ` — ${s.instruction}` : ""}`);
+        lines.push(`  Then continue from step ${path.joinsAt} (${path.joinsTitle}).${path.note ? ` Note: ${path.note}` : ""}`);
+      }
     }
     return lines.join("\n");
   });
   return parts.length > 0 ? parts.join("\n\n") : "(no help guide matches this question)";
+}
+
+/** The page's own "Other ways to do this" section and each path's section under it, by index —
+ * matched by heading anchor (the ids pages/content.ts's headings get on the site), never by
+ * heading text alone, so a main section that happens to share a path's title stays in. */
+function otherWaysSections(sections: { url: string }[], paths: { title: string }[]): Set<number> {
+  const anchorOf = (url: string) => url.split("#")[1];
+  const start = sections.findIndex((s) => anchorOf(s.url) === "other-ways-to-do-this");
+  const out = new Set<number>();
+  if (start === -1) return out;
+  out.add(start);
+  const bases = paths.map((p) => new HeadingSlugger().slug(p.title));
+  sections.forEach((s, i) => {
+    const anchor = anchorOf(s.url);
+    if (i > start && anchor && bases.some((b) => anchor === b || new RegExp(`^${b.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-\\d+$`).test(anchor))) out.add(i);
+  });
+  return out;
 }
 
 /**

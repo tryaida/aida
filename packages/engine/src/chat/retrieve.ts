@@ -27,7 +27,13 @@ function boostUrlsFor(currentPath: string | undefined, procedures: Procedure[]):
 }
 
 function startsOrTouches(proc: Procedure, path: string): boolean {
-  return proc.start.page === path || (proc.impactRoutes ?? []).includes(path);
+  return proc.start.page === path || (proc.impactRoutes ?? []).includes(path) || Boolean(pathStartingOn(proc, path));
+}
+
+/** The procedure's other way in (decision 34) that starts on `screen`, unless the main path does. */
+function pathStartingOn(proc: Procedure | undefined, screen: string | undefined): string | undefined {
+  if (!proc || !screen || proc.start.page === screen) return undefined;
+  return proc.paths?.find((p) => p.start.page === screen)?.id;
 }
 
 /** A procedure's page URL: its `url` (the nested library URL, e.g.
@@ -83,14 +89,26 @@ export function retrieve(
       // the "before you start" and caveats around it.
       sections: searchIndexEntries.filter((e) => pageUrlOf(e.url) === url),
       procedure: procedureFor(url, procedures),
-    }));
+    }))
+    .map((page) => {
+      const currentPathId = pathStartingOn(page.procedure, opts.currentPath);
+      return currentPathId ? { ...page, currentPathId } : page;
+    });
 
   // Nothing matched, but the reader is on a screen a walkthrough covers: offer that one.
   if (pages.length === 0 && opts.currentPath) {
     const proc = procedures.find((p) => startsOrTouches(p, opts.currentPath!));
     if (proc) {
       const url = procedureUrl(proc);
-      pages.push({ url, title: proc.title, score: 0, sections: searchIndexEntries.filter((e) => pageUrlOf(e.url) === url), procedure: proc });
+      const currentPathId = pathStartingOn(proc, opts.currentPath);
+      pages.push({
+        url,
+        title: proc.title,
+        score: 0,
+        sections: searchIndexEntries.filter((e) => pageUrlOf(e.url) === url),
+        procedure: proc,
+        ...(currentPathId ? { currentPathId } : {}),
+      });
     }
   }
 

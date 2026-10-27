@@ -7,7 +7,7 @@ import type { ResolvedConfig } from "../config/index.js";
 import { loadWalkthroughFile } from "../walkthrough/index.js";
 import type { Walkthrough } from "../walkthrough/index.js";
 import * as captureModule from "../capture/index.js";
-import { runCapture, runLevelFailure, withFrameStabilization } from "../capture/index.js";
+import { capturePaths, diffPaths, readPathCaptures, markPathsNotCaptured, prunePathDirs, recordPathDiffs, runCapture, runLevelFailure, withFrameStabilization } from "../capture/index.js";
 import { markNotCaptured, notCapturedReason } from "../capture/not-captured.js";
 import { assertLocalDatabase } from "../capture/write-guard.js";
 import { AppDatabaseRefusedError, runCaptureSafetyChecks } from "../safety/index.js";
@@ -198,6 +198,7 @@ async function runCaptureStage(
   if (blocked) {
     planned!.run.tracker.record(wf.walkthrough, false, { appBugIn: blocked.appBugIn });
     markNotCaptured(state.captureDir, { walkthrough: wf.walkthrough, reason: blocked.reason });
+    markPathsNotCaptured(state.captureDir, wf, blocked.reason);
     state.blocked = { appBugIn: blocked.appBugIn };
     state.stages.capture = failed(blocked.reason, Date.now() - started);
     return;
@@ -209,7 +210,26 @@ async function runCaptureStage(
 
   try {
     // The plan (decision 28) moves a chain member's reset to the start of its chain.
-    const needsDbReset = planned ? planned.item.resetBefore : Boolean(config.database && wf.validate?.database?.length);
+    const needsDbReset = planned
+      ? planned.item.resetBefore
+      : Boolean(config.database && (wf.validate?.database?.length || wf.paths?.length));
+
+    // Other ways in first (decision 34; capture/paths.ts), as `aida capture` runs them: reset →
+    // path → … → reset → main, so dependants see the main run's data.
+    let pathRun: Awaited<ReturnType<typeof capturePaths>> | undefined;
+    if ((wf.paths ?? []).length === 0) prunePathDirs(state.captureDir, wf);
+    else {
+      pathRun = await capturePaths({
+        walkthrough: wf,
+        config,
+        captureDir: state.captureDir,
+        storageStatePath,
+        personaFor: planned?.run.personaFor,
+        canReset: !opts.noReset && needsDbReset,
+        cannotResetReason: opts.noReset ? "--no-reset was given" : (planned?.item.resetNote ?? "the capture plan doesn't reset before this walkthrough"),
+      });
+    }
+
     if (!opts.noReset && needsDbReset && config.database) {
       const dbUrl = await config.database.url();
       assertLocalDatabase(dbUrl);
@@ -228,20 +248,34 @@ async function runCaptureStage(
         personaFor: planned?.run.personaFor,
       }),
     );
+    // Dependants wait on the main run only, which ran last.
     planned?.run.tracker.record(wf.walkthrough, result.validation.ok, { category: result.failure?.category });
     // The runner rewrites or removes failure.json on every run, so whatever is there is this run's.
     if (existsSync(failureFile)) state.failureFile = failureFile;
     writeFileSync(manifestFile, `${JSON.stringify(result.manifest, null, 2)}\n`);
     writeFileSync(join(state.captureDir, "run.json"), `${JSON.stringify(result.run, null, 2)}\n`);
     writeFileSync(validationFile, `${JSON.stringify(result.validation, null, 2)}\n`);
+    let pathNote = "";
+    let pathManifests: CaptureManifest[] = [];
+    if (pathRun) {
+      const pathDiffs = result.validation.ok ? diffPaths(result.manifest, pathRun.manifests) : [];
+      recordPathDiffs(state.captureDir, pathDiffs);
+      pathManifests = Object.values(pathRun.manifests);
+      const ran = pathRun.paths.filter((p) => p.skipped === undefined);
+      const failedPaths = ran.filter((p) => !p.ok).map((p) => p.path);
+      const skipped = pathRun.paths.find((p) => p.skipped !== undefined)?.skipped;
+      pathNote = skipped
+        ? `; paths not captured: ${skipped}`
+        : `; paths ${ran.length - failedPaths.length}/${ran.length} passed${failedPaths.length > 0 ? ` (failed: ${failedPaths.join(", ")})` : ""}${pathDiffs.map((d) => `; warning: ${d.message}`).join("")}`;
+    }
     // Outline drift (M29): quiet without an outline file; never fails the capture.
-    const outlineLine = recordCaptureDrift({ config, walkthrough: wf, manifest: result.manifest, validation: result.validation });
+    const outlineLine = recordCaptureDrift({ config, walkthrough: wf, manifest: result.manifest, validation: result.validation, pathManifests });
     if (outlineLine) console.warn(`aida build: ${outlineLine}`);
     state.manifest = result.manifest;
     state.validation = result.validation;
     state.frameDiff = frameDiff;
     const passed = result.validation.steps.filter((s) => s.ok).length;
-    const frameDiffDetail = `, ${frameDiff.kept} kept / ${frameDiff.changed} changed frames${(result.warnings ?? []).map((w) => `; warning: ${w}`).join("")}`;
+    const frameDiffDetail = `, ${frameDiff.kept} kept / ${frameDiff.changed} changed frames${(result.warnings ?? []).map((w) => `; warning: ${w}`).join("")}${pathNote}`;
     state.stages.capture = result.validation.ok
       ? ok(`${passed}/${result.validation.steps.length} steps passed${frameDiffDetail}`)
       : failed(`${passed}/${result.validation.steps.length} steps passed${frameDiffDetail}`);
@@ -317,7 +351,7 @@ function stripImpact(manifest: CaptureManifest): CaptureManifest {
 
 /** Bumped when what `buildPage()` writes changes shape, so pages cached by an older engine
  * rebuild (M32: print figures in `BuildPageResult.printFigures`, no recap "Good to know"). */
-export const PAGES_LAYOUT_VERSION = "m32-print-figures";
+export const PAGES_LAYOUT_VERSION = "m33-paths";
 
 /** Stable summary of a capture's validation result — ok + per-step ok only, so volatile fields
  * (`ranAt`, per-step `ms`, error text) never affect the hash, but a pass->fail (or fail->pass)
@@ -327,7 +361,19 @@ function stableValidationSummary(validation: ValidationResult | undefined): unkn
   return {
     ok: validation.ok,
     steps: validation.steps.map((s) => ({ id: s.id, ok: s.ok })),
+    ...(validation.pathDiffs ? { pathDiffs: validation.pathDiffs.map((d) => d.path) } : {}),
   };
+}
+
+/** Each path's latest capture (decision 34), hashed the way the main capture is, for the pages
+ * stage's skip decision: the "Other ways to do this" section is built from them. */
+function pathCapturesHash(wf: Walkthrough, captureDir: string): unknown {
+  if ((wf.paths ?? []).length === 0) return undefined;
+  return readPathCaptures(captureDir, wf).map((p) => ({
+    id: p.pathId,
+    capture: p.manifest ? manifestHash(stripImpact(p.manifest), captureModule as unknown as Record<string, unknown>) : null,
+    validation: stableValidationSummary(p.validation),
+  }));
 }
 
 /** Exported for direct unit testing of the pages-stage skip decision (see pagesInputHash.test.ts). */
@@ -338,6 +384,7 @@ export function pagesInputHash(
   readers: string[] | undefined,
   videoPresent: boolean,
   roles?: ResolvedConfig["roles"],
+  pathCaptures?: unknown,
 ): string {
   const captureHash = manifestHash(stripImpact(manifest), captureModule as unknown as Record<string, unknown>);
   const textFields = {
@@ -351,10 +398,20 @@ export function pagesInputHash(
     // `blur`/`callouts` decide which frame a print figure may show (pages/focus.ts) and the
     // callout labels drawn, not just the resolved boxes the manifest already carries.
     steps: wf.steps.map((s) => ({ id: s.id, title: s.title, say: s.say, caption: s.caption, page_text: s.page_text, chapter: s.chapter, blur: s.blur, callouts: s.callouts })),
+    ...(wf.paths ? { paths: wf.paths } : {}),
   };
   const validationSummary = stableValidationSummary(validation);
   return sha256(
-    stableStringify({ captureHash, textFields, validationSummary, readers, videoPresent, layout: PAGES_LAYOUT_VERSION, ...(roles ? { roles } : {}) }),
+    stableStringify({
+      captureHash,
+      textFields,
+      validationSummary,
+      readers,
+      videoPresent,
+      layout: PAGES_LAYOUT_VERSION,
+      ...(roles ? { roles } : {}),
+      ...(pathCaptures !== undefined ? { pathCaptures } : {}),
+    }),
   );
 }
 
@@ -366,7 +423,7 @@ async function runPagesStage(wf: Walkthrough, config: ResolvedConfig, state: Wal
   }
   const cacheFile = join(config.buildDir, wf.walkthrough, "pages-cache.json");
   const videoPresent = existsSync(join(state.videoDir, wf.walkthrough, `${wf.walkthrough}.mp4`));
-  const inputHash = pagesInputHash(wf, state.manifest, state.validation, config.readers, videoPresent, config.roles);
+  const inputHash = pagesInputHash(wf, state.manifest, state.validation, config.readers, videoPresent, config.roles, pathCapturesHash(wf, state.captureDir));
   const cache = readJsonIfExists<{ hash: string; result: BuildPageResult }>(cacheFile);
 
   if (cache && cache.hash === inputHash && existsSync(cache.result.indexFile)) {

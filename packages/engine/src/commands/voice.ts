@@ -9,6 +9,7 @@ import { loadWalkthroughFile } from "../walkthrough/index.js";
 import type { Walkthrough } from "../walkthrough/index.js";
 import { getProvider, narrate } from "../voice/index.js";
 import { DEFAULT_CACHE_DIR } from "../voice/cache.js";
+import { voiceFitForConfig } from "../voice/fit.js";
 import type { NarrateReport, NarrationLine } from "../voice/index.js";
 
 export interface VoiceStageResult {
@@ -46,10 +47,12 @@ export async function buildVoiceManifest(
   const provider = getProvider(providerName);
   const lines = narrationLinesOf(wf);
 
+  // Voice and pace fitted to who uses the app (app brief), when the config sets neither (M34).
+  const fit = voiceFitForConfig(config, providerName);
   const report = await narrate(lines, provider, {
     model: config.voice?.model,
-    voice: config.voice?.voiceId,
-    speed: config.voice?.speed,
+    voice: config.voice?.voiceId ?? fit?.voice,
+    speed: config.voice?.speed ?? fit?.speed,
     pronunciation: config.voice?.pronunciation,
     force: opts.force,
     // Next to the config, not the shell's cwd: running aida from another folder must still hit

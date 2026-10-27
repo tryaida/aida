@@ -20,6 +20,13 @@ async function findPlayerAssetsDir(): Promise<string> {
   throw new Error(`could not find player assets (looked in: ${PLAYER_ASSETS_CANDIDATES.join(", ")})`);
 }
 
+/** The player's own files: part of every render's content hash, so a player change (a new look,
+ * a motion or privacy fix) re-renders videos the whole-video cache would otherwise skip. */
+export async function playerAssetFiles(): Promise<string[]> {
+  const dir = await findPlayerAssetsDir();
+  return ["index.html", "player.js", "player.css"].map((f) => path.join(dir, f));
+}
+
 /** Writes a fresh player bundle to `outDir`, overwriting any previous contents. */
 export async function writePlayerBundle(outDir: string, timeline: Timeline): Promise<void> {
   const assetsDir = await findPlayerAssetsDir();

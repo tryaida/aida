@@ -1,0 +1,17 @@
+<!doctype html>
+<html><head><title>Payment</title></head>
+<body><main><h1>Record a payment</h1>
+<label>Amount <input id="amount" /></label>
+<button type="button" id="save">Save</button>
+<p id="done" hidden>Payment saved</p>
+</main>
+<script>
+  // From the attendee's page the money is spread across their bookings: a different save.
+  const from = new URLSearchParams(location.search).get("from");
+  document.getElementById("save").addEventListener("click", async () => {
+    const url = from === "attendee" ? "/api/payments/allocate" : "/api/bookings/12/payments";
+    await fetch(url, { method: "POST", body: document.getElementById("amount").value });
+    document.getElementById("done").hidden = false;
+  });
+</script>
+</body></html>

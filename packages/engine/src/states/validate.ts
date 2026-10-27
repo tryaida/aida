@@ -168,15 +168,23 @@ export function runValuesOnScreen(w: Walkthrough): RunHit[] {
   check(w.title, "title", "title");
   check(w.summary, "summary", "summary");
   for (const card of ["intro", "outro"] as const) check(w[card], card, card);
-  for (const [i, step] of w.steps.entries()) {
-    for (const field of ["title", "say", "caption", "page_text"] as const) check(step[field], `steps.${i}.${field}`, field);
-    check(step.callouts?.map((c) => c.label), `steps.${i}.callouts`, "callout label");
-    for (const a of step.actions) {
-      if (a.do === "type") check(a.text, `steps.${i}`, "typed text");
-      if (a.do === "select") check(a.option, `steps.${i}`, "chosen option");
-      // A target found by a run value means that value is on screen in the screenshot.
-      if ("target" in a) check(a.target, `steps.${i}`, "an on-screen element it finds");
+  const checkSteps = (steps: Walkthrough["steps"], prefix: string): void => {
+    for (const [i, step] of steps.entries()) {
+      for (const field of ["title", "say", "caption", "page_text"] as const) check(step[field], `${prefix}.${i}.${field}`, field);
+      check(step.callouts?.map((c) => c.label), `${prefix}.${i}.callouts`, "callout label");
+      for (const a of step.actions) {
+        if (a.do === "type") check(a.text, `${prefix}.${i}`, "typed text");
+        if (a.do === "select") check(a.option, `${prefix}.${i}`, "chosen option");
+        // A target found by a run value means that value is on screen in the screenshot.
+        if ("target" in a) check(a.target, `${prefix}.${i}`, "an on-screen element it finds");
+      }
     }
+  };
+  checkSteps(w.steps, "steps");
+  // Other ways in (decision 34) are captured and shown on the page too.
+  for (const [i, path] of (w.paths ?? []).entries()) {
+    check([path.title, path.when, path.note], `paths.${i}`, "path title, when or note");
+    checkSteps(path.steps, `paths.${i}.steps`);
   }
   return hits;
 }

@@ -675,6 +675,74 @@
             "steps"
           ],
           "additionalProperties": false
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1
+              },
+              "when": {
+                "type": "string",
+                "minLength": 1
+              },
+              "start": {
+                "type": "object",
+                "properties": {
+                  "page": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "signed_in_as": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "persona": {
+                    "$ref": "#/definitions/Walkthrough/properties/start/properties/persona"
+                  }
+                },
+                "required": [
+                  "page"
+                ],
+                "additionalProperties": false
+              },
+              "steps": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/Walkthrough/properties/steps/items"
+                },
+                "minItems": 1
+              },
+              "joins": {
+                "type": "string",
+                "minLength": 1
+              },
+              "note": {
+                "type": "string"
+              },
+              "needs": {},
+              "leaves": {},
+              "clears": {},
+              "setup": {},
+              "validate": {}
+            },
+            "required": [
+              "id",
+              "title",
+              "when",
+              "start",
+              "steps",
+              "joins"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [

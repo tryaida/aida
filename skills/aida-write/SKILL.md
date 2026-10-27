@@ -17,10 +17,9 @@ and validate YAML concurrently: capture must never run from two at once (see ste
    load `aida brief show --config <cfg> --section "Words it uses" --section "Rules that matter"`
    (and "Several ways to do one thing" when the card has `paths:`), not the whole brief.
 1. Start from the approved outline card (title, reader, one-line purpose) and the relevant slice
-   of the discover summary (routes/labels for that task only) — or, when run from `aida ci`'s
-   "new" tier comment, from the route path and file it named directly; there's no outline card for
-   this case, just one new page to cover. Either way, label the PR `docs:new` when you're done
-   (decisions #24) — the reviewer `aida ci`'s comment names is the app PR's author.
+   of the discover summary (routes/labels for that task only) — or, from `aida ci`'s "new" tier
+   comment, from the route path and file it named (no card). Either way, label the PR `docs:new`
+   when you're done (decisions #24); the reviewer is the app PR's author.
    Set `section:` from the card (or, for a "new" tier page, from the app's menu item for that
    route, matching the `section:` other walkthroughs in that area already use).
 2. **Before writing any step**, run `aida inspect <path> --config <cfg> --json` on the
@@ -37,9 +36,9 @@ and validate YAML concurrently: capture must never run from two at once (see ste
    it empty. Opening a menu or dialog first: `aida inspect <path> --config <cfg> --click "Open
    menu" --json` (button/menuitem/tab/combobox, or any trigger with `aria-haspopup="listbox"` —
    never a save/submit-shaped name; every non-GET request is blocked for the whole scan, so this
-   can never submit anything). Repeat `--click` to click several in order (a menu, then its item). A custom combobox (e.g. a Radix "Select competitor…" trigger) opens
-   the same way; `--click`'s output lists its listbox options (capped at 15) before closing it
-   again with Escape. A field that only appears after checking a radio/checkbox, or after picking
+   can never submit anything). Repeat `--click` to click several in order (a menu, then its
+   item). A custom combobox opens the same way and lists its options (capped at 15). A field that
+   only appears after checking a radio/checkbox, or after picking
    an option in a native `<select>` or custom combobox (conditional fields): `aida inspect <path>
    --config <cfg> --check "Other" --json` or `--select "<field>" "<option>"` reveals it before
    scanning. `--area <cssOrLandmark>` scopes a long page down (e.g. `--area dialog`, `--area
@@ -71,12 +70,14 @@ and validate YAML concurrently: capture must never run from two at once (see ste
    aida edit setStepActions <file> <stepId> '[{"do":"click","target":{"role":"button","name":"Add competitor"}}]' --by agent --json
    ```
    (or `reorderSteps`/`removeStep`/`setPageBlock`, see `aida edit --help`). `setStepField`
-   covers `say`/`caption`/`page_text`/`title`/`hold` and the plain-words `do`/`check` locator
-   fields; `setStepActions` replaces a step's whole structured `actions:` list in one go, for a
-   change plain words can't express; `aida edit setData <file> <dotted.path> <value>` changes a
-   value in the walkthrough's `data:` block (e.g. `aida edit setData <file> competitor.phone
-   "0491 570 100" --by agent --json`) instead of hand-editing the YAML — it rejects an edit that
-   would leave any `{{...}}` reference elsewhere unresolved.
+   covers `say`/`caption`/`page_text`/`title`/`hold` and the plain-words `do`/`check` fields;
+   `setStepActions` replaces a step's whole `actions:` list; `aida edit setData <file>
+   <dotted.path> <value>` changes a `data:` value (it rejects leaving a `{{...}}` unresolved).
+   **Other ways to start the task** (card `paths:`, the brief's "Several ways to do one thing"):
+   one walkthrough, not one per way. `aida inspect` each way's start page, then add a `paths:`
+   entry (cheat sheet → "Several ways to do one task"): its `start.page`, opening steps, `joins:`
+   (the main step where it meets the shared rest) and a `when:` sentence from the brief. Edit
+   them with `aida edit addPath`/`setPathField`/`setPathStepField`/`setPathStepActions`.
 4. **Demo data and state**: invented values through example.com/reserved phone ranges (see
    `references/safety.md`), written into `data:` directly when authoring, or via `aida edit
    setData` on a repair. A walkthrough that changes data declares it (from the card):
@@ -88,19 +89,20 @@ and validate YAML concurrently: capture must never run from two at once (see ste
 5. Validate: `aida validate <file> --config <cfg>` (the config's `states` are checked against
    `needs`/`leaves`/`clears`; caption and chapter line lengths too). Fix what it reports yourself.
 6. Capture: `aida capture <walkthrough-id>` (add `--with-deps` when it needs a state another
-   walkthrough leaves; the engine captures that one first). This runs the walkthrough in a real
-   browser against the app and writes `manifest.json`/`validation.json`/`failure.json` (on failure) to the build
-   dir. **Never run two of these at once** — captures share one app/db, and parallel subagents
-   racing their own `aida capture` calls corrupts both runs. If the router is writing several
-   walkthroughs in parallel, let it run them one at a time (or as one `aida capture a b c`)
-   after every subagent's YAML is ready, rather than each subagent capturing for itself.
+   walkthrough leaves). It replays the main steps, then each path, in a real browser and writes
+   `manifest.json`/`validation.json`/`failure.json` to the build dir. **Never run two at once**:
+   captures share one app/db. When the router writes several walkthroughs in parallel, it runs
+   them one at a time (or as one `aida capture a b c`) after every subagent's YAML is ready.
 7. **If capture fails**, read the report's `category`. `app` or `environment`: report it to the
    router with the `reason` and `changes` evidence, and don't change the walkthrough to get past
    it (decision 30). `walkthrough`: hand off to `aida-repair` with just the trimmed failure
    report — don't try to fix it yourself by re-guessing locators; that's `aida-repair`'s job.
    Skipped as blocked: report the provider it names; this walkthrough isn't the problem.
-8. On success, report back to the router: walkthrough id, pass/fail, and the step count — not the
-   full YAML or capture output.
+8. On success, report back to the router: walkthrough id, pass/fail and step count, not the full
+   YAML or capture output. After the first passing capture of a task that saves, run `aida paths
+   <id> --config <cfg> --json` (other screens making the same save); ask the person before
+   adding any as a path. A capture warning "path X saves differently": confirm what with the
+   person, then set a short neutral `note` (`aida edit setPathField <file> <pathId> note "..."`).
 
 ## Writing rules
 
@@ -115,13 +117,11 @@ and validate YAML concurrently: capture must never run from two at once (see ste
   `aida outline note <id> 'No "Register again" button' --config <cfg>`.
 - Never a production write step without explicit sign-off (see `references/safety.md`).
 - Keep `say`/`caption`/`page_text` distinct per the style guide, not one copied into all three.
-- After a save action, don't assume it navigates: `waitForUrl` fails forever if the save just
-  updates the same page. Run `aida inspect --walkthrough <id> --after <saveStepId>` to see what
-  changed, and write a `waitFor`/`expect` against that (a toast, a new heading, the dialog
-  closing). If nothing changed at all, that may be an app bug: report it.
-- `highlight: true` must sit on the action whose target the doc screenshot actually shows — never
-  on a click that navigates away, or the box lands over whatever's now sitting in that spot on the
-  new page; put it on the `expect`/`waitFor` after the navigation instead.
+- After a save, don't assume it navigates (`waitForUrl` fails forever if the save updates the same
+  page): run `aida inspect --walkthrough <id> --after <saveStepId>` and write a `waitFor`/`expect`
+  against what changed (a toast, a heading, the dialog closing). Nothing changed: report a bug.
+- `highlight: true` goes on the action whose target the doc screenshot shows — never on a click
+  that navigates away; put it on the `expect`/`waitFor` after the navigation instead.
 
 ## Token rules
 

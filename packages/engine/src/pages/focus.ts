@@ -74,12 +74,18 @@ function frameSegments(step: ManifestStep): { frame: string; boxes: Box[]; click
  * unless the step has callouts or any step has blur boxes (resolved on each `doc.image` only), in
  * which case it keeps `doc.image` with no ring. Steps with no image are left out.
  */
-export function planStepFigures(wf: Pick<Walkthrough, "start" | "steps">, manifest: Pick<CaptureManifest, "steps">): StepFigurePlan[] {
+export function planStepFigures(
+  wf: Pick<Walkthrough, "start" | "steps">,
+  manifest: Pick<CaptureManifest, "steps">,
+  opts: { anyBlur?: boolean } = {},
+): StepFigurePlan[] {
   const plans: StepFigurePlan[] = [];
   // Blur boxes are resolved on each step's own `doc.image` only. An earlier frame can still show
   // something another step blurred (the previous step's screen, before this step's click), and
   // nothing would cover it there — so with blur anywhere in the walkthrough, never swap frames.
-  const anyBlur = wf.steps.some((s) => (s.blur?.length ?? 0) > 0);
+  // `opts.anyBlur`: the caller knows of blur beyond `wf.steps` (a path run: the main steps and
+  // every other path count too).
+  const anyBlur = Boolean(opts.anyBlur) || wf.steps.some((s) => (s.blur?.length ?? 0) > 0);
   let route = pathnameOf(wf.start?.page);
   let lastShownRoute: string | undefined;
   let first = true;

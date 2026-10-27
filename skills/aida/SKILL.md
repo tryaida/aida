@@ -32,12 +32,14 @@ server, whose cache grows to gigabytes over a run.
    app locally with demo data, or use a test login on the live site?"
 2. **Understand.** Hand off to `aida-understand`. It writes `app-brief.md` beside the config
    (purpose, readers and jobs, domain model, words, rules, rhythm, tasks with several starting
-   screens) and returns its open questions. Ask the person those now, before planning; move each answer into the section it
-   belongs in, delete the question, and rerun `aida brief check --config <cfg>`. The help chat
-   and agent connector never see "Open questions", and `aida build` publishes no failing brief.
+   screens) and returns its open questions. Ask them now, before planning; move each answer into
+   its section, delete the question, and rerun `aida brief check --config <cfg>`. "Open
+   questions" is never published, and `aida build` publishes no failing brief.
 3. **Plan.** Hand off to `aida-plan` with the discover summary and the brief. It returns outline
    cards (walkthrough titles + one-line purpose) for the reviewer to approve, rename, or remove —
-   **review checkpoint 1: Outline**, shown with the brief. Approved cards go to `outline.yaml`.
+   **review checkpoint 1: Outline**, shown with the brief and the brand proof sheet (`aida proof
+   --config <cfg>`, or the Studio's **Proof sheet**) so the look is approved once. Approved cards
+   go to `outline.yaml`.
 4. **Write.** For each approved card, hand off to `aida-write` (one subagent per walkthrough) to
    write and validate its YAML — run these subagents **in parallel**. Capture is a different
    story: the engine replays each walkthrough against the one real app/db, so captures must run
@@ -69,12 +71,9 @@ server, whose cache grows to gigabytes over a run.
 ## Database safety
 
 Capture runs steps for real, so it refuses unless every database setting the app may start with
-is on this machine: every env file from the app's directory up to the git root, the process
-environment and `app.database.url`, matched by name and by value. It also refuses a live Stripe
-key, and warns when the app has a real email/SMS sender. The rules are in
-`references/safety.md`. On a refusal, show the person the message and suggest the safe route: a
-Neon or Supabase branch made for capture, or a local Postgres, with the app started on it. The
-config opt-ins (`app.database.throwaway`, `app.database.ignoreEnv`, `app.allowLivePayments`,
+is on this machine, refuses a live Stripe key, and warns about real email/SMS senders (rules in
+`references/safety.md`). On a refusal, show the message and suggest a Neon or Supabase branch
+made for capture, or a local Postgres, with the app started on it. The config opt-ins (`app.database.throwaway`, `app.database.ignoreEnv`, `app.allowLivePayments`,
 `app.outbound`) each cover one exact setting; never suggest one without saying what it means
 (e.g. "this tells AIDA that database is a disposable copy it may write test records to"), and
 never set one yourself without the person's OK.
@@ -91,8 +90,7 @@ never set one yourself without the person's OK.
 
 ## Re-capturing a walkthrough that saves data
 
-A retry must not collide with what the last run saved, and must not change what's on screen
-(typed names land in screenshots, so a new value every run churns them). Two ways, in order:
+A retry must not collide with what the last run saved or change what's on screen. Two ways:
 
 1. A `needs` state whose config setup hook is idempotent and puts the data back to the starting
    point (e.g. deletes the earlier "Morning session" before the walkthrough adds it again).
@@ -118,12 +116,11 @@ target. Run-unique values (`{{run.id}}`) belong in setup data only, never in typ
 
 ## Install
 
-`aida skills install --target <repo>` copies `skills/*` into `.claude/skills/` and `skills/agents/*`
-into `.claude/agents/` (flags: `aida skills install --help`).
+`aida skills install --target <repo>` copies skills into `.claude/skills/` and `.claude/agents/`.
 
 ## Engine commands this run assumes
 
-`doctor`, `validate`, `inspect`, `order`, `capture`, `render`, `pages`, `qa`, `init`, `digest`,
-`domain`, `brief`, `outline` and `build` all exist — run `aida <command> --help` for exact flags. Report tokens as
-you go with `aida usage add` after each subagent turn, and print the run's total with `aida
+`doctor`, `validate`, `inspect`, `order`, `capture`, `paths`, `render`, `pages`, `qa`, `init`,
+`digest`, `domain`, `brief`, `outline`, `proof` and `build` all exist — run `aida <command> --help`
+for exact flags. Report tokens as you go with `aida usage add` after each subagent turn, and print the run's total with `aida
 usage report` (see `references/tokens.md`).

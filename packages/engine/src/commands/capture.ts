@@ -3,12 +3,25 @@ import { join } from "node:path";
 import { existsSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { loadConfig } from "../config/index.js";
 import type { Walkthrough } from "../walkthrough/index.js";
-import { formatFailureLines, runCapture, runLevelFailure, withFrameStabilization } from "../capture/index.js";
+import {
+  capturePaths,
+  countFrames,
+  diffPaths,
+  pathsPassed,
+  formatFailureLines,
+  markPathsNotCaptured,
+  prunePathDirs,
+  recordPathDiffs,
+  runCapture,
+  runLevelFailure,
+  withFrameStabilization,
+  type PathCaptureSummary,
+} from "../capture/index.js";
 import { assertLocalDatabase } from "../capture/write-guard.js";
 import { captureSafetyRefusal } from "../safety/index.js";
 import { appBugBlockReason, planRunFromFiles } from "../states/index.js";
 import { markNotCaptured } from "../capture/not-captured.js";
-import type { CaptureManifest, CaptureSummary, FailureReport } from "../capture/types.js";
+import type { CaptureManifest, CaptureSummary, FailureReport, PathDiff } from "../capture/types.js";
 import { resolveCaptureSettings } from "../config/types.js";
 import { recordCaptureDrift } from "../outline/index.js";
 
@@ -85,6 +98,7 @@ export async function runCaptureCommand(opts: RunCaptureOptions): Promise<number
       run.tracker.record(item.id, false, { appBugIn: blocked.appBugIn });
       // Never leave an older passing capture looking current (build --skip-capture refuses it).
       markNotCaptured(outDir, { walkthrough: item.id, reason: blocked.reason });
+      markPathsNotCaptured(outDir, walkthrough, blocked.reason);
       const skipped = blocked.appBugIn.length > 0 ? `${blocked.reason} (${appBugBlockReason(blocked.appBugIn)})` : blocked.reason;
       summaries.push({ walkthrough: item.id, ok: false, steps: { total: 0, passed: 0 }, frames: 0, durationMs: 0, skipped, ...dependency });
       continue;
@@ -99,9 +113,29 @@ export async function runCaptureCommand(opts: RunCaptureOptions): Promise<number
     );
 
     const started = Date.now();
+    const log = opts.json ? undefined : (...a: unknown[]) => console.error("[capture]", ...a);
     try {
+      // Other ways in first (decision 34; capture/paths.ts): reset → path → … → reset → main, so
+      // every run starts from the same data and dependants see the main run's. Without an
+      // allowed reset each path is marked not captured instead.
+      let pathRun: Awaited<ReturnType<typeof capturePaths>> | undefined;
+      if ((walkthrough.paths ?? []).length > 0) {
+        pathRun = await capturePaths({
+          walkthrough,
+          config,
+          captureDir: outDir,
+          storageStatePath,
+          personaFor: run.personaFor,
+          canReset: !opts.noReset && Boolean(item.resetBefore),
+          cannotResetReason: opts.noReset ? "--no-reset was given" : (item.resetNote ?? "the capture plan doesn't reset before this walkthrough"),
+          log,
+        });
+      } else {
+        prunePathDirs(outDir, walkthrough);
+      }
+
       // Only reset the database for walkthroughs that actually assert
-      // against it — and never without first proving the URL is local.
+      // against it (or have paths) — and never without first proving the URL is local.
       // `reset()` is destructive; it must not run against an unverified or
       // needlessly touched database. Inside the same try/catch as the
       // capture itself, so a refusal here is reported like any other
@@ -123,21 +157,32 @@ export async function runCaptureCommand(opts: RunCaptureOptions): Promise<number
           storageStatePath,
           runId: run.runId,
           personaFor: run.personaFor,
-          log: opts.json ? undefined : (...a: unknown[]) => console.error("[capture]", ...a),
+          log,
         }),
       );
       writeFileSync(join(outDir, "manifest.json"), `${JSON.stringify(result.manifest, null, 2)}\n`);
       writeFileSync(join(outDir, "run.json"), `${JSON.stringify(result.run, null, 2)}\n`);
       writeFileSync(join(outDir, "validation.json"), `${JSON.stringify(result.validation, null, 2)}\n`);
+      // Dependants wait on the main run only (it ran last, so the data they see is its own): a
+      // path that fails doesn't take their data away.
+      run.tracker.record(item.id, result.validation.ok, { category: result.failure?.category });
+
+      const paths: PathCaptureSummary[] | undefined = pathRun?.paths;
+      const pathDiffs: PathDiff[] = pathRun && result.validation.ok ? diffPaths(result.manifest, pathRun.manifests) : [];
+      const pathManifests: CaptureManifest[] = Object.values(pathRun?.manifests ?? {});
+      if (pathRun) recordPathDiffs(outDir, pathDiffs);
+
       // Outline drift (M29): quiet without an outline file; never fails the capture.
-      const outlineLine = recordCaptureDrift({ config, walkthrough, manifest: result.manifest, validation: result.validation });
+      const outlineLine = recordCaptureDrift({ config, walkthrough, manifest: result.manifest, validation: result.validation, pathManifests });
       if (outlineLine) console.error(outlineLine);
 
       const passed = result.validation.steps.filter((s) => s.ok).length;
       const frames = countFrames(result.manifest);
       const summary: CaptureSummary = {
         walkthrough: walkthrough.walkthrough,
-        ok: result.validation.ok,
+        // Every path is captured (decision 34): one that fails fails the walkthrough's capture.
+        // One not run (no reset allowed) is reported; its page won't publish until it is.
+        ok: result.validation.ok && pathsPassed(paths),
         steps: { total: result.validation.steps.length, passed },
         frames,
         durationMs: Date.now() - started,
@@ -145,9 +190,10 @@ export async function runCaptureCommand(opts: RunCaptureOptions): Promise<number
         frameDiff,
         ...dependency,
         ...(result.warnings ? { warnings: result.warnings } : {}),
+        ...(paths ? { paths } : {}),
+        ...(pathDiffs.length > 0 ? { pathDiffs } : {}),
       };
       summaries.push(summary);
-      run.tracker.record(item.id, summary.ok, { category: result.failure?.category });
       if (!summary.ok) ok = false;
     } catch (err) {
       ok = false;
@@ -177,19 +223,6 @@ export async function runCaptureCommand(opts: RunCaptureOptions): Promise<number
   return ok ? 0 : 1;
 }
 
-function countFrames(manifest: CaptureManifest): number {
-  const names = new Set<string>();
-  for (const step of manifest.steps) {
-    for (const e of step.events) {
-      if (e.type === "frame") names.add(e.image);
-      if (e.type === "scrollFrames" || e.type === "typeFrames") {
-        for (const img of e.images) names.add(img);
-      }
-    }
-  }
-  return names.size;
-}
-
 function printSummaries(summaries: CaptureSummary[], json: boolean, problems: string[]): void {
   if (json) {
     console.log(JSON.stringify({ walkthroughs: summaries, ...(problems.length > 0 ? { ok: false, problems } : {}) }));
@@ -209,6 +242,16 @@ function printSummaries(summaries: CaptureSummary[], json: boolean, problems: st
       printFailure(s.failure);
     }
     for (const w of s.warnings ?? []) console.log(`  warning: ${w}`);
+    for (const p of s.paths ?? []) {
+      if (p.skipped) {
+        console.log(`  SKIP  path ${p.path}  ${p.skipped}`);
+        continue;
+      }
+      console.log(`  ${p.ok ? "PASS" : "FAIL"}  path ${p.path}  steps ${p.steps.passed}/${p.steps.total}  frames ${p.frames}  ${p.durationMs}ms`);
+      if (p.failure) for (const line of formatFailureLines(p.failure)) console.log(`    ${line}`);
+      for (const w of p.warnings ?? []) console.log(`    warning: ${w}`);
+    }
+    for (const d of s.pathDiffs ?? []) console.log(`  warning: ${d.message}`);
   }
 }
 

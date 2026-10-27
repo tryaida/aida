@@ -25,7 +25,7 @@ function project(walkthroughs: Record<string, string>): { dir: string; buildDir:
   return { dir, buildDir: join(dir, ".build") };
 }
 
-async function runPlanned(failCategory: FailureReport["category"], database?: ResolvedConfig["database"]) {
+async function runPlanned(failCategory: FailureReport["category"], database?: ResolvedConfig["database"], mainOk?: boolean) {
   vi.resetModules();
   const { dir, buildDir } = project({ "add-session": "leaves: [session-exists]", overbook: "needs: [session-exists]\nleaves: [session-full]", "waitlist-full": "needs: [session-full]" });
   // A stale failure.json from an earlier run, for a walkthrough that will be blocked.
@@ -39,7 +39,7 @@ async function runPlanned(failCategory: FailureReport["category"], database?: Re
       runIds.push(planned.runId);
       const id = file.split("/").pop()!.replace(".yaml", "");
       const failure = { error: "save didn't show", category: failCategory, reason: "the save request succeeded but the screen didn't change" } as FailureReport;
-      return { walkthrough: { walkthrough: id }, captureDir: join(buildDir, id, "ci", "capture"), ok: false, failure };
+      return { walkthrough: { walkthrough: id }, captureDir: join(buildDir, id, "ci", "capture"), ok: false, ...(mainOk !== undefined ? { mainOk } : {}), failure };
     }),
   }));
   const { captureInPlannedOrder } = await import("../../src/ci/planned.js");
@@ -58,6 +58,11 @@ describe("captureInPlannedOrder: a provider fails", () => {
     expect(outcomes[2]).toMatchObject({ blockedBy: ["overbook"], appBugIn: [] });
     expect(existsSync(join(stale, "failure.json"))).toBe(false);
     expect(JSON.parse(readFileSync(join(stale, "validation.json"), "utf8"))).toMatchObject({ ok: false, notCaptured: outcomes[1].blocked });
+  });
+
+  it("doesn't block dependants when only a path failed (the main run passed), as aida capture does", async () => {
+    const { outcomes } = await runPlanned("walkthrough", undefined, true);
+    expect(outcomes.map((o) => ("blocked" in o && o.blocked ? "blocked" : "captured"))).toEqual(["captured", "captured", "captured"]);
   });
 
   it("passes a provider's possible app bug down the chain", async () => {

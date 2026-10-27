@@ -28,6 +28,7 @@ import { runSkillsInstall } from "./commands/skills.js";
 import { runUsageAdd, runUsageReport } from "./commands/usage.js";
 import type { ModelTier } from "./usage/index.js";
 import { runCatchUpCommand, runEditCommand, runUndoCommand } from "./commands/edit.js";
+import { runPaths } from "./commands/paths.js";
 import type { EditBy } from "./edit/index.js";
 import { runPublish } from "./commands/publish.js";
 import { runPdfCommand } from "./commands/pdf.js";
@@ -473,6 +474,21 @@ program
     },
   );
 
+program
+  .command("paths <walkthrough>")
+  .description("find other screens a walkthrough's task can start from: pages whose code makes the same save as its captured main path, not yet covered by its paths")
+  .requiredOption("--config <path>", "path to aida.config.ts/.mjs")
+  .option("--app-repo <path>", "app repo to read (default: config.impact.appRepo, then cwd)")
+  .option("--app <path>", "app directory within a workspace monorepo (e.g. apps/web)")
+  .option("--limit <n>", "most candidates to list (default 20)")
+  .option("--json", "print a single JSON object instead of a summary")
+  .action(async (walkthrough: string, opts: { config: string; appRepo?: string; app?: string; limit?: string; json?: boolean }) => {
+    process.exitCode = await runPaths(
+      { configPath: opts.config, walkthrough, appRepo: opts.appRepo, app: opts.app, limit: opts.limit ? Number(opts.limit) : undefined },
+      Boolean(opts.json),
+    );
+  });
+
 const versionCmd = program.command("version").description("manage frozen docs versions (release tags)");
 
 versionCmd
@@ -646,9 +662,36 @@ program
   .option("--config <path>", "path to aida.config.ts/.mjs (default: <dir>/aida.config.* or <dir>/help/aida.config.*)")
   .option("--detect", "re-detect the brand from the app and print a suggested brand block (writes nothing)")
   .option("--app-repo <path>", "app repo to detect from with --detect (default: impact.appRepo, else the config's directory)")
+  .option("--from-app", "read the brand from the running app (signed in, read-only) into brand/from-app.json, then rewrite the theme")
+  .option("--page <path>", "page to read with --from-app (repeatable; default: the walkthroughs' start pages)", (v: string, prev: string[] = []) => [...prev, v])
+  .option("--as <role>", "persona to sign in as with --from-app (as in aida inspect --as)")
   .option("--json", "print a single JSON object instead of a summary")
-  .action(async (dir: string | undefined, opts: { config?: string; detect?: boolean; appRepo?: string; json?: boolean }) => {
-    process.exitCode = await runTheme({ dir, config: opts.config, detect: Boolean(opts.detect), appRepo: opts.appRepo }, Boolean(opts.json));
+  .action(
+    async (
+      dir: string | undefined,
+      opts: { config?: string; detect?: boolean; appRepo?: string; fromApp?: boolean; page?: string[]; as?: string; json?: boolean },
+    ) => {
+      process.exitCode = await runTheme(
+        { dir, config: opts.config, detect: Boolean(opts.detect), appRepo: opts.appRepo, fromApp: Boolean(opts.fromApp), pages: opts.page, as: opts.as },
+        Boolean(opts.json),
+      );
+    },
+  );
+
+program
+  .command("proof")
+  .description("render the proof sheet (help site page, printed page, card, video frames) into <buildDir>/proof to approve the look")
+  .option("--config <path>", "path to aida.config.ts/.mjs (default: ./aida.config.* or ./help/aida.config.*)")
+  .option("--walkthrough <id>", "walkthrough to show (default: the first one captured and built)")
+  .option("--site-url <url>", "help site to screenshot (default: publish.siteUrl; the page layout is used when it doesn't answer)")
+  .option("--out-dir <dir>", "where to write the sheet (default: <buildDir>/proof)")
+  .option("--json", "print a single JSON object instead of a summary")
+  .action(async (opts: { config?: string; walkthrough?: string; siteUrl?: string; outDir?: string; json?: boolean }) => {
+    const { runProof } = await import("./commands/proof.js");
+    process.exitCode = await runProof(
+      { config: opts.config, walkthrough: opts.walkthrough, siteUrl: opts.siteUrl, outDir: opts.outDir },
+      Boolean(opts.json),
+    );
   });
 
 program
@@ -723,7 +766,9 @@ program
       "addCallout <file> <stepId> <calloutJson> | updateCallout <file> <stepId> <calloutId> <patchJson> | " +
       "removeCallout <file> <stepId> <calloutId> | reorderCallouts <file> <stepId> <id1,id2,...> | " +
       "addBlur <file> <stepId> <blurJson> | updateBlur <file> <stepId> <blurId> <patchJson> | " +
-      "removeBlur <file> <stepId> <blurId>",
+      "removeBlur <file> <stepId> <blurId> (callout/blur <stepId> may be <pathId>/<stepId>) | " +
+      "addPath <file> <pathJson> | removePath <file> <pathId> | setPathField <file> <pathId> <title|when|note|joins|page> <value> | " +
+      "setPathStepField <file> <pathId> <stepId> <field> <value> | setPathStepActions <file> <pathId> <stepId> <actionsJson>",
   )
   // insertStep's position/field flags (--after/--before/--at-start/--id/--do/--say/--caption/
   // --page-text/--title/--chapter/--camera) aren't declared options on this command — they're

@@ -8,7 +8,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import type { ResolvedConfig } from "../config/index.js";
 import { loadWalkthroughFile } from "../walkthrough/index.js";
 import type { Persona, Walkthrough } from "../walkthrough/index.js";
-import { runCapture, runLevelFailure } from "../capture/index.js";
+import { capturePaths, diffPaths, pathsPassed, prunePathDirs, recordPathDiffs, runCapture, runLevelFailure } from "../capture/index.js";
 import { assertLocalDatabase } from "../capture/write-guard.js";
 import type { CaptureRunResult } from "../capture/runner.js";
 import type { FailureReport } from "../capture/types.js";
@@ -23,7 +23,11 @@ function storageStateKey(baseUrl: string, walkthrough: Walkthrough): string {
 export interface CiCaptureResult {
   walkthrough: Walkthrough;
   captureDir: string;
+  /** The main run and every path passed (a path that fails fails CI's capture of it). */
   ok: boolean;
+  /** The main run alone passed: what dependants wait on, as in `aida capture`. Absent from older
+   * callers' results (then `ok`). */
+  mainOk?: boolean;
   failure?: FailureReport;
 }
 
@@ -61,7 +65,26 @@ export async function captureWalkthroughForCi(
     // shows up as a false "changed" on code that never touched it (orchestrator review of M18's
     // pilot, 2026-10-25). Except inside a dependency chain, where the reset would erase
     // the data an earlier walkthrough left for this one (decision 28).
-    if (config.database && (planned.resetBefore ?? true)) {
+    const ciConfig = { ...config, app: { ...config.app, baseUrl } };
+    const resetAllowed = planned.resetBefore ?? true;
+    // Other ways in first (decision 34; capture/paths.ts): reset → path → … → reset → main, so
+    // CI's pages show them verified and dependants see the main run's data.
+    let pathRun: Awaited<ReturnType<typeof capturePaths>> | undefined;
+    if ((walkthrough.paths ?? []).length === 0) prunePathDirs(captureDir, walkthrough);
+    else {
+      pathRun = await capturePaths({
+        walkthrough,
+        config: ciConfig,
+        captureDir,
+        storageStatePath,
+        personaFor: planned.personaFor,
+        canReset: resetAllowed,
+        cannotResetReason: "it runs inside a dependency chain, where a reset would erase the data an earlier walkthrough left",
+        stabilize: false,
+      });
+    }
+
+    if (config.database && resetAllowed) {
       const dbUrl = await config.database.url();
       assertLocalDatabase(dbUrl);
       await config.database.reset?.();
@@ -69,7 +92,7 @@ export async function captureWalkthroughForCi(
 
     const result: CaptureRunResult = await runCapture({
       walkthrough,
-      config: { ...config, app: { ...config.app, baseUrl } },
+      config: ciConfig,
       outDir: captureDir,
       storageStatePath,
       runId: planned.runId,
@@ -78,12 +101,19 @@ export async function captureWalkthroughForCi(
     writeFileSync(join(captureDir, "manifest.json"), `${JSON.stringify(result.manifest, null, 2)}\n`);
     writeFileSync(join(captureDir, "run.json"), `${JSON.stringify(result.run, null, 2)}\n`);
     writeFileSync(join(captureDir, "validation.json"), `${JSON.stringify(result.validation, null, 2)}\n`);
-    return { walkthrough, captureDir, ok: result.validation.ok, failure: result.failure };
+    let pathFailure: FailureReport | undefined;
+    if (pathRun) {
+      recordPathDiffs(captureDir, result.validation.ok ? diffPaths(result.manifest, pathRun.manifests) : []);
+      const failed = pathRun.paths.find((p) => !p.ok && p.skipped === undefined);
+      if (failed?.failure) pathFailure = { ...failed.failure, step: `path ${failed.path}: ${failed.failure.step ?? "?"}` };
+    }
+    const mainOk = result.validation.ok;
+    return { walkthrough, captureDir, ok: mainOk && pathsPassed(pathRun?.paths), mainOk, failure: result.failure ?? pathFailure };
   } catch (err) {
     const failure: FailureReport = runLevelFailure(err);
     // failure.json for this run, and validation.json saying it wasn't captured (no older passing
     // one left behind); shared with the other capture entry points.
     markNotCaptured(captureDir, { walkthrough: walkthrough.walkthrough, reason: failure.error, failure, baseUrl });
-    return { walkthrough, captureDir, ok: false, failure };
+    return { walkthrough, captureDir, ok: false, mainOk: false, failure };
   }
 }

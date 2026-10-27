@@ -12,6 +12,8 @@ import { dirname, extname, isAbsolute, join, resolve } from "node:path";
 import type { BrandColors, BrandConfig } from "../config/types.js";
 import { deriveDarkColor, formatHsl, isReadable, parseColor, readableForeground, rgbToHsl, tintedDark, toCssColor } from "./color.js";
 import { googleFontsUrl, isGoogleFont } from "./fonts.js";
+import { withAppBrand } from "./app-brand.js";
+import { readBrandNotes, resolveBrandStyle, type BrandStyle } from "./style.js";
 
 /** What the theme writer needs from a config — a `ResolvedConfig` satisfies it. */
 export interface ThemeSource {
@@ -27,6 +29,8 @@ export interface BrandJson {
   logoDark: string | null;
   icon: string | null;
   fontUrl: string | null;
+  /** House style preset (theme/style.ts) — the site and Studio frame screenshots to match. */
+  style?: BrandStyle;
 }
 
 /** `<helpApp>/public/brand/theme.json` — light-theme values, CSS-ready, fetched cross-origin by
@@ -256,7 +260,9 @@ function writeIfChanged(file: string, content: string | Buffer): boolean {
  * `<helpAppDir>/public/brand/theme.json`, and copies logo/logoDark/icon into
  * `<helpAppDir>/public/brand/` (`logo.<ext>`, `logo-dark.<ext>`, `icon.<ext>`), removing stale ones. Files whose content is unchanged are left untouched.
  */
-export function writeHelpAppTheme(source: ThemeSource, helpAppDir: string): WriteThemeResult {
+export function writeHelpAppTheme(sourceIn: ThemeSource, helpAppDir: string): WriteThemeResult {
+  // The running app's brand (`aida theme --from-app`, brand/from-app.json) merged under the config.
+  const source = withAppBrand(sourceIn);
   const brand = source.brand;
   const files: string[] = [];
   const written: string[] = [];
@@ -270,6 +276,7 @@ export function writeHelpAppTheme(source: ThemeSource, helpAppDir: string): Writ
     logoDark: null,
     icon: null,
     fontUrl: brandFontUrl(brand) ?? null,
+    style: resolveBrandStyle(brand, readBrandNotes({ configDir: source.configDir, brand })).style,
   };
 
   const keep = new Set<string>();

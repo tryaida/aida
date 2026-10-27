@@ -22,6 +22,15 @@ export {
   removeBlur,
   type OverlayPatch,
 } from "./callouts.js";
+export {
+  addPath,
+  removePath,
+  setPathField,
+  setPathStepField,
+  setPathStepActions,
+  type PathField,
+  type RemovedPath,
+} from "./paths.js";
 export { setPageBlock } from "./page.js";
 export { setData } from "./data.js";
 export { lock, unlock, isLocked, isLockedAny, readLocks } from "./locks.js";

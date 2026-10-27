@@ -89,6 +89,8 @@ export function sliceTimelineForScene(tl: Timeline, scene: TimelineScene): Recor
     cursorStart: tl.cursorStart,
     stageIn: tl.stageIn,
     stageOut: tl.stageOut,
+    cards: tl.cards,
+    chrome: tl.chrome,
     frames,
     moves,
     clicks,

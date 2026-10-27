@@ -11,6 +11,7 @@
   const ease = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2) // cubic in-out
   const easeOut = (p) => 1 - Math.pow(1 - p, 3)
   const ramp = (t, t0, d) => clamp((t - t0) / d, 0, 1)
+  const backOut = (p) => 1 + 2.2 * Math.pow(p - 1, 3) + 1.2 * Math.pow(p - 1, 2) // gentle overshoot
   const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   // Mosaic constants — kept identical to pages/annotate.ts's (same names there) so a blur box
   // looks and destroys information the same way whether it ends up on a page screenshot or in
@@ -21,8 +22,16 @@
   const K = TL.stage.w / VW
 
   // ------------------------------------------------------------ static DOM
-  const stage = $('stage')
-  Object.assign(stage.style, { left: `${TL.stage.x}px`, top: `${TL.stage.y}px`, width: `${TL.stage.w}px`, height: `${TL.stage.h}px` })
+  // The window (M34): an optional browser bar (`TL.chrome` px, the bold preset) above the stage.
+  // The stage keeps exactly TL.stage's rectangle; the scene envelope moves the whole window.
+  const CHROME = TL.chrome || 0
+  const win = $('window'), stage = $('stage')
+  Object.assign(win.style, { left: `${TL.stage.x}px`, top: `${TL.stage.y - CHROME}px`, width: `${TL.stage.w}px`, height: `${TL.stage.h + CHROME}px` })
+  Object.assign(stage.style, { top: `${CHROME}px`, width: `${TL.stage.w}px`, height: `${TL.stage.h}px` })
+  $('chrome').style.height = `${CHROME}px`
+  win.classList.toggle('has-chrome', CHROME > 0)
+  const band = $('band')
+  Object.assign(band.style, { left: `${TL.stage.x}px`, width: `${TL.stage.w}px` })
   const imgA = $('imgA'), imgB = $('imgB')
   const spot = $('spot'), cursor = $('cursor'), cam = $('cam')
   const blurLayer = $('blurLayer'), calloutLayer = $('calloutLayer'), calloutLegend = $('calloutLegend')
@@ -32,17 +41,29 @@
   // Colours/font/logo only ever change styling set here at load — never anything renderAt(t)
   // computes per frame — so render/state.ts's frameSignature is unaffected by the brand.
   const brand = TL.brand ?? { name: '' }
+  // House style preset (M34): minimal | friendly | bold. Only static styling hangs off it; the
+  // per-frame maths reads the timeline's own (preset-specific) schedule, so frameSignature in
+  // render/state.ts needs nothing extra.
+  const STYLE = ['minimal', 'friendly', 'bold'].includes(brand.style) ? brand.style : 'bold'
+  const LIGHT = STYLE !== 'bold'
+  document.documentElement.classList.add(`style-${STYLE}`)
   const rootStyle = document.documentElement.style
+  if (typeof brand.radius === 'number') rootStyle.setProperty('--radius', `${brand.radius}px`)
   const kebab = (k) => k.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())
   for (const [k, v] of Object.entries(brand.colors || {})) if (v) rootStyle.setProperty(`--brand-${kebab(k)}`, v)
   const stack = (f) => `"${f}", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif`
   if (brand.font) rootStyle.setProperty('--font', stack(brand.font))
   if (brand.headingFont) rootStyle.setProperty('--heading-font', stack(brand.headingFont))
+  // Dark canvas (bold): the dark-background logo bare, else the light one (tiled if too dark).
+  // Light canvas: the light-background logo, else the dark-background one on a brand tile.
+  const logoSrc = LIGHT ? (brand.logoLightSrc || brand.logoSrc) : brand.logoSrc
+  const logoMadeForDark = LIGHT ? !brand.logoLightSrc && Boolean(brand.logoForDark) : Boolean(brand.logoForDark)
   const logos = []
   for (const [nameId, logoId] of [['brand-name', 'brand-logo'], ['outro-brand-name', 'outro-logo']]) {
     $(nameId).textContent = brand.name
-    if (brand.logoSrc) { $(logoId).src = brand.logoSrc; $(logoId).style.display = ''; logos.push($(logoId)) }
+    if (logoSrc) { $(logoId).src = logoSrc; $(logoId).style.display = ''; logos.push($(logoId)) }
   }
+  $('chrome-url').textContent = brand.name || ''
   // Long titles step down a size so they wrap to at most ~2-3 balanced lines.
   const sizeTitle = (el, text) => {
     const n = (text || '').length
@@ -72,7 +93,9 @@
   // A light-background logo that would be too dark to read on the night canvas sits on a white
   // tile instead (logoDark, made for dark backgrounds, is always shown bare).
   const logoReady = (async () => {
-    if (!logos.length || brand.logoForDark) return
+    if (!logos.length) return
+    if (LIGHT && logoMadeForDark) { logos.forEach((l) => l.classList.add('tile-dark')); return }
+    if (!LIGHT && logoMadeForDark) return
     const img = logos[0]
     await img.decode().catch(() => {})
     if (!img.naturalWidth) return
@@ -91,24 +114,68 @@
       }
       const luminance = n ? sum / n : 1
       const opaque = n / (w * h)
-      // Dark artwork, or a fully opaque (non-transparent) image, reads better as a tile.
-      if (luminance < 0.42 || opaque > 0.97) logos.forEach((l) => l.classList.add('tile'))
+      // Dark canvas: dark artwork, or a fully opaque image, reads better on a white tile.
+      // Light canvas: white artwork needs a brand-coloured tile.
+      if (!LIGHT && (luminance < 0.42 || opaque > 0.97)) logos.forEach((l) => l.classList.add('tile'))
+      if (LIGHT && luminance > 0.8 && opaque < 0.97) logos.forEach((l) => l.classList.add('tile-dark'))
     } catch { /* tainted/undecodable: leave bare */ }
   })()
-  window.brandReady = capped(Promise.all([fontsReady, logoReady]), 8000)
+
 
   $('intro-eyebrow').textContent = TL.intro.eyebrow
   $('intro-title').innerHTML = TL.intro.titleHtml
   sizeTitle($('intro-title'), $('intro-title').textContent)
   $('intro-sub').textContent = TL.intro.subtitle
-  $('intro-parts').innerHTML = TL.chapters.map((c, i) => `<div class="part"><span class="n">${i + 1}</span>${c}</div>`).join('')
+  // Facts: step count, who it's for, and the parts when there's more than one.
+  const icon = {
+    steps: '<svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg>',
+    reader: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
+  }
+  const facts = (TL.intro.facts || []).map((f) => `<div class="fact">${icon.steps}<span>${escapeHtml(f)}</span></div>`)
+  if (TL.intro.reader) facts.push(`<div class="fact">${icon.reader}<span>${escapeHtml(TL.intro.reader)}</span></div>`)
+  if (TL.chapters.length > 1) facts.push(...TL.chapters.map((c, i) => `<div class="fact"><span class="n">${i + 1}</span>${escapeHtml(c)}</div>`))
+  $('intro-facts').innerHTML = facts.join('')
   $('outro-title').textContent = TL.outro.title
   sizeTitle($('outro-title'), TL.outro.title)
   const tick = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>'
-  $('outro-recap').innerHTML = TL.outro.recap.map((r) => `<div class="row"><span class="tick">${tick}</span><span>${r}</span></div>`).join('')
+  $('outro-recap').innerHTML = TL.outro.recap.map((r, i) => `<div class="row" id="recap-${i}"><span class="tick">${tick}</span><span>${escapeHtml(r)}</span></div>`).join('')
   const recapRows = [...$('outro-recap').children]
-  // The outro's brand row (logo + name) already shows the product, so the footer line stays empty.
-  $('outro-tagline').textContent = ''
+  $('outro-site').innerHTML = TL.outro.site ? `Find this guide at <b>${escapeHtml(TL.outro.site)}</b>` : ''
+  $('outro-tagline').textContent = brand.tagline || ''
+
+  // Title-card reveal schedule: the timeline's own (M34), or the original fixed one for older
+  // timelines. render/state.ts's cardReveals() is the same fallback — keep them in step.
+  const CARDS = TL.cards || (() => {
+    const o0 = TL.stageOut.t0 + 0.35
+    return {
+      intro: [
+        { id: 'intro-brand', t0: 0.15, d: 0.7, dy: 26 },
+        { id: 'intro-eyebrow', t0: 0.45, d: 0.7, dy: 26 },
+        { id: 'intro-title', t0: 0.65, d: 0.8, dy: 40 },
+        { id: 'intro-sub', t0: 1.15, d: 0.7, dy: 26 },
+        { id: 'intro-facts', t0: 1.6, d: 0.7, dy: 26 },
+      ],
+      outro: [
+        { id: 'outro-title', t0: o0, d: 0.7, dy: 40 },
+        ...recapRows.map((_, i) => ({ id: `recap-${i}`, t0: o0 + 0.5 + i * 0.35, d: 0.6, dy: 18 })),
+        { id: 'outro-foot', t0: o0 + 0.6 + recapRows.length * 0.35, d: 0.7, dy: 26 },
+      ],
+    }
+  })()
+  const revealEls = [...CARDS.intro, ...CARDS.outro].map((r) => [r, $(r.id)]).filter(([, el]) => el)
+  // Hero screenshots on the cards: only when the schedule has them (timeline.ts leaves them out
+  // whenever anything is blurred — these show raw frames).
+  const heroImgs = []
+  const hasHero = (list, id) => list.some((r) => r.id === id)
+  if (TL.frames.length && hasHero(CARDS.intro, 'intro-hero')) {
+    $('intro').classList.add('has-hero'); $('intro-hero-img').src = TL.frames[0].src; heroImgs.push($('intro-hero-img'))
+  }
+  if (TL.frames.length && hasHero(CARDS.outro, 'outro-hero')) {
+    $('outro').classList.add('has-hero'); $('outro-hero-img').src = TL.frames[TL.frames.length - 1].src; heroImgs.push($('outro-hero-img'))
+  }
+  const spotBadge = $('spot-badge')
+  const heroReady = Promise.all(heroImgs.map((img) => img.decode().catch(() => {})))
+  window.brandReady = capped(Promise.all([fontsReady, logoReady, heroReady]), 8000)
 
   // ------------------------------------------------------------ lookups
   function lastAtOrBefore(list, t, key = 't') {
@@ -169,9 +236,9 @@
     const sIn = ease(ramp(t, TL.stageIn.t0, TL.stageIn.t1 - TL.stageIn.t0))
     const sOut = ease(ramp(t, TL.stageOut.t0, TL.stageOut.t1 - TL.stageOut.t0))
     const stageVis = sIn * (1 - sOut)
-    stage.style.opacity = stageVis
-    stage.style.transform = `translateY(${(1 - sIn) * 40 + sOut * -30}px) scale(${0.94 + 0.06 * sIn - 0.04 * sOut})`
-    stage.style.visibility = stageVis > 0.001 ? 'visible' : 'hidden'
+    win.style.opacity = stageVis
+    win.style.transform = `translateY(${(1 - sIn) * 40 + sOut * -30}px) scale(${0.94 + 0.06 * sIn - 0.04 * sOut})`
+    win.style.visibility = stageVis > 0.001 ? 'visible' : 'hidden'
 
     // Intro card.
     const intro = $('intro')
@@ -179,26 +246,23 @@
     intro.style.visibility = iOut < 0.999 ? 'visible' : 'hidden'
     intro.style.opacity = 1 - iOut
     intro.style.transform = `translateY(${-50 * iOut}px)`
-    const reveal = (el, start, dur = 0.7, dy = 26) => {
-      const p = easeOut(ramp(t, start, dur))
-      el.style.opacity = p
-      el.style.transform = `translateY(${(1 - p) * dy}px)`
+    // Every card element eases in on the preset's schedule: a rise (minimal, bold) or a small
+    // pop with overshoot (friendly).
+    for (const [r, el] of revealEls) {
+      const q = ramp(t, r.t0, r.d)
+      const p = easeOut(q)
+      el.style.opacity = Math.min(1, q * 1.6)
+      if (STYLE === 'friendly') {
+        const b = backOut(q)
+        el.style.transform = `translateY(${(1 - b) * r.dy}px) scale(${0.96 + 0.04 * b})`
+      } else el.style.transform = `translateY(${(1 - p) * r.dy}px)`
     }
-    reveal($('intro-brand'), 0.15)
-    reveal($('intro-eyebrow'), 0.45)
-    reveal($('intro-title'), 0.65, 0.8, 40)
-    reveal($('intro-sub'), 1.15)
-    reveal($('intro-parts'), 1.6)
 
     // Outro card.
     const outro = $('outro')
     const oIn = ease(ramp(t, TL.stageOut.t0 + 0.25, 0.7))
     outro.style.visibility = oIn > 0.001 ? 'visible' : 'hidden'
     outro.style.opacity = oIn
-    const o0 = TL.stageOut.t0 + 0.35
-    reveal($('outro-title'), o0, 0.7, 40)
-    recapRows.forEach((row, i) => reveal(row, o0 + 0.5 + i * 0.35, 0.6, 18))
-    reveal($('outro-foot'), o0 + 0.6 + recapRows.length * 0.35)
 
     if (stageVis > 0.001) {
       // Screenshot layers: current frame over the previous one while fading.
@@ -207,6 +271,13 @@
       const fadeP = cur.transition === 'fade' ? ramp(t, cur.t, TL.fade) : 1
       waits.push(setSrc(imgA, prev.src), setSrc(imgB, cur.src))
       imgB.style.opacity = fadeP
+      // Screen changes: a plain fade (minimal), a soft settle (friendly), a short push (bold).
+      // Never while blur boxes are up: the mosaic sits still over the box, so a frame moving
+      // under it would slide unblurred content out past its edge. (Blur is part of the frame
+      // signature already, so render/state.ts needs no extra term.)
+      const fe = easeOut(fadeP)
+      const still = (blurAt(t)?.boxes.length ?? 0) > 0
+      imgB.style.transform = still ? '' : STYLE === 'friendly' ? `scale(${1.02 - 0.02 * fe})` : STYLE === 'bold' ? `translateX(${(1 - fe) * 28}px)` : ''
 
       // Camera.
       const c = cameraAt(t)
@@ -226,6 +297,7 @@
           left: `${hi.box.x - pad}px`, top: `${hi.box.y - pad}px`,
           width: `${hi.box.w + pad * 2}px`, height: `${hi.box.h + pad * 2}px`,
         })
+        spotBadge.textContent = hi.num ? String(hi.num) : ''
       } else spot.style.display = 'none'
 
       // Callouts: numbered badges pinned to their resolved boxes, plus a legend for any with a
@@ -280,6 +352,8 @@
       const a = easeOut(ramp(t, chip.t0, 0.35))
       chipEl.style.opacity = a
       chipEl.style.transform = `translateX(${(1 - a) * -16}px)`
+      // Lower-third wipe (bold): the title is revealed left to right as it slides in.
+      chipEl.style.clipPath = STYLE === 'bold' ? `inset(-20px ${(1 - a) * 100}% -20px -20px)` : ''
     } else chipEl.style.opacity = 0
 
     await Promise.all(waits)

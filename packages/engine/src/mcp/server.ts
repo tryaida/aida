@@ -72,12 +72,20 @@ export function createAidaMcpServer(source: AidaMcpSource): McpServer {
     {
       title: "List walkthroughs",
       description:
-        "Lists every published walkthrough: id, title, page URL, who it's for, and where it starts (start.page; start.role is the sign-in role id, start.roleName what to call that role to a person).",
+        "Lists every published walkthrough: id, title, page URL, who it's for, and where it starts (start.page; start.role is the sign-in role id, start.roleName what to call that role to a person). `paths` lists other screens the same task can start from (id, title, start.page).",
       inputSchema: {},
     },
     async () => {
       // `start` as procedures.json has it: `role` (id) and, since M26, `roleName`.
-      const list = source.procedures.map((p) => ({ id: p.id, title: p.title, url: p.url ?? `/${p.id}`, for: p.for, start: p.start }));
+      // Other ways in (decision 34): enough to pick the one starting on the user's screen.
+      const list = source.procedures.map((p) => ({
+        id: p.id,
+        title: p.title,
+        url: p.url ?? `/${p.id}`,
+        for: p.for,
+        start: p.start,
+        ...(p.paths?.length ? { paths: p.paths.map((w) => ({ id: w.id, title: w.title, start: w.start })) } : {}),
+      }));
       return textResult(JSON.stringify(list, null, 2));
     },
   );
@@ -86,7 +94,8 @@ export function createAidaMcpServer(source: AidaMcpSource): McpServer {
     "get_procedure",
     {
       title: "Get procedure",
-      description: "Returns one walkthrough's structured, ordered steps an agent can follow (title, instruction, screenshot, video moment).",
+      description:
+        "Returns one walkthrough's structured, ordered steps an agent can follow (title, instruction, screenshot, video moment). `paths` are other ways to start the same task: each has when to use it, its start page, its own opening steps and `joinsAt`, the main step number to continue from.",
       inputSchema: { id: z.string().describe("Walkthrough id, e.g. \"add-competitor\"") },
     },
     async ({ id }) => {

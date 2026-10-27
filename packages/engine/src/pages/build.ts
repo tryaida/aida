@@ -4,8 +4,9 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
-import { libraryPlacement, type Walkthrough } from "../walkthrough/index.js";
+import { libraryPlacement, pathWalkthrough, type Walkthrough, type WalkthroughPath } from "../walkthrough/index.js";
 import type { CaptureManifest, ValidationResult } from "../capture/index.js";
+import { readPathCaptures, type PathCapture } from "../capture/path-files.js";
 import { redactLine } from "../capture/redact.js";
 import { annotateFrame, renderPrintFrame } from "./annotate.js";
 import { PNG } from "pngjs";
@@ -16,9 +17,14 @@ import {
   buildFrontmatterBlock,
   buildHeaderBlock,
   buildLastCheckedBlock,
+  buildOtherWaysHeadingBlock,
+  buildPathBlock,
+  buildPathJoinBlock,
+  buildPathStepBlock,
   buildStepBlock,
   buildStepsHeadingBlock,
   chaptersOf,
+  pathScreenshotFile,
   screenshotFile,
   stepBlockKey,
   type StepStatus,
@@ -126,31 +132,15 @@ export async function buildPage(wf: Walkthrough, captureDir: string, outDir: str
     if (!ok) status.problem = vStep?.error ? redactLine(vStep.error) : "this step did not pass the last capture";
     statuses.push(status);
     const plan = plans.get(stepNumber);
-    if (mStep.doc.image && plan) {
-      // Callout order and label text come from the walkthrough's own `callouts:` list (so the
-      // Studio's reorder/edit actions control it); the box each resolves to comes from this
-      // run's manifest, keyed by id — an entry whose target wasn't found this run (manifest has
-      // no matching id) is skipped rather than drawn with a stale box.
-      const resolvedCallouts = new Map((mStep.doc.callouts ?? []).map((c) => [c.id, c.box] as const));
-      const resolvedBlur = new Map((mStep.doc.blur ?? []).map((b) => [b.id, b.box] as const));
-      const callouts: { box: { x: number; y: number; w: number; h: number }; label?: string }[] = [];
-      for (const c of wf.steps[i].callouts ?? []) {
-        const box = resolvedCallouts.get(c.id);
-        if (box) callouts.push({ box, label: c.label });
-      }
-      const blur: { x: number; y: number; w: number; h: number }[] = [];
-      for (const b of wf.steps[i].blur ?? []) {
-        const box = resolvedBlur.get(b.id);
-        if (box) blur.push(box);
-      }
-      // `plan.frame` is only ever not `doc.image` for a step with no callouts in a walkthrough
-      // with no blur entries at all, so these lists are empty whenever the frame differs.
-      screenshotJobs.push({ stepNumber, frame: plan.frame, highlights: plan.targets, callouts, blur, plan });
-    }
+    if (mStep.doc.image && plan) screenshotJobs.push(screenshotJob(wf.steps[i], mStep, stepNumber, plan));
   }
 
   const printDir = opts.printDir ?? path.join(captureDir, "print");
   const { screenshots, printFigures } = await renderScreenshots(captureDir, manifest, screenshotJobs, screenshotsDir, printDir, opts);
+  // Other ways to do this (decision 34): each path's opening steps, from its own capture. After
+  // the main figures, whose render clears `printDir`.
+  const otherWays = await buildOtherWays(wf, captureDir, screenshotsDir, printDir, validation, opts);
+  problems.push(...otherWays.problems);
 
   // Content blocks, in document order.
   const blocks: GeneratedBlock[] = [
@@ -181,6 +171,8 @@ export async function buildPage(wf: Walkthrough, captureDir: string, outDir: str
     }
     blocks.push(buildStepBlock(step, i + 1, statuses[i]));
   }
+
+  blocks.push(...otherWays.blocks);
 
   // No "Good to know" block: the only source was `outro.recap`, the video's closing summary,
   // which restates the steps. A person can still add one by hand; it's kept as their edit.
@@ -237,8 +229,130 @@ export async function buildPage(wf: Walkthrough, captureDir: string, outDir: str
     problems,
     suggestions: suggestions as PageSuggestion[],
     printFigures,
+    ...(otherWays.screenshots.length > 0 ? { pathScreenshots: otherWays.screenshots } : {}),
+    ...(Object.keys(otherWays.figures).length > 0 ? { pathFigures: otherWays.figures } : {}),
   };
 }
+
+/** One step's screenshot job: the planned frame and boxes, with the step's callouts and blur.
+ * Callout order and label text come from the walkthrough's own `callouts:` list (so the Studio's
+ * reorder/edit actions control it); the box each resolves to comes from this run's manifest,
+ * keyed by id — an entry whose target wasn't found this run (manifest has no matching id) is
+ * skipped rather than drawn with a stale box. */
+function screenshotJob(step: Walkthrough["steps"][number], mStep: CaptureManifest["steps"][number], stepNumber: number, plan: StepFigurePlan): ScreenshotJob {
+  const resolvedCallouts = new Map((mStep.doc.callouts ?? []).map((c) => [c.id, c.box] as const));
+  const resolvedBlur = new Map((mStep.doc.blur ?? []).map((b) => [b.id, b.box] as const));
+  const callouts: { box: BoxLike; label?: string }[] = [];
+  for (const c of step.callouts ?? []) {
+    const box = resolvedCallouts.get(c.id);
+    if (box) callouts.push({ box, label: c.label });
+  }
+  const blur: BoxLike[] = [];
+  for (const b of step.blur ?? []) {
+    const box = resolvedBlur.get(b.id);
+    if (box) blur.push(box);
+  }
+  // `plan.frame` is only ever not `doc.image` for a step with no callouts in a walkthrough
+  // with no blur entries at all, so these lists are empty whenever the frame differs.
+  return { stepNumber, frame: plan.frame, highlights: plan.targets, callouts, blur, plan };
+}
+
+interface OtherWays {
+  blocks: GeneratedBlock[];
+  problems: string[];
+  screenshots: string[];
+  figures: Record<string, PrintFigure[]>;
+}
+
+/** Why a path's capture can't be shown as verified, or undefined when it passed. */
+function pathCaptureProblem(capture: PathCapture | undefined): string | undefined {
+  if (!capture?.manifest || !capture.validation) return "this way hasn't been captured yet";
+  if (capture.validation.ok) return undefined;
+  const failed = capture.validation.steps.find((s) => !s.ok);
+  if (failed) return redactLine(`step "${failed.id ?? failed.title ?? "?"}" failed: ${failed.error ?? "not ok"}`);
+  const notCaptured = (capture.validation as { notCaptured?: unknown }).notCaptured;
+  return typeof notCaptured === "string" ? redactLine(`not captured: ${notCaptured}`) : "this way didn't pass its last capture";
+}
+
+/**
+ * "Other ways to do this": per path, its title, `when` sentence, the writer's note when capture
+ * flagged a difference, its opening steps with screenshots and print figures (the same focus and
+ * blur handling as main steps, from the path's own capture), and where it joins the main steps.
+ * A path that didn't pass its capture is marked not verified and stops the page publishing.
+ */
+async function buildOtherWays(
+  wf: Walkthrough,
+  captureDir: string,
+  screenshotsDir: string,
+  printDir: string,
+  validation: ValidationResult | undefined,
+  opts: BuildPageOptions,
+): Promise<OtherWays> {
+  const out: OtherWays = { blocks: [], problems: [], screenshots: [], figures: {} };
+  const pathShotsDir = path.join(screenshotsDir, "paths");
+  await rm(pathShotsDir, { recursive: true, force: true });
+  const paths: WalkthroughPath[] = wf.paths ?? [];
+  if (paths.length === 0) return out;
+  const captures = new Map(readPathCaptures(captureDir, wf).map((c) => [c.pathId, c] as const));
+  const flagged = new Set((validation?.pathDiffs ?? []).map((d) => d.path));
+  // Blur on any step, main or any path's, means no path figure swaps to an earlier frame (focus.ts).
+  const blurAnywhere = [...wf.steps, ...paths.flatMap((p) => p.steps)].some((s) => (s.blur?.length ?? 0) > 0);
+
+  out.blocks.push(buildOtherWaysHeadingBlock());
+  for (const p of paths) {
+    const run = pathWalkthrough(wf, p);
+    const capture = captures.get(p.id);
+    const problem = pathCaptureProblem(capture);
+    if (problem) out.problems.push(`path "${p.id}": ${problem}`);
+    out.blocks.push(buildPathBlock(p, { showNote: flagged.has(p.id), problem }));
+
+    const manifest = capture?.manifest;
+    const jobs: ScreenshotJob[] = [];
+    const statuses: StepStatus[] = [];
+    const plans = manifest
+      ? new Map(planStepFigures(run.walkthrough, manifest, { anyBlur: blurAnywhere }).map((pl) => [pl.step, pl] as const))
+      : new Map<number, StepFigurePlan>();
+    for (let i = 0; i < p.steps.length; i++) {
+      const n = i + 1;
+      const mStep = manifest?.steps[i];
+      const vStep = capture?.validation?.steps[i];
+      if (!mStep) {
+        statuses.push({ ok: false, problem: problem ?? "not run — capture stopped before this step" });
+        continue;
+      }
+      const ok = vStep ? vStep.ok : true;
+      statuses.push({
+        ok,
+        screenshot: mStep.doc.image ? pathScreenshotFile(p.id, n) : undefined,
+        ...(ok ? {} : { problem: vStep?.error ? redactLine(vStep.error) : "this step did not pass the last capture" }),
+      });
+      const plan = plans.get(n);
+      if (mStep.doc.image && plan) jobs.push(screenshotJob(p.steps[i], mStep, n, plan));
+    }
+    p.steps.forEach((step, i) => out.blocks.push(buildPathStepBlock(p.id, step, i + 1, statuses[i])));
+    out.blocks.push(buildPathJoinBlock(p.id, wf.steps[run.joinIndex], run.joinIndex + 1));
+
+    if (manifest && capture && jobs.length > 0) {
+      const rendered = await renderScreenshots(capture.dir, manifest, jobs, pathShotsDir, path.join(printDir, "paths", p.id), opts, {
+        fileName: (n) => path.basename(pathScreenshotFile(p.id, n)),
+        clean: false,
+      });
+      out.screenshots.push(...rendered.screenshots);
+      out.figures[p.id] = rendered.printFigures;
+    }
+  }
+  return out;
+}
+
+interface ScreenshotNaming {
+  /** File name in `screenshotsDir` for a step number. */
+  fileName: (stepNumber: number) => string;
+  /** Remove files in `screenshotsDir` no job wrote (default true; false when the caller cleared
+   * the dir itself because several renders share it). */
+  clean?: boolean;
+}
+
+const MAIN_NAMING: ScreenshotNaming = { fileName: (n) => path.basename(screenshotFile(n)) };
 
 async function renderScreenshots(
   captureDir: string,
@@ -247,13 +361,17 @@ async function renderScreenshots(
   screenshotsDir: string,
   printDir: string,
   opts: BuildPageOptions,
+  naming: ScreenshotNaming = MAIN_NAMING,
 ): Promise<{ screenshots: string[]; printFigures: PrintFigure[] }> {
-  // Remove screenshots from a previous build for steps that no longer exist/capture.
+  // Remove screenshots from a previous build for steps that no longer exist/capture. Files only:
+  // `screenshots/paths/` holds the other ways' screenshots (buildOtherWays).
   await mkdir(screenshotsDir, { recursive: true });
-  const wanted = new Set(jobs.map((j) => path.basename(screenshotFile(j.stepNumber))));
-  for (const existingFile of await readdir(screenshotsDir).catch(() => [] as string[])) {
-    if (!wanted.has(existingFile)) {
-      await rm(path.join(screenshotsDir, existingFile), { force: true });
+  if (naming.clean !== false) {
+    const wanted = new Set(jobs.map((j) => naming.fileName(j.stepNumber)));
+    for (const existing of await readdir(screenshotsDir, { withFileTypes: true }).catch(() => [])) {
+      if (existing.isFile() && !wanted.has(existing.name)) {
+        await rm(path.join(screenshotsDir, existing.name), { force: true });
+      }
     }
   }
   await rm(printDir, { recursive: true, force: true });
@@ -272,7 +390,7 @@ async function renderScreenshots(
     const printPage = await browser.newPage({ deviceScaleFactor: scale });
     for (const job of jobs) {
       const framePath = path.join(captureDir, "frames", job.frame);
-      const outPath = path.join(screenshotsDir, path.basename(screenshotFile(job.stepNumber)));
+      const outPath = path.join(screenshotsDir, naming.fileName(job.stepNumber));
       await annotateFrame(page, framePath, manifest.viewport, job.highlights, job.stepNumber, outPath, {
         width: opts.screenshotWidth,
         callouts: job.callouts,

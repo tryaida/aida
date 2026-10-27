@@ -6,9 +6,8 @@ import * as YAML from "yaml";
 import { appendHistory, registerRevert } from "./history.js";
 import { findHelpRoot } from "./help-root.js";
 import { isLockedAny } from "./locks.js";
+import { resolveStepRef } from "./paths.js";
 import {
-  findStepIndex,
-  getStepsSeq,
   readYamlDocument,
   validateDocOrThrow,
   walkthroughId,
@@ -34,13 +33,8 @@ function record(helpRoot: string, file: string, opts: EditOptions, action: strin
   return entry;
 }
 
-function lockKeys(wtId: string, stepId: string, field: OverlayField): string[] {
-  return [`walkthrough:${wtId}`, `step:${wtId}:${stepId}`, `step:${wtId}:${stepId}:${field}`];
-}
-
-function getOverlaySeq(doc: YAML.Document.Parsed, stepIdx: number, field: OverlayField): YAML.YAMLSeq {
-  const stepsSeq = getStepsSeq(doc);
-  const stepNode = stepsSeq.items[stepIdx];
+function getOverlaySeq(doc: YAML.Document.Parsed, stepPath: (string | number)[], field: OverlayField): YAML.YAMLSeq {
+  const stepNode = doc.getIn(stepPath, true);
   if (!YAML.isMap(stepNode)) throw new Error(`step is not a mapping`);
   let seq = stepNode.get(field, true);
   if (seq === undefined) {
@@ -48,7 +42,7 @@ function getOverlaySeq(doc: YAML.Document.Parsed, stepIdx: number, field: Overla
     // automatic createNode conversion only kicks in for the path's own leaf when that leaf is
     // itself missing — not reliably here), so push isn't available on it afterwards. Creating
     // the node explicitly avoids that.
-    doc.setIn(["steps", stepIdx, field], doc.createNode([]));
+    doc.setIn([...stepPath, field], doc.createNode([]));
     seq = stepNode.get(field, true);
   }
   if (!YAML.isSeq(seq)) throw new Error(`step's "${field}" is not a list`);
@@ -97,14 +91,14 @@ export function addCallout(
   const helpRoot = findHelpRoot(walkthroughFile);
   const doc = readYamlDocument(walkthroughFile);
   const wtId = walkthroughId(doc);
-  const idx = findStepIndex(doc, stepId);
+  const ref = resolveStepRef(doc, wtId, stepId);
 
   if (by === "agent") {
-    const lockedKey = isLockedAny(helpRoot, lockKeys(wtId, stepId, "callouts"));
+    const lockedKey = isLockedAny(helpRoot, ref.lockKeys("callouts"));
     if (lockedKey) throw new EditLockedError(lockedKey);
   }
 
-  const seq = getOverlaySeq(doc, idx, "callouts");
+  const seq = getOverlaySeq(doc, ref.yamlPath, "callouts");
   if (seq.items.some((item) => YAML.isMap(item) && item.get("id") === callout.id)) {
     throw new Error(`callout "${callout.id}" already exists on step "${stepId}"`);
   }
@@ -138,14 +132,14 @@ export function updateCallout(
   const helpRoot = findHelpRoot(walkthroughFile);
   const doc = readYamlDocument(walkthroughFile);
   const wtId = walkthroughId(doc);
-  const idx = findStepIndex(doc, stepId);
+  const ref = resolveStepRef(doc, wtId, stepId);
 
   if (by === "agent") {
-    const lockedKey = isLockedAny(helpRoot, lockKeys(wtId, stepId, "callouts"));
+    const lockedKey = isLockedAny(helpRoot, ref.lockKeys("callouts"));
     if (lockedKey) throw new EditLockedError(lockedKey);
   }
 
-  const seq = getOverlaySeq(doc, idx, "callouts");
+  const seq = getOverlaySeq(doc, ref.yamlPath, "callouts");
   const itemIdx = findOverlayIndex(seq, calloutId);
   const itemNode = seq.items[itemIdx] as YAML.YAMLMap;
   const before: OverlayPatch = itemNode.toJSON();
@@ -171,14 +165,14 @@ export function removeCallout(walkthroughFile: string, stepId: string, calloutId
   const helpRoot = findHelpRoot(walkthroughFile);
   const doc = readYamlDocument(walkthroughFile);
   const wtId = walkthroughId(doc);
-  const idx = findStepIndex(doc, stepId);
+  const ref = resolveStepRef(doc, wtId, stepId);
 
   if (by === "agent") {
-    const lockedKey = isLockedAny(helpRoot, lockKeys(wtId, stepId, "callouts"));
+    const lockedKey = isLockedAny(helpRoot, ref.lockKeys("callouts"));
     if (lockedKey) throw new EditLockedError(lockedKey);
   }
 
-  const seq = getOverlaySeq(doc, idx, "callouts");
+  const seq = getOverlaySeq(doc, ref.yamlPath, "callouts");
   const itemIdx = findOverlayIndex(seq, calloutId);
   const before = (seq.items[itemIdx] as YAML.YAMLMap).toJSON() as Callout;
   seq.items.splice(itemIdx, 1);
@@ -205,14 +199,14 @@ export function reorderCallouts(walkthroughFile: string, stepId: string, newOrde
   const helpRoot = findHelpRoot(walkthroughFile);
   const doc = readYamlDocument(walkthroughFile);
   const wtId = walkthroughId(doc);
-  const idx = findStepIndex(doc, stepId);
+  const ref = resolveStepRef(doc, wtId, stepId);
 
   if (by === "agent") {
-    const lockedKey = isLockedAny(helpRoot, lockKeys(wtId, stepId, "callouts"));
+    const lockedKey = isLockedAny(helpRoot, ref.lockKeys("callouts"));
     if (lockedKey) throw new EditLockedError(lockedKey);
   }
 
-  const seq = getOverlaySeq(doc, idx, "callouts");
+  const seq = getOverlaySeq(doc, ref.yamlPath, "callouts");
   const currentIds = seq.items.map((item) => (YAML.isMap(item) ? (item.get("id") as string) : undefined));
   if (currentIds.some((id) => id === undefined)) throw new Error("reorderCallouts requires every callout to have an id");
   const before = currentIds as string[];
@@ -243,14 +237,14 @@ export function addBlur(walkthroughFile: string, stepId: string, blur: BlurBox, 
   const helpRoot = findHelpRoot(walkthroughFile);
   const doc = readYamlDocument(walkthroughFile);
   const wtId = walkthroughId(doc);
-  const idx = findStepIndex(doc, stepId);
+  const ref = resolveStepRef(doc, wtId, stepId);
 
   if (by === "agent") {
-    const lockedKey = isLockedAny(helpRoot, lockKeys(wtId, stepId, "blur"));
+    const lockedKey = isLockedAny(helpRoot, ref.lockKeys("blur"));
     if (lockedKey) throw new EditLockedError(lockedKey);
   }
 
-  const seq = getOverlaySeq(doc, idx, "blur");
+  const seq = getOverlaySeq(doc, ref.yamlPath, "blur");
   if (seq.items.some((item) => YAML.isMap(item) && item.get("id") === blur.id)) {
     throw new Error(`blur box "${blur.id}" already exists on step "${stepId}"`);
   }
@@ -283,14 +277,14 @@ export function updateBlur(
   const helpRoot = findHelpRoot(walkthroughFile);
   const doc = readYamlDocument(walkthroughFile);
   const wtId = walkthroughId(doc);
-  const idx = findStepIndex(doc, stepId);
+  const ref = resolveStepRef(doc, wtId, stepId);
 
   if (by === "agent") {
-    const lockedKey = isLockedAny(helpRoot, lockKeys(wtId, stepId, "blur"));
+    const lockedKey = isLockedAny(helpRoot, ref.lockKeys("blur"));
     if (lockedKey) throw new EditLockedError(lockedKey);
   }
 
-  const seq = getOverlaySeq(doc, idx, "blur");
+  const seq = getOverlaySeq(doc, ref.yamlPath, "blur");
   const itemIdx = findOverlayIndex(seq, blurId);
   const itemNode = seq.items[itemIdx] as YAML.YAMLMap;
   const before: OverlayPatch = itemNode.toJSON();
@@ -316,14 +310,14 @@ export function removeBlur(walkthroughFile: string, stepId: string, blurId: stri
   const helpRoot = findHelpRoot(walkthroughFile);
   const doc = readYamlDocument(walkthroughFile);
   const wtId = walkthroughId(doc);
-  const idx = findStepIndex(doc, stepId);
+  const ref = resolveStepRef(doc, wtId, stepId);
 
   if (by === "agent") {
-    const lockedKey = isLockedAny(helpRoot, lockKeys(wtId, stepId, "blur"));
+    const lockedKey = isLockedAny(helpRoot, ref.lockKeys("blur"));
     if (lockedKey) throw new EditLockedError(lockedKey);
   }
 
-  const seq = getOverlaySeq(doc, idx, "blur");
+  const seq = getOverlaySeq(doc, ref.yamlPath, "blur");
   const itemIdx = findOverlayIndex(seq, blurId);
   const before = (seq.items[itemIdx] as YAML.YAMLMap).toJSON() as BlurBox;
   seq.items.splice(itemIdx, 1);

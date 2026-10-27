@@ -4,6 +4,7 @@
 import type { Walkthrough, Step } from "../walkthrough/types.js";
 import type { CaptureManifest } from "../capture/index.js";
 import type {
+  Box,
   CameraFrame,
   NarrationBeat,
   Point,
@@ -55,6 +56,163 @@ export interface BuildTimelineOptions {
   frameSrc?: (image: string) => string;
   /** `resolveArtifactBrand(config)` — colours, font and logo for the title cards etc. */
   brand?: ArtifactBrand;
+  /** Push the camera in toward each step's target (default true). */
+  zoomToTarget?: boolean;
+}
+
+type Style = "minimal" | "friendly" | "bold";
+
+/** Per-preset motion (M34). `zoom` is the push-in toward a step's target; `dy`/`d`/`gap` shape
+ * the title cards' reveal; `chrome` is the browser bar above the stage (bold only). */
+export const STYLE_MOTION: Record<Style, { zoom: number; dy: number; d: number; gap: number; chrome: number }> = {
+  minimal: { zoom: 1.16, dy: 14, d: 0.6, gap: 0.2, chrome: 0 },
+  friendly: { zoom: 1.22, dy: 22, d: 0.7, gap: 0.22, chrome: 0 },
+  bold: { zoom: 1.3, dy: 40, d: 0.7, gap: 0.25, chrome: 38 },
+};
+
+/** The stage rectangle: the 16:9 screenshot area inside the 1920x1080 frame, under an optional
+ * browser bar, above the caption band. */
+function stageFor(chrome: number): Timeline["stage"] {
+  const top = 24 + chrome;
+  const h = 931.5 - chrome;
+  const w = (h * 16) / 9;
+  return { x: Number(((1920 - w) / 2).toFixed(2)), y: top, w: Number(w.toFixed(2)), h };
+}
+
+/** `office-staff` -> `Office staff`; a phrase is kept as written. */
+function readerLabel(value: string | undefined): string | undefined {
+  const v = value?.trim();
+  if (!v) return undefined;
+  if (/\s/.test(v)) return v;
+  const words = v.replace(/[-_]+/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function siteLabel(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    const u = new URL(url);
+    return `${u.host}${u.pathname.replace(/\/+$/, "")}`;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The title cards' reveal schedule for a preset: brand row, eyebrow, title, subtitle, facts on
+ * the intro; brand row, title, each recap row and the footer on the outro. */
+export function cardReveals(style: Style, outroAt: number, recapRows: number, hero = false): NonNullable<Timeline["cards"]> {
+  const m = STYLE_MOTION[style];
+  const g = m.gap;
+  const r = (id: string, t0: number, d = m.d, dy = m.dy) => ({ id, t0: Number(t0.toFixed(3)), d, dy });
+  const intro = [
+    ...(style === "friendly" ? [r("intro-panel", 0.05, 0.75, 30)] : []),
+    r("intro-brand", 0.15),
+    r("intro-eyebrow", 0.15 + g * 1.2),
+    r("intro-title", 0.15 + g * 2, m.d + 0.1, m.dy * 1.4),
+    r("intro-sub", 0.15 + g * 4),
+    r("intro-facts", 0.15 + g * 5.6),
+    ...(hero ? [r("intro-hero", 0.35, 1.0, 46)] : []),
+  ];
+  const o0 = outroAt + 0.35;
+  const outro = [
+    ...(style === "friendly" ? [r("outro-panel", outroAt + 0.2, 0.75, 30)] : []),
+    r("outro-brand", o0 - 0.1),
+    r("outro-title", o0, m.d, m.dy * 1.4),
+    ...Array.from({ length: recapRows }, (_, i) => r(`recap-${i}`, o0 + 0.5 + i * 0.35, 0.6, Math.round(m.dy * 0.6))),
+    r("outro-foot", o0 + 0.6 + recapRows * 0.35),
+    ...(hero ? [r("outro-hero", o0 + 0.1, 1.0, 46)] : []),
+  ];
+  return { intro, outro };
+}
+
+/** A step's own `blur:` boxes as resolved this run (`cap.doc.blur`, keyed by id); an entry whose
+ * target wasn't found this run has no manifest id and is skipped, never drawn stale. */
+function resolvedBlur(step: Step, cap: CaptureManifest["steps"][number]): Box[] {
+  if (!step.blur || step.blur.length === 0) return [];
+  const resolved = new Map((cap.doc.blur ?? []).map((b) => [b.id, b.box] as const));
+  const boxes: Box[] = [];
+  for (const b of step.blur) {
+    const box = resolved.get(b.id);
+    if (box) boxes.push(box);
+  }
+  return boxes;
+}
+
+function pathnameOf(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    return new URL(url, "http://aida.invalid").pathname.replace(/\/+$/, "") || "/";
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Blur windows per screen, not per step (privacy fix, M34). A step's boxes are resolved on its
+ * own end state, but the same screen is on show before and after it: the previous step's frames,
+ * the next step's frames until the page changes, the stage sliding in under the intro and out
+ * under the outro, and the same page visited again later. So every step gets the union of the
+ * boxes of every step on the same route — across all visits to it (from `impact.urls`, the way
+ * pages/focus.ts reads them); a step that changes page belongs to both routes, since its frames
+ * before the click still show the old one. Boxes are resolved at one scroll position, so on a
+ * route where any step scrolls each box becomes a full-height band at its x (content moves
+ * vertically under it). With no route information everything is one screen: over-blurring beats
+ * a leak. The first window reaches back to 0 and the last on to the end, so no frame of the stage
+ * is uncovered.
+ */
+export function blurWindowsByScreen(
+  wf: Pick<Walkthrough, "start" | "steps">,
+  manifest: Pick<CaptureManifest, "steps"> & { viewport?: { width: number; height: number } },
+  stepWindows: { t0: number; t1: number; boxes: Box[] }[],
+  duration: number,
+): TimelineBlurWindow[] {
+  if (stepWindows.every((w) => w.boxes.length === 0)) return [];
+  const byId = new Map(manifest.steps.map((s) => [s.id, s]));
+  const UNKNOWN = "\u0000unknown";
+  let route = pathnameOf(wf.start?.page) ?? UNKNOWN;
+  const routesOf: string[][] = [];
+  const scrolled = new Set<string>();
+  wf.steps.forEach((step) => {
+    const m = byId.get(step.id);
+    const visited = (m?.impact?.urls ?? []).map(pathnameOf).filter((p): p is string => Boolean(p));
+    const before = route;
+    // A step's first known route also names the screen it started on when nothing earlier did.
+    const routes = new Set<string>(before === UNKNOWN && visited.length > 0 ? [visited[0]] : [before]);
+    for (const p of visited) routes.add(p);
+    route = visited.length > 0 ? visited[visited.length - 1] : before;
+    routesOf.push([...routes]);
+    if (m?.events.some((e) => e.type === "scrollFrames")) for (const r of routes) scrolled.add(r);
+  });
+  const VH = manifest.viewport?.height ?? 100_000;
+  const routeBoxes = new Map<string, Box[]>();
+  stepWindows.forEach((w, i) => {
+    for (const r of routesOf[i] ?? [UNKNOWN]) {
+      const boxes = scrolled.has(r) ? w.boxes.map((b) => ({ x: b.x, y: 0, w: b.w, h: VH })) : w.boxes;
+      routeBoxes.set(r, [...(routeBoxes.get(r) ?? []), ...boxes]);
+    }
+  });
+  // A step on a screen whose route isn't known could be showing any of them: it gets every box
+  // (so with no route information at all, everything is one screen).
+  const everything = [...routeBoxes.values()].flat();
+  const windows: TimelineBlurWindow[] = [];
+  stepWindows.forEach((w, i) => {
+    const seen = new Set<string>();
+    const boxes: Box[] = [];
+    const routes = routesOf[i] ?? [UNKNOWN];
+    const pool = routes.includes(UNKNOWN) ? everything : routes.flatMap((r) => routeBoxes.get(r) ?? []);
+    for (const b of pool) {
+      const key = `${b.x},${b.y},${b.w},${b.h}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        boxes.push(b);
+      }
+    }
+    if (boxes.length === 0) return;
+    const t0 = i === 0 ? 0 : w.t0;
+    const t1 = i === stepWindows.length - 1 ? duration : w.t1;
+    windows.push({ t0, t1, boxes });
+  });
+  return windows;
 }
 
 /** Builds the deterministic Timeline the player renders, from a Walkthrough + its capture + narration. */
@@ -70,19 +228,27 @@ export function buildTimeline(
   const VH = manifest.viewport.height;
   const FULL: CameraFrame = { z: 1, cx: VW / 2, cy: VH / 2 };
   const gapSeconds = wf.voice?.gapSeconds ?? 0.45;
+  const style: Style = opts.brand?.style ?? "bold";
+  const motion = STYLE_MOTION[style];
+  const stepCount = wf.steps.length;
+  const reader = readerLabel(wf.for);
+  const site = siteLabel(opts.brand?.siteUrl);
 
   const tl: Timeline = {
     fps: FPS,
     viewport: { w: VW, h: VH },
-    stage: { x: 132, y: 24, w: 1656, h: 931.5 },
+    stage: stageFor(motion.chrome),
+    chrome: motion.chrome,
     fade: T.fade,
     brand: timelineBrand(opts.brand, wf.product),
     intro: {
       eyebrow: wf.intro?.eyebrow ?? "How to",
       titleHtml: escapeHtml(wf.intro?.title ?? wf.title),
       subtitle: wf.intro?.subtitle ?? "",
+      ...(reader ? { reader } : {}),
+      facts: [`${stepCount} step${stepCount === 1 ? "" : "s"}`],
     },
-    outro: { title: wf.outro?.title ?? "", recap: wf.outro?.recap ?? [] },
+    outro: { title: wf.outro?.title ?? "", recap: wf.outro?.recap ?? [], ...(site ? { site } : {}) },
     chapters: [...new Set(wf.steps.map((s) => s.chapter ?? ""))],
     frames: [],
     moves: [],
@@ -123,6 +289,23 @@ export function buildTimeline(
 
   let cursor: Point = { ...tl.cursorStart };
   let camera: CameraFrame = { ...FULL };
+  // End of the last camera move: a new one never starts before it (cameraAt reads the latest
+  // move that has started, so an overlap would jump).
+  let camEnd = 0;
+  const pushCamera = (t0: number, d: number, to: CameraFrame) => {
+    const start = Math.max(t0, camEnd);
+    tl.cameras.push({ t0: start, t1: start + d, from: { ...camera }, to: { ...to } });
+    camera = { ...to };
+    camEnd = start + d;
+  };
+  /** The push-in toward a target box: the preset's zoom, less if the box wouldn't fit. */
+  const zoomOn = (b: Box): CameraFrame | undefined => {
+    const fit = Math.min((VW * 0.7) / Math.max(b.w, 1), (VH * 0.7) / Math.max(b.h, 1));
+    const z = Math.min(motion.zoom, fit);
+    if (z < 1.06) return undefined;
+    return { z: Number(z.toFixed(3)), cx: b.x + b.w / 2, cy: b.y + b.h / 2 };
+  };
+  const autoZoom = opts.zoomToTarget !== false;
   let hiOpen: TimelineHighlight | null = null;
   const closeHi = (at: number) => {
     if (hiOpen) {
@@ -132,6 +315,9 @@ export function buildTimeline(
   };
 
   const stepById = new Map(manifest.steps.map((s) => [s.id, s]));
+  // Each step's own window and its own resolved blur boxes; turned into per-screen windows once
+  // every step is placed (see `blurWindowsByScreen`).
+  const stepBlur: { t0: number; t1: number; boxes: import("../capture/types.js").Box[] }[] = [];
 
   wf.steps.forEach((step, si) => {
     const id = requireStepId(step);
@@ -176,8 +362,14 @@ export function buildTimeline(
       target.cx = Math.min(VW - VW / (2 * z), Math.max(VW / (2 * z), target.cx));
       target.cy = Math.min(VH - VH / (2 * z), Math.max(VH / (2 * z), target.cy));
     }
-    tl.cameras.push({ t0: stepStart, t1: stepStart + T.camera, from: { ...camera }, to: target });
-    camera = target;
+    pushCamera(stepStart, T.camera, target);
+    const baseFrame: CameraFrame = { ...target };
+    // Zoom to target (M34): steps framed full screen push in toward what they highlight, then
+    // ease back out once the highlight clears. A step with its own `camera: { focus }` keeps it.
+    const stepZooms = autoZoom && (!camSpec || camSpec === "full");
+    let zoomed = false;
+    let cleared = false;
+    let moveStart: number | undefined;
 
     tl.audio.push({ id, file: stepBeat.audioPath, t: stepStart + T.voiceDelay });
     tl.captions.push({
@@ -189,14 +381,23 @@ export function buildTimeline(
       t0: stepStart,
       t1: 0,
       num: String(si + 1),
-      eyebrow: `Part ${tl.chapters.indexOf(step.chapter ?? "") + 1} · ${step.chapter ?? ""}`,
+      eyebrow:
+        tl.chapters.length > 1
+          ? `Part ${tl.chapters.indexOf(step.chapter ?? "") + 1} · ${step.chapter ?? ""}`
+          : `Step ${si + 1} of ${stepCount}`,
       title: step.title ?? "",
     });
 
     t += T.lead + share(W.lead);
-    for (const e of cap.events) {
+    cap.events.forEach((e) => {
       switch (e.type) {
         case "frame":
+          // A new frame after the click (cut or fade): the screen changed under the push-in, so
+          // pull back out to show it.
+          if (zoomed && cleared) {
+            pushCamera(t, 0.75, baseFrame);
+            zoomed = false;
+          }
           if (e.transition === "fade") {
             tl.frames.push({ t, src: frameSrc(e.image), transition: "fade" });
             t += T.fade;
@@ -206,6 +407,7 @@ export function buildTimeline(
           break;
         case "move": {
           const dur = moveTime(cursor, e.to);
+          moveStart = t;
           tl.moves.push({ t0: t, t1: t + dur, from: { ...cursor }, to: { ...e.to } });
           cursor = { ...e.to };
           t += dur;
@@ -215,13 +417,27 @@ export function buildTimeline(
           tl.clicks.push({ t, x: e.at.x, y: e.at.y });
           t += T.click + T.afterClick;
           break;
-        case "highlight":
-          closeHi(t);
-          hiOpen = { t0: t, t1: Infinity, box: e.box };
+        case "highlight": {
+          // The ring (and its step badge) comes up as the pointer sets off toward the target, so
+          // it's on screen long enough to read, not just for the instant before the click.
+          const hiStart = moveStart !== undefined ? Math.min(moveStart, t) : t;
+          closeHi(hiStart);
+          hiOpen = { t0: hiStart, t1: Infinity, box: e.box, num: si + 1 };
           tl.highlights.push(hiOpen);
+          // Push in as the pointer sets off toward the target, and hold through the click; the
+          // next step's own camera move eases back out (or a page change does, above).
+          const z = stepZooms ? zoomOn(e.box) : undefined;
+          if (z) {
+            pushCamera(hiStart, 0.9, z);
+            zoomed = true;
+            cleared = false;
+          }
+          moveStart = undefined;
           break;
+        }
         case "clearHighlight":
           closeHi(t - T.afterClick + 0.15);
+          cleared = true;
           break;
         case "typeFrames":
           for (const img of e.images) {
@@ -230,6 +446,10 @@ export function buildTimeline(
           }
           break;
         case "scrollFrames":
+          if (zoomed && cleared) {
+            pushCamera(t, 0.75, baseFrame);
+            zoomed = false;
+          }
           for (const img of e.images) {
             tl.frames.push({ t, src: frameSrc(img), transition: "cut" });
             t += T.scroll;
@@ -239,7 +459,7 @@ export function buildTimeline(
           t += e.seconds + share(W.hold);
           break;
       }
-    }
+    });
     t += T.tailMin + (step.hold ?? 0) + share(W.tail);
     closeHi(t - 0.15);
     tl.chips[tl.chips.length - 1].t1 = t;
@@ -260,17 +480,7 @@ export function buildTimeline(
       });
       if (items.length > 0) calloutWindows.push({ t0: stepStart, t1: t, items });
     }
-    if (step.blur && step.blur.length > 0) {
-      const resolved: Map<string, import("../capture/types.js").Box> = new Map(
-        (cap.doc.blur ?? []).map((b) => [b.id, b.box] as const),
-      );
-      const boxes: import("../capture/types.js").Box[] = [];
-      for (const b of step.blur) {
-        const box = resolved.get(b.id);
-        if (box) boxes.push(box);
-      }
-      if (boxes.length > 0) blurWindows.push({ t0: stepStart, t1: t, boxes });
-    }
+    stepBlur.push({ t0: stepStart, t1: t, boxes: resolvedBlur(step, cap) });
   });
 
   // Outro card.
@@ -286,6 +496,12 @@ export function buildTimeline(
   }
   tl.duration = Number(t.toFixed(3));
   scenes.push({ id: "outro", t0: outroStart, t1: tl.duration });
+  blurWindows.push(...blurWindowsByScreen(wf, manifest, stepBlur, tl.duration));
+  // A screenshot of the app beside the title on the cards (minimal, bold) — only when no step
+  // declares blur at all (resolved or not): the cards show raw frames, with no mosaic over them.
+  const declaresBlur = wf.steps.some((st) => (st.blur?.length ?? 0) > 0);
+  const hero = style !== "friendly" && !declaresBlur && blurWindows.length === 0 && tl.frames.length > 0;
+  tl.cards = cardReveals(style, tl.stageOut.t0, tl.outro.recap.length, hero);
 
   // Keep captions from overlapping.
   tl.captions

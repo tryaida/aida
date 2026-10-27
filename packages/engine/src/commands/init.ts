@@ -76,6 +76,9 @@ export interface InitOptions {
   runner?: CommandRunner;
   /** The engine package to pack. Default: this one (`ENGINE_DIR`); tests use a stand-in. */
   engineDir?: string;
+  /** Read the brand from the running app too when it answers (M34). Default true; also off with
+   * `AIDA_INIT_FROM_APP=0`. */
+  fromApp?: boolean;
 }
 
 export interface InitResult {
@@ -309,8 +312,9 @@ export async function runInit(options: InitOptions, json: boolean): Promise<numb
   }
 
   const database = await databaseWarning(result.appRoot);
+  const appBrand = await brandFromRunningApp(result, options);
   if (json) {
-    console.log(JSON.stringify({ ...result, database }));
+    console.log(JSON.stringify({ ...result, database, ...(appBrand ? { appBrand } : {}) }));
     return 0;
   }
 
@@ -330,6 +334,11 @@ export async function runInit(options: InitOptions, json: boolean): Promise<numb
   if (result.theme) {
     console.log(`  theme: ${result.theme.written.length} file(s) written (app/brand.css, lib/brand.json, public/brand/)`);
     for (const w of result.theme.warnings) console.log(`  warning: ${w}`);
+  }
+  if (appBrand?.saved) {
+    console.log(`  brand read from the running app -> ${appBrand.saved}${appBrand.fromApp?.length ? ` (${appBrand.fromApp.join(", ")})` : ""}`);
+  } else if (appBrand?.error) {
+    console.log(`  note: couldn't read the brand from the running app (${appBrand.error}); run \`aida theme --from-app\` once sign-in works`);
   }
   if (result.ci) {
     console.log(result.ci.written ? `  wrote ${result.ci.file}` : `  left existing ${result.ci.file} untouched`);
@@ -364,4 +373,40 @@ export async function runInit(options: InitOptions, json: boolean): Promise<numb
   console.log("next steps:");
   result.nextSteps.forEach((s, i) => console.log(`  ${i + 1}. ${s}`));
   return 0;
+}
+
+/**
+ * `aida init` also reads the brand from the running app when it answers (decision 35): colours
+ * and fonts as drawn, the logo as rendered, merged under the repo-detected config it just wrote
+ * (`aida theme --from-app`). Only for a freshly written config; never fatal — the app may need a
+ * sign-in that isn't set up yet.
+ */
+export async function brandFromRunningApp(
+  result: InitResult,
+  options: InitOptions,
+): Promise<{ saved?: string; fromApp?: string[]; error?: string } | undefined> {
+  if (options.fromApp === false || process.env.AIDA_INIT_FROM_APP === "0" || !result.config.written) return undefined;
+  // Probe the URL the config actually uses (what `--from-app` will open), not a guess.
+  let appUrl: string;
+  try {
+    const { loadConfig } = await import("../config/load.js");
+    appUrl = (await loadConfig(result.config.file)).app.baseUrl;
+  } catch {
+    return undefined; // config not loadable yet (e.g. --no-install): `aida theme --from-app` later
+  }
+  try {
+    const probe = new URL(appUrl);
+    probe.username = "";
+    probe.password = ""; // fetch refuses URLs with credentials; the browser later uses them as set
+    await fetch(probe, { method: "GET", signal: AbortSignal.timeout(2000) });
+  } catch {
+    return undefined; // not running: nothing to read, nothing to say
+  }
+  try {
+    const { runThemeCommand } = await import("./theme.js");
+    const out = await runThemeCommand({ config: result.config.file, fromApp: true });
+    return out.mode === "from-app" ? { saved: out.saved, fromApp: out.fromApp } : undefined;
+  } catch (err) {
+    return { error: err instanceof Error ? err.message.split("\n")[0] : String(err) };
+  }
 }
