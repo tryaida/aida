@@ -2,9 +2,7 @@
 
 As of 2026-10-26 · **AIDA**: Agent-driven Instruction and Documentation Automation
 
-Mirror of the shared scope doc: https://claude.ai/artifact/JisTyr7bSDj8tK9KXLuMRr
-The shared doc is the working copy for comments; update this file when it changes. Diagrams here are
-Mermaid redraws of the doc's drawings.
+This file is the scope: the source of truth for what AIDA is for and how it fits together.
 
 ## Summary
 

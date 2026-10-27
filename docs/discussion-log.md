@@ -97,8 +97,8 @@ single-purpose. Nobody has one walkthrough file driving docs, video, tests and M
 ### 5. Focus on vibe coders and low friction → high-level scope
 
 The user's steer: make it non-technical enough for vibe coders, reduce friction, and meet vibe coders
-and engineers where they already work. This produced the shared scope doc
-(https://claude.ai/artifact/JisTyr7bSDj8tK9KXLuMRr, mirrored in [scope.md](scope.md)). New ideas
+and engineers where they already work. This produced the scope doc
+([scope.md](scope.md)). New ideas
 introduced at this step:
 
 - **Doors:** agent skill, CLI, GitHub Action, deploy hook (Vercel/Netlify preview deploys), GitHub App

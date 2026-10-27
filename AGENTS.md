@@ -35,6 +35,5 @@ fixtures or docs; use fictional names (example.com, "Acme").
 - Safe by default: never capture against production data or real logins; fake data uses example.com
   and reserved fictional phone ranges; never copy API keys into the repo.
 - User-facing words: "walkthrough", "help site", "help chat", "agent connector", "Studio".
-- Keep `docs/scope.md` in sync with the shared doc (https://claude.ai/artifact/JisTyr7bSDj8tK9KXLuMRr)
-  when either changes, and add a dated entry to `docs/discussion-log.md` for significant planning
-  conversations.
+- Update `docs/scope.md` when the plan changes, and add a dated entry to `docs/discussion-log.md`
+  for significant planning conversations.
