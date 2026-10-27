@@ -216,6 +216,9 @@ export interface LibraryStructureOptions {
   placements: Map<string, LibraryPlacement>;
   /** Product name for the home page title ("<Product> help"). */
   product?: string;
+  /** What the app is for, in a sentence or two (the app brief's first paragraph): the home page's
+   * description, shown under its heading, instead of the generic one. */
+  intro?: string;
 }
 
 /**
@@ -306,7 +309,7 @@ export function writeLibraryStructure(opts: LibraryStructureOptions): void {
   }
 
   writeRootMeta(contentDir);
-  writeHome(contentDir, opts.product);
+  writeHome(contentDir, opts.product, opts.intro);
 }
 
 /** Post-order: removes section folders the engine generated (`generated: true`, `kind: section`)
@@ -340,12 +343,12 @@ function writeRootMeta(contentDir: string): void {
   writeIfChanged(file, `${JSON.stringify(meta, null, 2)}\n`);
 }
 
-function writeHome(contentDir: string, product: string | undefined): void {
+function writeHome(contentDir: string, product: string | undefined, intro?: string): void {
   const file = pageFileIn(contentDir) ?? join(contentDir, "index.mdx");
   if (!isReplaceableIndex(file)) return;
   const name = product?.trim();
   const title = name ? `${name} help` : "Help";
-  const description = name ? `Guides, videos and printable instructions for ${name}.` : "Guides, videos and printable instructions.";
+  const description = intro?.trim() || (name ? `Guides, videos and printable instructions for ${name}.` : "Guides, videos and printable instructions.");
   const body =
     "Find the task you want to do below, or search for it. Each guide takes you through one task step by step, with a screenshot for every step.";
   writeIfChanged(file, `${frontmatterBlock({ title, description, kind: "home", generated: true })}\n\n${body}\n`);

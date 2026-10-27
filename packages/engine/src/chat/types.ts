@@ -126,6 +126,10 @@ export interface ResolvedChatConfig {
   /** Product name the assistant introduces itself with ("Acme Events"); the help app falls back to
    * the detected brand name. */
   appName?: string;
+  /** The app brief's chat prefix (what the app is for, who uses it, its words; brief/consumers.ts
+   * `briefForChat`), written into `chat-config.json` by `aida build` when `app-brief.md` exists.
+   * Sent first in the system prompt, ahead of the rules. */
+  brief?: string;
   allowedOrigins: string[];
   retrievalLimit: number;
   maxInputTokens: number;

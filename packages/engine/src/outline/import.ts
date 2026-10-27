@@ -4,10 +4,11 @@
 //     for: office staff · section: Competitors · from Competitors page to a submitted entry
 //   - Record a "Cash" payment
 //     id: record-payment · for: office staff · section: Payments · labels: "Record payment", "Cash"
+//     paths: from the booking, from the attendee, from Payments
 //
 // A bullet (`-`, `*` or `1.`) starts a card with its title; indented lines below it hold
-// `·`/`|`-separated parts. `for:`, `section:`, `id:`, `labels:` and `status:` are fields; any
-// other part is the purpose. Bold/backtick markup around a title is dropped.
+// `·`/`|`-separated parts. `for:`, `section:`, `id:`, `labels:`, `paths:` (comma-separated other
+// starting screens) and `status:` are fields; any other part is the purpose. Bold/backtick markup around a title is dropped.
 import { quotedStrings } from "./drift.js";
 import { cardIdFromTitle, OUTLINE_STATUSES, type OutlineCard, type OutlineStatus } from "./schema.js";
 
@@ -35,7 +36,7 @@ function applyDetail(card: OutlineCard, line: string): void {
   for (const raw of line.split(/\s+[·|•]\s+|^[·|•]\s+|\s+[·|•]$/)) {
     const part = raw.trim();
     if (!part) continue;
-    const field = part.match(/^(for|section|id|labels?|status)\s*:\s*(.*)$/i);
+    const field = part.match(/^(for|section|id|labels?|paths?|status)\s*:\s*(.*)$/i);
     if (!field) {
       purpose.push(part);
       continue;
@@ -47,6 +48,7 @@ function applyDetail(card: OutlineCard, line: string): void {
     else if (key === "id") card.id = value;
     else if (key === "status" && (OUTLINE_STATUSES as readonly string[]).includes(value)) card.status = value as OutlineStatus;
     else if (key.startsWith("label")) card.labels = [...(card.labels ?? []), ...parseLabels(value)];
+    else if (key.startsWith("path")) card.paths = [...(card.paths ?? []), ...value.split(",").map((p) => p.trim()).filter(Boolean)];
   }
   if (purpose.length > 0) card.purpose = [card.purpose, purpose.join(" · ")].filter(Boolean).join(" · ");
 }

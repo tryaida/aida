@@ -7,12 +7,13 @@ import path from "node:path";
 import { libraryPlacement, type Walkthrough } from "../walkthrough/index.js";
 import type { CaptureManifest, ValidationResult } from "../capture/index.js";
 import { redactLine } from "../capture/redact.js";
-import { annotateFrame } from "./annotate.js";
+import { annotateFrame, renderPrintFrame } from "./annotate.js";
+import { PNG } from "pngjs";
+import { edgeMap, focusCrop, planStepFigures, refineCrop, type StepFigurePlan } from "./focus.js";
 import {
   buildBeforeYouStartBlock,
   buildChapterBlock,
   buildFrontmatterBlock,
-  buildGoodToKnowBlock,
   buildHeaderBlock,
   buildLastCheckedBlock,
   buildStepBlock,
@@ -31,7 +32,18 @@ import {
   writeSidecar,
   type GeneratedBlock,
 } from "./markers.js";
-import type { BuildPageOptions, BuildPageResult, PageSuggestion } from "./types.js";
+import type { BuildPageOptions, BuildPageResult, PageSuggestion, PrintFigure } from "./types.js";
+
+type BoxLike = { x: number; y: number; w: number; h: number };
+
+interface ScreenshotJob {
+  stepNumber: number;
+  frame: string;
+  highlights: BoxLike[];
+  callouts: { box: BoxLike; label?: string }[];
+  blur: BoxLike[];
+  plan: StepFigurePlan;
+}
 
 function readJson<T>(file: string): T {
   return JSON.parse(readFileSync(file, "utf8")) as T;
@@ -96,13 +108,10 @@ export async function buildPage(wf: Walkthrough, captureDir: string, outDir: str
   // Per-step status + screenshot annotation. manifest/validation steps are shorter than
   // wf.steps when capture stopped early on a failure — those later steps have no data yet.
   const statuses: StepStatus[] = [];
-  const screenshotJobs: {
-    stepNumber: number;
-    frame: string;
-    highlights: { x: number; y: number; w: number; h: number }[];
-    callouts: { box: { x: number; y: number; w: number; h: number }; label?: string }[];
-    blur: { x: number; y: number; w: number; h: number }[];
-  }[] = [];
+  const screenshotJobs: ScreenshotJob[] = [];
+  // Which frame each step shows and which boxes on it are real (focus.ts) — a highlight drawn
+  // before a click that opened another page belongs to that earlier frame, not `doc.image`.
+  const plans = new Map(planStepFigures(wf, manifest).map((p) => [p.step, p] as const));
 
   for (let i = 0; i < wf.steps.length; i++) {
     const stepNumber = i + 1;
@@ -116,7 +125,8 @@ export async function buildPage(wf: Walkthrough, captureDir: string, outDir: str
     const status: StepStatus = { ok, screenshot: mStep.doc.image ? screenshotFile(stepNumber) : undefined };
     if (!ok) status.problem = vStep?.error ? redactLine(vStep.error) : "this step did not pass the last capture";
     statuses.push(status);
-    if (mStep.doc.image) {
+    const plan = plans.get(stepNumber);
+    if (mStep.doc.image && plan) {
       // Callout order and label text come from the walkthrough's own `callouts:` list (so the
       // Studio's reorder/edit actions control it); the box each resolves to comes from this
       // run's manifest, keyed by id — an entry whose target wasn't found this run (manifest has
@@ -133,11 +143,14 @@ export async function buildPage(wf: Walkthrough, captureDir: string, outDir: str
         const box = resolvedBlur.get(b.id);
         if (box) blur.push(box);
       }
-      screenshotJobs.push({ stepNumber, frame: mStep.doc.image, highlights: mStep.doc.highlights, callouts, blur });
+      // `plan.frame` is only ever not `doc.image` for a step with no callouts in a walkthrough
+      // with no blur entries at all, so these lists are empty whenever the frame differs.
+      screenshotJobs.push({ stepNumber, frame: plan.frame, highlights: plan.targets, callouts, blur, plan });
     }
   }
 
-  const screenshots = await renderScreenshots(captureDir, manifest, screenshotJobs, screenshotsDir, opts);
+  const printDir = opts.printDir ?? path.join(captureDir, "print");
+  const { screenshots, printFigures } = await renderScreenshots(captureDir, manifest, screenshotJobs, screenshotsDir, printDir, opts);
 
   // Content blocks, in document order.
   const blocks: GeneratedBlock[] = [
@@ -169,8 +182,8 @@ export async function buildPage(wf: Walkthrough, captureDir: string, outDir: str
     blocks.push(buildStepBlock(step, i + 1, statuses[i]));
   }
 
-  const goodToKnow = buildGoodToKnowBlock(wf);
-  if (goodToKnow) blocks.push(goodToKnow);
+  // No "Good to know" block: the only source was `outro.recap`, the video's closing summary,
+  // which restates the steps. A person can still add one by hand; it's kept as their edit.
   blocks.push(buildLastCheckedBlock(lastChecked, passed));
 
   const indexFile = path.join(pageDir, "index.mdx");
@@ -223,22 +236,18 @@ export async function buildPage(wf: Walkthrough, captureDir: string, outDir: str
     lastChecked,
     problems,
     suggestions: suggestions as PageSuggestion[],
+    printFigures,
   };
 }
 
 async function renderScreenshots(
   captureDir: string,
   manifest: CaptureManifest,
-  jobs: {
-    stepNumber: number;
-    frame: string;
-    highlights: { x: number; y: number; w: number; h: number }[];
-    callouts: { box: { x: number; y: number; w: number; h: number }; label?: string }[];
-    blur: { x: number; y: number; w: number; h: number }[];
-  }[],
+  jobs: ScreenshotJob[],
   screenshotsDir: string,
+  printDir: string,
   opts: BuildPageOptions,
-): Promise<string[]> {
+): Promise<{ screenshots: string[]; printFigures: PrintFigure[] }> {
   // Remove screenshots from a previous build for steps that no longer exist/capture.
   await mkdir(screenshotsDir, { recursive: true });
   const wanted = new Set(jobs.map((j) => path.basename(screenshotFile(j.stepNumber))));
@@ -247,13 +256,20 @@ async function renderScreenshots(
       await rm(path.join(screenshotsDir, existingFile), { force: true });
     }
   }
-  if (jobs.length === 0) return [];
+  await rm(printDir, { recursive: true, force: true });
+  if (jobs.length === 0) return { screenshots: [], printFigures: [] };
+  await mkdir(printDir, { recursive: true });
 
   const { chromium } = await import("playwright");
   const browser = await chromium.launch();
   const written: string[] = [];
+  const printFigures: PrintFigure[] = [];
   try {
     const page = await browser.newPage();
+    // Print images render at the capture's own device scale (capped at 2), so a focus crop
+    // printed larger than it was on screen stays sharp.
+    const scale = Math.min(Math.max(manifest.deviceScaleFactor ?? 1, 1), 2);
+    const printPage = await browser.newPage({ deviceScaleFactor: scale });
     for (const job of jobs) {
       const framePath = path.join(captureDir, "frames", job.frame);
       const outPath = path.join(screenshotsDir, path.basename(screenshotFile(job.stepNumber)));
@@ -263,9 +279,39 @@ async function renderScreenshots(
         blur: job.blur,
       });
       written.push(outPath);
+
+      const nn = String(job.stepNumber).padStart(2, "0");
+      const full = path.join(printDir, `step-${nn}.full.png`);
+      const planned = focusCrop(job.plan.targets, manifest.viewport, job.plan.points);
+      const cropPath = path.join(printDir, `step-${nn}.crop.png`);
+      // Refined against the clean full screen just written (blur burned in): placed where
+      // there's most to see, edges moved off slivers and through-text cuts (focus.ts).
+      const refine = (fullPng: string) => {
+        if (!planned) return undefined;
+        try {
+          const png = PNG.sync.read(readFileSync(fullPng));
+          return refineCrop(edgeMap(png.data, png.width, png.height), planned, job.plan.targets, job.plan.points);
+        } catch {
+          return planned;
+        }
+      };
+      const cropBox = await renderPrintFrame(printPage, framePath, manifest.viewport, job.blur, {
+        full,
+        crop: planned ? { box: refine, path: cropPath } : undefined,
+      });
+      const crop = cropBox ? cropPath : undefined;
+      printFigures.push({
+        step: job.stepNumber,
+        full,
+        ...(crop && cropBox ? { crop, cropBox } : {}),
+        viewport: { width: manifest.viewport.width, height: manifest.viewport.height },
+        targets: job.highlights,
+        callouts: job.callouts,
+        newScreen: job.plan.newScreen,
+      });
     }
   } finally {
     await browser.close();
   }
-  return written;
+  return { screenshots: written, printFigures };
 }

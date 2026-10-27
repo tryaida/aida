@@ -34,6 +34,7 @@ import {
 import type { PdfBuildResult } from "../pdf/index.js";
 import type { Browser } from "playwright";
 import { resolveChatConfig } from "../chat/index.js";
+import { briefForBuild, briefPath } from "../brief/consumers.js";
 import { cpSync, rmSync } from "node:fs";
 import { runIndexStage } from "./index-stage.js";
 import { writeHelpAppTheme } from "../theme/index.js";
@@ -305,13 +306,18 @@ async function runRenderStage(
 }
 
 /** Content hash for the pages stage's skip decision — capture manifest + the walkthrough's own text. */
-/** `buildPage()` only reads `step.doc.{image,highlights}` off each manifest step (pages/build.ts)
- * — never `step.impact` (CI-impact-map-only: same-origin requests/urls a step's actions
- * triggered). Dropped before hashing so the dev server's own request-timing nondeterminism
- * (chunk-loading order, HMR) never forces an unnecessary page rebuild. */
+/** `buildPage()` reads `step.doc` and `step.events` off each manifest step, and `step.impact.urls`
+ * (which steps moved to another page — pages/focus.ts picks each print figure's frame from it),
+ * but never `impact.requests` (CI-impact-map-only). Requests are dropped before hashing so the dev
+ * server's own request-timing nondeterminism (chunk-loading order, HMR) never forces an
+ * unnecessary page rebuild. */
 function stripImpact(manifest: CaptureManifest): CaptureManifest {
-  return { ...manifest, steps: manifest.steps.map((s) => ({ ...s, impact: { urls: [], requests: [] } })) };
+  return { ...manifest, steps: manifest.steps.map((s) => ({ ...s, impact: { urls: s.impact?.urls ?? [], requests: [] } })) };
 }
+
+/** Bumped when what `buildPage()` writes changes shape, so pages cached by an older engine
+ * rebuild (M32: print figures in `BuildPageResult.printFigures`, no recap "Good to know"). */
+export const PAGES_LAYOUT_VERSION = "m32-print-figures";
 
 /** Stable summary of a capture's validation result — ok + per-step ok only, so volatile fields
  * (`ranAt`, per-step `ms`, error text) never affect the hash, but a pass->fail (or fail->pass)
@@ -342,10 +348,14 @@ export function pagesInputHash(
     intro: wf.intro,
     outro: wf.outro,
     start: wf.start,
-    steps: wf.steps.map((s) => ({ id: s.id, title: s.title, say: s.say, caption: s.caption, page_text: s.page_text, chapter: s.chapter })),
+    // `blur`/`callouts` decide which frame a print figure may show (pages/focus.ts) and the
+    // callout labels drawn, not just the resolved boxes the manifest already carries.
+    steps: wf.steps.map((s) => ({ id: s.id, title: s.title, say: s.say, caption: s.caption, page_text: s.page_text, chapter: s.chapter, blur: s.blur, callouts: s.callouts })),
   };
   const validationSummary = stableValidationSummary(validation);
-  return sha256(stableStringify({ captureHash, textFields, validationSummary, readers, videoPresent, ...(roles ? { roles } : {}) }));
+  return sha256(
+    stableStringify({ captureHash, textFields, validationSummary, readers, videoPresent, layout: PAGES_LAYOUT_VERSION, ...(roles ? { roles } : {}) }),
+  );
 }
 
 async function runPagesStage(wf: Walkthrough, config: ResolvedConfig, state: WalkthroughPipelineState): Promise<void> {
@@ -404,7 +414,7 @@ async function runPdfStage(
   }
   try {
     const input = { ...pdfInputFromPage(wf, state.pageResult), publishable };
-    const result = await buildWalkthroughPdf(input, { pdfDir, paper: config.pdf?.paper ?? "A4", brand: resolvePdfBrand(config) }, browser);
+    const result = await buildWalkthroughPdf(input, { pdfDir, paper: config.pdf?.paper ?? "A4", brand: resolvePdfBrand(config), siteUrl: config.publish?.siteUrl }, browser);
     state.pdfResult = result;
     if (result.excluded) {
       state.stages.pdf = skipped("page not publishable — not rendering a PDF from it", Date.now() - started);
@@ -715,7 +725,7 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
             }
           })
           .filter((i): i is NonNullable<typeof i> => Boolean(i));
-        await buildManualPdf(allInputs, { pdfDir, paper: config.pdf?.paper ?? "A4", brand: resolvePdfBrand(config) }, browser);
+        await buildManualPdf(allInputs, { pdfDir, paper: config.pdf?.paper ?? "A4", brand: resolvePdfBrand(config), siteUrl: config.publish?.siteUrl }, browser);
       } finally {
         await browser.close();
       }
@@ -776,6 +786,10 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
         return [];
       }
     });
+    // The app brief goes to the help chat, the agent connector and the home page only once it
+    // passes `aida brief check` with no personal data and no template prompts left.
+    const brief = briefForBuild(briefPath(config));
+    if (brief.skipped) console.warn(`aida build: app brief not published: ${brief.skipped}; fix it and run aida brief check`);
     try {
       const result = runIndexStage({
         pagesDir: join(config.outDir, "pages"),
@@ -794,6 +808,7 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
         chatConfig: resolveChatConfig(config.chat, config.models),
         walkthroughs: allWalkthroughs,
         productName: config.brand?.name,
+        appBrief: brief.artifacts,
       });
       indexResult = { ...result, ms: Date.now() - started };
       indexStage = ok(`${result.pageCount} page(s) indexed -> ${result.searchIndexFile}`);

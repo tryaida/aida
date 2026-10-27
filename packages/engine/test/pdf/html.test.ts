@@ -138,8 +138,8 @@ describe("brand in the print HTML", () => {
       { title: "Record a payment", reader: "Office staff", section: "Payments / Fees", summary: "Take a fee.", page: 3 },
       { title: "Add a competitor", reader: "Office staff", page: 5 },
     ]);
-    expect(html).toContain("<h2>Payments › Fees</h2>");
-    expect(html).toContain("<h2>Office staff</h2>");
+    expect(html).toContain("<h2><span>Payments › Fees</span>");
+    expect(html).toContain("<h2><span>Office staff</span>");
     expect(html).toContain('<p class="toc-sum">Take a fee.</p>');
   });
 });

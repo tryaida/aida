@@ -1,6 +1,6 @@
 ---
 name: aida-plan
-description: Pick the readers and top tasks for a new app, lay out the help site, and produce outline cards for review. Use after aida-discover has mapped the app, or when re-planning site structure after a big feature change. High-stakes, low-frequency — rare escalation target for aida-repair too.
+description: Pick the readers and top tasks for a new app, lay out the help site, and produce outline cards for review. Use after aida-discover has mapped the app and aida-understand has written the brief, or when re-planning site structure after a big feature change. High-stakes, low-frequency — rare escalation target for aida-repair too.
 ---
 
 # aida-plan
@@ -11,13 +11,14 @@ walkthrough (see that skill).
 
 ## Input
 
-The merged summary from `aida-discover` (routes, roles, labels, likely tasks per area) — not the
-app's source code, and not the full discover transcript.
+The merged summary from `aida-discover` (routes, roles, labels, likely tasks per area) and the app
+brief (`aida brief show --config <cfg>`, written by `aida-understand`) — not the app's source
+code, and not the full discover transcript.
 
 ## What it produces
 
 1. **Readers.** Who actually uses the app (roles), in plain language — "office staff taking
-   entries", not a technical role string.
+   entries", not a technical role string. Start from the brief's `readers` and their jobs.
 2. **Top tasks.** Per reader, the handful of tasks worth a walkthrough — ranked by how often a
    real user would hit them, not by how interesting they are to write.
 3. **Site layout.** How pages group in the help site nav. Each card gets a `section:` — a
@@ -34,7 +35,9 @@ app's source code, and not the full discover transcript.
    ```
 
    Put an on-screen name the card relies on in quotes, or in `labels:`, only when discover
-   actually reported that label. Capture checks each one against the real screen.
+   actually reported that label. Capture checks each one against the real screen. When the
+   brief's "Several ways to do one thing" lists the task, add its other starting screens:
+   `paths: from the entry, from the competitor, from Payments` (one card, not one per path).
 5. **Data each card needs, leaves or clears.** Most tasks change data, so say it on the card in
    kebab-case state names (`needs session-full`, `leaves alex-on-waitlist`, `clears
    alex-in-morning`); the writer turns them into the walkthrough's `needs`/`leaves`/`clears`.
@@ -60,8 +63,10 @@ than deleting it.
 - Ground every task and reader in something `aida-discover` actually found — a route, a label,
   a role. Never invent a task the app doesn't appear to support (see
   `references/safety.md` → Truthfulness).
-- Use the plain-language vocabulary from `references/style.md` in every card and reader name —
-  these are the first thing a person reads.
+- Use the plain-language vocabulary from `references/style.md` and the brief's "Words it uses"
+  in every card and reader name — these are the first thing a person reads.
+- Rank tasks by the brief's rhythm and rules: what readers do every week, and the mistakes its
+  rules warn about, come before rare admin.
 - Keep the outline small enough to review in one sitting. If discover turned up more tasks than
   make a sane first site, cut to the top ones and say what you cut and why.
 

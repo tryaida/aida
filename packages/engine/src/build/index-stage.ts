@@ -10,6 +10,7 @@ import { buildProcedures, type ReaderNames } from "../procedures/index.js";
 import type { Procedure } from "../procedures/index.js";
 import { libraryPlacement, type LibraryPlacement, type Walkthrough } from "../walkthrough/index.js";
 import type { ResolvedChatConfig } from "../chat/index.js";
+import type { BriefArtifacts } from "../brief/consumers.js";
 import { readFrontmatter, setFrontmatterFields, type FrontmatterValue } from "../pages/frontmatter.js";
 import {
   findStagedPages,
@@ -272,6 +273,12 @@ export interface IndexStageOptions {
   walkthroughs?: Walkthrough[];
   /** Product name for the home page when no walkthrough sets `product` (e.g. config.brand.name). */
   productName?: string;
+  /** What the app brief hands on (decision 33; brief/consumers.ts `briefArtifacts`), when
+   * `app-brief.md` exists: its chat prefix goes into `chat-config.json`, a trimmed overview into
+   * `public/app-overview.md` for the agent connector's `get_app_overview`, and the first
+   * paragraph of "What it's for" onto the home page. Without one, a stale `app-overview.md` is
+   * removed. */
+  appBrief?: BriefArtifacts;
 }
 
 export interface IndexStageResult {
@@ -287,6 +294,8 @@ export interface IndexStageResult {
   proceduresFile?: string;
   /** Set when `chatConfig` was given. */
   chatConfigFile?: string;
+  /** Set when `appBrief` gave an overview. */
+  appOverviewFile?: string;
 }
 
 /** Every id currently staged in `contentDir` — i.e. every published page on disk, not just the
@@ -385,6 +394,7 @@ export function runIndexStage(opts: IndexStageOptions): IndexStageResult {
       contentDir,
       placements,
       product: mostCommonProduct([...walkthroughs.values()].map((w) => w.product)) ?? opts.productName,
+      intro: opts.appBrief?.intro,
     });
   }
 
@@ -431,8 +441,19 @@ export function runIndexStage(opts: IndexStageOptions): IndexStageResult {
   let chatConfigFile: string | undefined;
   if (opts.chatConfig) {
     chatConfigFile = join(publicDir, "chat-config.json");
-    writeFileSync(chatConfigFile, `${JSON.stringify(opts.chatConfig, null, 2)}\n`, "utf8");
+    const brief = opts.appBrief?.chat;
+    const chatConfig = brief ? { ...opts.chatConfig, brief } : opts.chatConfig;
+    writeFileSync(chatConfigFile, `${JSON.stringify(chatConfig, null, 2)}\n`, "utf8");
   }
 
-  return { contentDir, searchIndexFile, llmsTxtFile, pageCount, copiedToHelpApp, procedures, proceduresFile, chatConfigFile };
+  // The agent connector's `get_app_overview` (mcp/server.ts) reads this.
+  let appOverviewFile: string | undefined;
+  const overviewPath = join(publicDir, "app-overview.md");
+  const overview = opts.appBrief?.overview;
+  if (overview) {
+    appOverviewFile = overviewPath;
+    writeFileSync(overviewPath, `${overview}\n`, "utf8");
+  } else if (existsSync(overviewPath)) rmSync(overviewPath);
+
+  return { contentDir, searchIndexFile, llmsTxtFile, pageCount, copiedToHelpApp, procedures, proceduresFile, chatConfigFile, appOverviewFile };
 }

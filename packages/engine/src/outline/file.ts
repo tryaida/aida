@@ -302,6 +302,7 @@ export function addCard(doc: YAML.Document, card: OutlineCard): void {
   const plain: Record<string, unknown> = { id: card.id, title: card.title };
   for (const key of ["for", "section", "purpose"] as const) if (card[key]) plain[key] = card[key];
   if (card.labels?.length) plain.labels = card.labels;
+  if (card.paths?.length) plain.paths = card.paths;
   plain.status = card.status;
   if (card.drift?.length) plain.drift = card.drift;
   if (card.notes?.length) plain.notes = card.notes;

@@ -34,6 +34,10 @@ export interface OutlineCard {
   purpose?: string;
   /** On-screen names the card promises. Quoted strings in `title`/`purpose` count too. */
   labels?: string[];
+  /** Other screens the task can start from (decision 34), in plain words, e.g. ["from the
+   * booking", "from the attendee", "from Payments"]. A planning note until walkthrough `paths`
+   * exist (M33). */
+  paths?: string[];
   status: OutlineStatus;
   drift?: DriftEntry[];
   notes?: string[];
@@ -61,6 +65,7 @@ export const OutlineCardSchema = z
     section: z.string().optional(),
     purpose: z.string().optional(),
     labels: z.array(z.string().min(1)).optional(),
+    paths: z.preprocess((v) => (typeof v === "string" ? [v] : v), z.array(z.string().min(1)).optional()),
     status: z.enum(OUTLINE_STATUSES).default("planned"),
     drift: z.array(DriftSchema).optional(),
     // A single string is fine by hand; written back as a list.

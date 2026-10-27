@@ -1,0 +1,50 @@
+# Fictional print fixture (M32): a five-step guide for a made-up "Acme Orders" app. The slow
+# print test draws its screens itself (test/pdf/print-render.test.ts) and renders this guide to
+# PDF to check page count, embedded fonts and page fill.
+walkthrough: add-an-order
+version: 1
+title: Add an order
+summary: Create a new order for a customer and save it as a draft.
+product: Acme Orders
+section: Orders
+for: Sales staff taking orders over the phone
+start:
+  signed_in_as: sales_staff
+  page: /orders
+steps:
+  - id: open-orders
+    chapter: Add the order
+    title: Open Orders
+    caption: Start on Orders.
+    page_text: Click **Orders** in the left-hand menu.
+    actions: []
+  - id: new-order
+    chapter: Add the order
+    title: New order
+    caption: Click New order.
+    page_text: Click **New order**. The order form opens.
+    actions: []
+  - id: choose-customer
+    chapter: Add the order
+    title: Choose the customer
+    caption: Choose the customer.
+    page_text: Click **Customer** and choose the person who's ordering.
+    actions: []
+  - id: enter-quantity
+    chapter: Add the order
+    title: Enter the quantity
+    caption: Enter how many they want.
+    page_text: Enter the **Quantity**. The total updates as you type.
+    actions: []
+  - id: save-draft
+    chapter: Add the order
+    title: Save draft
+    caption: Click Save draft.
+    page_text: Click **Save draft**. The order shows in the **Orders** list as a draft.
+    actions: []
+outro:
+  recap:
+    - Open Orders
+    - New order
+    - Choose the customer and quantity
+    - Save draft

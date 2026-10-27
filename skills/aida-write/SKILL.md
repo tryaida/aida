@@ -5,16 +5,17 @@ description: Write one walkthrough's YAML from an approved outline card, in plai
 
 # aida-write
 
-Model tier: **standard**. Needs care with the app's real names and flow, but is routine once the
-outline card and glossary exist. Run **one subagent per walkthrough, in parallel** — each sees
-only its own card, the glossary, the style guide, and (on a retry) its own capture report. Parallel
-subagents may only write and validate YAML concurrently — the engine replays captures against one
-shared app/db, so capture itself must never run from two subagents at once (see step 6).
+Model tier: **standard**. Routine once the outline card and the app brief exist. Run **one
+subagent per walkthrough, in parallel** — each sees only its own card, the brief's words and
+rules, the style guide, and (on a retry) its own capture report. Parallel subagents may only write
+and validate YAML concurrently: capture must never run from two at once (see step 6).
 
 ## How
 
 0. Run `aida catch-up --since last` before anything else — it lists edits a person made in the
-   Studio since this skill last looked, so a rewrite never clobbers a change made since.
+   Studio since this skill last looked, so a rewrite never clobbers a change made since. Then
+   load `aida brief show --config <cfg> --section "Words it uses" --section "Rules that matter"`
+   (and "Several ways to do one thing" when the card has `paths:`), not the whole brief.
 1. Start from the approved outline card (title, reader, one-line purpose) and the relevant slice
    of the discover summary (routes/labels for that task only) — or, when run from `aida ci`'s
    "new" tier comment, from the route path and file it named directly; there's no outline card for
@@ -55,8 +56,7 @@ shared app/db, so capture itself must never run from two subagents at once (see 
    draft `<id>.yaml` with real targets and replays it once. Then treat the draft as step 3's
    existing walkthrough: keep its targets, rewrite `title`/`say`/`caption`/`page_text` per the
    style guide through `aida edit` (a `say` the person wrote as a Note is their meaning, keep
-   it), fill in `summary`/`for:`/`section:`, and resolve every `# TODO` comment. Recording needs
-   a person at a screen; never run it yourself in a headless session.
+   it), fill in `summary`/`for:`/`section:`, and resolve every `# TODO`. Never run it headless.
 3. **New walkthrough**: write the YAML file from scratch per
    `references/walkthrough-cheatsheet.md`: `start`, `data` (demo values only — see below), `steps`
    with `do`/`say`/`caption`/`page_text`/`actions`. Use on-screen labels for every target
@@ -107,17 +107,18 @@ shared app/db, so capture itself must never run from two subagents at once (see 
 - Plain words, on-screen names, per `references/style.md`. No invented buttons or results — only
   what the capture actually showed (write a first draft from the card, then correct it against
   the capture result once it runs).
+- Use the brief's words exactly, never their "not to be confused with" twins. In `page_text`,
+  say when and why as well as which button: the rule that applies, the state a save moves
+  things to, which of several ways to start suits the reader (from the brief, never invented).
 - When the card and the screen disagree, follow the screen. Capture records a renamed label on
   the card by itself. Note anything it can't see, such as a button that isn't there at all:
   `aida outline note <id> 'No "Register again" button' --config <cfg>`.
 - Never a production write step without explicit sign-off (see `references/safety.md`).
-- Keep `say`/`caption`/`page_text` distinct per the style guide — don't just copy one into all
-  three.
+- Keep `say`/`caption`/`page_text` distinct per the style guide, not one copied into all three.
 - After a save action, don't assume it navigates: `waitForUrl` fails forever if the save just
-  updates the same page (a toast, an updated heading, a closed dialog). Run `aida inspect
-  --walkthrough <id> --after <saveStepId>` to see what actually changed, and write a
-  `waitFor`/`expect` against that (the toast text, the new heading, the dialog closing) instead of
-  guessing `waitForUrl`. If nothing changed at all, that may be an app bug: report it.
+  updates the same page. Run `aida inspect --walkthrough <id> --after <saveStepId>` to see what
+  changed, and write a `waitFor`/`expect` against that (a toast, a new heading, the dialog
+  closing). If nothing changed at all, that may be an app bug: report it.
 - `highlight: true` must sit on the action whose target the doc screenshot actually shows — never
   on a click that navigates away, or the box lands over whatever's now sitting in that spot on the
   new page; put it on the `expect`/`waitFor` after the navigation instead.

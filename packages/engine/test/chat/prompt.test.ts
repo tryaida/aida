@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_HISTORY_CHARS,
   MAX_HISTORY_TURNS,
+  MAX_BRIEF_CHARS,
   MAX_QUESTION_CHARS,
   assembleRequest,
+  buildBriefBlock,
   buildCitations,
   buildContextBlock,
   buildSystemPrompt,
@@ -11,6 +13,7 @@ import {
   validateChatInput,
 } from "../../src/chat/prompt.js";
 import type { ChatHistoryTurn, RetrievedContext } from "../../src/chat/types.js";
+import { resolveChatConfig } from "../../src/chat/handler.js";
 
 const procedure = {
   id: "add-competitor",
@@ -221,5 +224,46 @@ describe("capHistory", () => {
 
   it("returns an empty array for empty history", () => {
     expect(capHistory([])).toEqual([]);
+  });
+});
+
+describe("the app brief (M31)", () => {
+  const brief = "# Acme Events\n\n## What it's for\n\nSell seats at community events.\n\n## Words it uses\n\n| Term | Meaning | Not to be confused with |\n| --- | --- | --- |\n| Booking | One attendee's seats | Ticket |";
+
+  it("goes first, as its own stable block ahead of the rules, with no cache_control", () => {
+    const a = assembleRequest(undefined, context, buildCitations(context), "Question A", undefined, 8000, "Acme Events", brief);
+    const b = assembleRequest(undefined, context, buildCitations(context), "Question B", undefined, 8000, "Acme Events", brief);
+    expect(a.system).toHaveLength(2);
+    expect(a.system[0].text).toBe(buildBriefBlock(brief, "Acme Events"));
+    expect(a.system[0].text).toContain("| Booking | One attendee's seats | Ticket |");
+    expect(a.system[1].text).toBe(buildSystemPrompt(undefined, "Acme Events"));
+    expect(a.system[0].text).toBe(b.system[0].text);
+    expect(a.system.every((s) => s.cache_control === undefined)).toBe(true);
+  });
+
+  it("is left out when blank, and capped when huge", () => {
+    expect(assembleRequest(undefined, context, buildCitations(context), "Q", undefined, 8000, undefined, "  ").system).toHaveLength(1);
+    expect(buildBriefBlock("x".repeat(MAX_BRIEF_CHARS * 2)).length).toBeLessThan(MAX_BRIEF_CHARS + 400);
+  });
+
+  it("rides along in the resolved chat config only when there is one", () => {
+    expect(resolveChatConfig(undefined, undefined, brief).brief).toBe(brief);
+    expect("brief" in resolveChatConfig(undefined, undefined)).toBe(false);
+  });
+});
+
+describe("review fixes: the brief counts against the input budget", () => {
+  it("shrinks the context block by the brief and rules it sends", () => {
+    const bigContext: RetrievedContext = {
+      pages: [{ url: "/a", title: "A", score: 1, sections: [{ url: "/a", title: "A", text: "x".repeat(20_000) }] }],
+      topScore: 1,
+    };
+    const brief = "b".repeat(4_000);
+    const without = assembleRequest(undefined, bigContext, buildCitations(bigContext), "Q", undefined, 3000);
+    const withBrief = assembleRequest(undefined, bigContext, buildCitations(bigContext), "Q", undefined, 3000, undefined, brief);
+    const total = (r: typeof without) => r.system.reduce((n, s) => n + s.text.length, 0) + r.messages.reduce((n, m) => n + m.content.length, 0);
+    expect(total(without)).toBeLessThanOrEqual(3000 * 4 + 200);
+    expect(total(withBrief)).toBeLessThanOrEqual(3000 * 4 + 200);
+    expect(withBrief.messages[0].content.length).toBeLessThan(without.messages[0].content.length - 3_900);
   });
 });

@@ -136,6 +136,7 @@ export async function runOutlineList(opts: OutlineListOptions): Promise<number> 
       const missing = card.status !== "dropped" && !written.has(card.id);
       console.log(`${cardLine(card)}${missing ? "  [no walkthrough yet]" : ""}`);
       for (const d of card.drift ?? []) console.log(`    differs: ${describeDrift(d)}`);
+      if (!opts.drift && card.paths?.length) console.log(`    paths: ${card.paths.join(", ")}`);
       if (!opts.drift) for (const n of card.notes ?? []) console.log(`    note: ${n}`);
     }
     return 0;

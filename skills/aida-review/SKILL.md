@@ -17,6 +17,8 @@ Only the output, never the conversation that produced it:
 - Screenshots / video stills.
 - The QA report (`aida qa <path>`): video, captions, personal-data, and secrets checks.
 - `aida outline list --drift` output: names a card promised that the screen didn't have.
+- The app brief's words and rules: `aida brief show --config <cfg> --section "Words it uses"
+  --section "Rules that matter"`. The brief is a finished artifact, not the writer's reasoning.
 - Nothing else — no walkthrough-writing chat, no discover/plan summaries.
 
 ## What to check
@@ -34,6 +36,10 @@ Only the output, never the conversation that produced it:
    screenshot shows is a finding. A screenshot showing an error, a blank page, or a save that
    left the screen unchanged is a possible app bug: report it as one for a person, not as a
    wording fix.
+6. **Words and rules**, against the brief: a page using a "not to be confused with" word instead
+   of the app's own, contradicting a rule, or leaving out a rule that changes what the reader
+   should do (a payment that can't be undone). A page that says only which button, never when or
+   why, is a finding too.
 
 ## Output
 

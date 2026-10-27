@@ -80,7 +80,7 @@ export async function runPdfCommand(opts: RunPdfOptions, json: boolean): Promise
       }
       try {
         const input = pdfInputFromPage(wf, page);
-        const result = await buildWalkthroughPdf(input, { pdfDir, paper, brand, force: opts.force }, browser);
+        const result = await buildWalkthroughPdf(input, { pdfDir, paper, brand, force: opts.force, siteUrl: config.publish?.siteUrl }, browser);
         if (!result.excluded) {
           setPdfFrontmatter(page.indexFile, pdfPublicLinks(wf.walkthrough));
         }
@@ -108,7 +108,7 @@ export async function runPdfCommand(opts: RunPdfOptions, json: boolean): Promise
         return page ? pdfInputFromPage(wf, page) : undefined;
       })
       .filter((i): i is NonNullable<typeof i> => Boolean(i));
-    const manual = await buildManualPdf(allInputs, { pdfDir, paper, brand, force: opts.force }, browser);
+    const manual = await buildManualPdf(allInputs, { pdfDir, paper, brand, force: opts.force, siteUrl: config.publish?.siteUrl }, browser);
 
     const ok = results.every((r) => !r.error);
     const output: RunPdfResult = { ok, walkthroughs: results, manual };

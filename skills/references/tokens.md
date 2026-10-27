@@ -14,6 +14,12 @@ calling any model.
   field, and only read the fields you need.
 - Use `aida digest --area <path>` (an app-area map of routes, roles, labels — see
   `aida-discover`) instead of reading the app's source tree.
+- Use `aida domain` (one line per entity with its states and links: about 1,700 tokens for a
+  40-table pilot app) instead of reading schema files, and `aida brief sources` (paths and
+  headings, under 60 lines) to pick the few docs worth reading.
+- Load the app brief by section: `aida brief show --section "Words it uses"` is a few hundred
+  tokens; the whole brief should stay under about 4,000. The help chat sends "What it's for",
+  "Who uses it" and "Words it uses" (capped at 6,000 characters) with every question.
 - Before writing or repairing a step's target, use `aida inspect <path> --config <cfg> --json`
   instead of reading the app's component source for a page's roles/names/labels/select options —
   it opens the one page signed in and prints a single ~80-line (roughly 600-900 token) capped

@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Browser } from "playwright";
-import { buildManualPdf, buildWalkthroughPdf } from "../../src/pdf/build.js";
+import { buildManualPdf, buildWalkthroughPdf, fontState, walkthroughHash } from "../../src/pdf/build.js";
 import { pdfInputHash, writeCacheSidecar } from "../../src/pdf/cache.js";
 import type { PdfPageInput } from "../../src/pdf/types.js";
 
@@ -63,14 +63,13 @@ describe("buildWalkthroughPdf", () => {
     // Fabricate the cache state a prior successful build would have left: the two output files
     // plus a sidecar hash matching this exact input (cache.test.ts proves pdfInputHash/
     // matchesCache's own logic — this just exercises buildWalkthroughPdf's use of them).
-    const { pdfInputHash } = await import("../../src/pdf/cache.js");
     const file = path.join(pdfDir, `${pageInput.id}.pdf`);
     const card = path.join(pdfDir, `${pageInput.id}.card.pdf`);
     const { mkdirSync, writeFileSync } = await import("node:fs");
     mkdirSync(pdfDir, { recursive: true });
     writeFileSync(file, "fake-pdf");
     writeFileSync(card, "fake-pdf");
-    const hash = pdfInputHash({ markdown: pageInput.markdown, screenshots: [], paper: "A4", brand: undefined, lastChecked: undefined });
+    const hash = walkthroughHash(pageInput, "A4", undefined);
     writeCacheSidecar(file, hash);
     writeCacheSidecar(card, hash);
 
@@ -90,7 +89,7 @@ describe("buildWalkthroughPdf", () => {
     mkdirSync(pdfDir, { recursive: true });
     writeFileSync(file, "stale-pdf-from-a-passing-build");
     writeFileSync(card, "stale-card-from-a-passing-build");
-    const hash = pdfInputHash({ markdown: pageInput.markdown, screenshots: [], paper: "A4", brand: undefined, lastChecked: undefined });
+    const hash = walkthroughHash(pageInput, "A4", undefined);
     writeCacheSidecar(file, hash);
     writeCacheSidecar(card, hash);
 
@@ -129,3 +128,24 @@ describe("buildManualPdf", () => {
     expect(rendered).toBeGreaterThan(0);
   });
 });
+
+// M32 review: a PDF rendered with the fallback font (offline) must rebuild once the brand's font
+// files are cached — the resolved font is part of the cache key, not just the configured URL.
+describe("fontState / walkthroughHash", () => {
+  it("tells cached local fonts (by content), a remote stylesheet and no webfont apart", () => {
+    expect(fontState(undefined)).toBe("none");
+    expect(fontState({ fontUrl: "https://fonts.example.com/css" })).toBe("remote");
+    const a = fontState({ fontUrl: "https://fonts.example.com/css", fontFaceCss: "@font-face { a }" });
+    const b = fontState({ fontFaceCss: "@font-face { b }" });
+    expect(a).toMatch(/^local:/);
+    expect(a).not.toBe(b);
+  });
+
+  it("changes the cache key when the same brand resolves to a different font", () => {
+    const brand = { name: "Acme", fontUrl: "https://fonts.example.com/css" };
+    const offline = walkthroughHash(input(), "A4", brand, undefined, { ...brand, fontUrl: undefined });
+    const cached = walkthroughHash(input(), "A4", brand, undefined, { ...brand, fontFaceCss: "@font-face { x }" });
+    expect(offline).not.toBe(cached);
+  });
+});
+

@@ -63,8 +63,7 @@ function userCalloutHtml(box: Box, scale: number, num: number): string {
 // size, then scaled back up — that step is what makes the blur irreversible (a plain CSS
 // blur(Npx) over the original pixels can leave enough signal for high-contrast text/digits to be
 // partially recovered; averaging a whole block down to one sample, then discarding that
-// resolution, genuinely destroys the information rather than just smoothing it). A light CSS
-// blur on top of the mosaic (applied in the caller's canvas style) only softens the block edges.
+// resolution, genuinely destroys the information rather than just smoothing it).
 const MOSAIC_FACTOR = 20;
 // Hard cap on mosaic cells per side, independent of box size — see mosaicScript()'s inline note.
 // Deliberately 1: even a small mosaic grid (2-4 cells per side) still leaves enough row/column-
@@ -72,10 +71,11 @@ const MOSAIC_FACTOR = 20;
 // test/pages/annotate.test.ts's irreversibility test (a 2x2 mosaic over real text still
 // correlated ~0.32 with the source). Collapsing every blur box to its own single flat average
 // colour is what actually guarantees zero pixel-level correlation with the source, at the cost
-// of looking like a flat tint rather than a textured mosaic; the CSS blur (set on the canvas in
-// blurCanvasHtml) still softens its edges against the surrounding screenshot so it doesn't look
-// like a hard-edged cutout.
+// of looking like a flat tint rather than a textured mosaic, drawn as a square, hard-edged box
+// slightly larger than the target (blurCanvasHtml) so no source pixel survives at its rim.
 const MOSAIC_MAX_CELLS = 1;
+/** Output px each burned-in blur box is grown by, so its edge never leaves source pixels showing. */
+const BLUR_BLEED = 3;
 
 /** A `<canvas>` placeholder for one burned-in blur box (M22 review: "Blur must be irreversible").
  * Positioned/sized in output CSS px (`scale`-adjusted) for display; `data-o*` attributes carry
@@ -85,11 +85,14 @@ const MOSAIC_MAX_CELLS = 1;
  * pixel destruction (mosaic downscale) happens in that script, once the frame image has decoded —
  * see `MOSAIC_SCRIPT`. */
 function blurCanvasHtml(box: Box, scale: number): string {
-  const x = box.x * scale;
-  const y = box.y * scale;
-  const w = box.w * scale;
-  const h = box.h * scale;
-  return `<canvas class="aida-blur" style="position:absolute; left:${x}px; top:${y}px; width:${w}px; height:${h}px; border-radius:3px; filter: blur(2px);"
+  // Square-cornered, unfiltered and grown by BLUR_BLEED on every side: a rounded corner or a
+  // soft `filter: blur()` edge lets the untouched pixels underneath show through at the box's
+  // rim — and a print focus crop magnifies exactly that rim (review finding pages/annotate.ts:92).
+  const x = box.x * scale - BLUR_BLEED;
+  const y = box.y * scale - BLUR_BLEED;
+  const w = box.w * scale + BLUR_BLEED * 2;
+  const h = box.h * scale + BLUR_BLEED * 2;
+  return `<canvas class="aida-blur" style="position:absolute; left:${x}px; top:${y}px; width:${w}px; height:${h}px;"
       data-ox="${box.x}" data-oy="${box.y}" data-ow="${box.w}" data-oh="${box.h}"></canvas>`;
 }
 
@@ -221,6 +224,56 @@ export async function annotateFrame(
     await page.waitForFunction(() => (window as unknown as { __aidaBlurDone?: boolean }).__aidaBlurDone === true);
     await mkdir(path.dirname(outPath), { recursive: true });
     await page.screenshot({ path: outPath });
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Renders one step's clean print images (decision 36): `framePath` at its own CSS size with any
+ * `blur` boxes burned in exactly as `annotateFrame` does, and nothing else — no dimming, no ring,
+ * no badge (print draws those itself, crisply, in the brand colour). Writes the full screen at one
+ * pixel per CSS px to `out.full` and, when `out.crop` is given, that rectangle at the page's device
+ * scale (`page` should be opened with the capture's deviceScaleFactor) to `out.crop.path`. Both
+ * come from this one blurred render, never from the raw frame. `out.crop.box` may be a function
+ * of the written full screen (to refine the crop against its pixels); returns the crop used.
+ */
+export async function renderPrintFrame(
+  page: import("playwright").Page,
+  framePath: string,
+  frameSize: { width: number; height: number },
+  blur: Box[],
+  out: { full: string; crop?: { box: Box | ((fullPng: string) => Box | undefined); path: string } },
+): Promise<Box | undefined> {
+  const { width, height } = frameSize;
+  const frameUrl = `file://${encodeURI(framePath)}`;
+  const blurCanvases = blur.map((b) => blurCanvasHtml(b, 1)).join("\n");
+  const html = `<!doctype html><html><head><meta charset="utf-8"></head>
+    <body style="margin:0; width:${width}px; height:${height}px; position:relative; overflow:hidden;">
+      <img id="aida-frame" src="${frameUrl}" width="${width}" height="${height}"
+        style="display:block; width:${width}px; height:${height}px;" alt="" />
+      ${blurCanvases}
+      <script>${mosaicScript(width)}</script>
+    </body></html>`;
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "aida-print-"));
+  const tmpHtml = path.join(tmpDir, "print.html");
+  await writeFile(tmpHtml, html);
+  try {
+    await page.setViewportSize({ width, height });
+    await page.goto(`file://${tmpHtml}`, { waitUntil: "load" });
+    await page.waitForFunction(() => {
+      const img = document.querySelector("img");
+      return Boolean(img && (img as HTMLImageElement).complete && (img as HTMLImageElement).naturalWidth > 0);
+    });
+    // Same guard as annotateFrame: never screenshot before every blur box is drawn.
+    await page.waitForFunction(() => (window as unknown as { __aidaBlurDone?: boolean }).__aidaBlurDone === true);
+    await mkdir(path.dirname(out.full), { recursive: true });
+    await page.screenshot({ path: out.full, scale: "css" });
+    if (!out.crop) return undefined;
+    const b = typeof out.crop.box === "function" ? out.crop.box(out.full) : out.crop.box;
+    if (!b) return undefined;
+    await page.screenshot({ path: out.crop.path, scale: "device", clip: { x: b.x, y: b.y, width: b.w, height: b.h } });
+    return b;
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

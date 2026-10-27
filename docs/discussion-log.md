@@ -268,3 +268,19 @@ the element is still on screen. A toolbar lets the person point at things, mark 
 showing, add the step's narration in their own words, break steps and undo. Typed values become
 safe demo data and passwords are never kept. The output is only a draft; the draft is replayed
 once. The hosted Studio version stays in Phase 4. Decision 32, M30.
+
+## 2026-10-27 · Understanding the app, several ways to do a task, and polish
+
+The user asked how to improve output quality and named three things: PDFs, videos and other
+outputs should match the documented app's brand; the agent writing scripts needs better context
+about what the app is for; and the agent should learn the different ways a task can be done (a
+payment can be recorded against one entry, against the competitor, or from the Payments screen).
+Brand was already wired into every output (M23), but detection read only the repo, and the outputs
+were on-brand yet plain. Discover saw routes and labels, never purpose, and each walkthrough had one
+path. Rebuilding a pilot's PDFs with the current engine showed the print gaps: full-width shrunk
+screenshots greyed by the spotlight, half-empty pages, a lone "Part 1" heading, tiny card
+thumbnails and Type 3 fonts. Agreed: an Understand step writing `app-brief.md` with a domain model
+from the schema (decision 33, M31); walkthrough `paths` with `aida paths` finding other screens
+that call the same captured action (decision 34, M33); brand read from the running app, style
+presets and a proof sheet (decision 35, M34); and a designed-manual standard for print, which the
+user asked for explicitly (decision 36, M32). Order: M31 and M32 first, in parallel.

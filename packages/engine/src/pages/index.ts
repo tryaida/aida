@@ -1,8 +1,9 @@
 export { buildPage } from "./build.js";
-export type { BuildPageOptions, BuildPageResult, PageSuggestion } from "./types.js";
+export type { BuildPageOptions, BuildPageResult, PageSuggestion, PrintFigure } from "./types.js";
 export { mergeBlocks, stripMarkers, readSidecar, writeSidecar, sidecarPath } from "./markers.js";
 export type { GeneratedBlock, MergeResult } from "./markers.js";
-export { annotateFrame } from "./annotate.js";
+export { annotateFrame, renderPrintFrame } from "./annotate.js";
+export { planStepFigures, focusCrop, FOCUS_CROP, type StepFigurePlan } from "./focus.js";
 export {
   buildFrontmatterBlock,
   buildHeaderBlock,
@@ -10,7 +11,6 @@ export {
   buildStepsHeadingBlock,
   buildChapterBlock,
   buildStepBlock,
-  buildGoodToKnowBlock,
   buildLastCheckedBlock,
   chaptersOf,
   screenshotFile,

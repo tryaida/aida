@@ -26,8 +26,8 @@ const source: AidaMcpSource = {
   getPageMarkdown: (url) => (url === "/add-competitor" ? "# Add a competitor\n\nClick Add competitor." : undefined),
 };
 
-async function connectedClient(): Promise<{ client: Client; close: () => Promise<void> }> {
-  const server = createAidaMcpServer(source);
+async function connectedClient(src: AidaMcpSource = source): Promise<{ client: Client; close: () => Promise<void> }> {
+  const server = createAidaMcpServer(src);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test-client", version: "0.0.1" });
   await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
@@ -49,9 +49,9 @@ describe("aida MCP server", () => {
     close = connected.close;
   });
 
-  it("lists exactly the four read-only tools", async () => {
+  it("lists exactly the five read-only tools", async () => {
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["get_page", "get_procedure", "list_walkthroughs", "search_docs"]);
+    expect(tools.map((t) => t.name).sort()).toEqual(["get_app_overview", "get_page", "get_procedure", "list_walkthroughs", "search_docs"]);
     await close();
   });
 
@@ -87,5 +87,21 @@ describe("aida MCP server", () => {
     expect(procedure.steps).toHaveLength(2);
     expect(procedure.steps[0].screenshot).toBe("/screenshots/add-competitor/step-01.png");
     await close();
+  });
+
+  it("get_app_overview says there's no overview yet, not an error, when the app has no brief", async () => {
+    const result = await client.callTool({ name: "get_app_overview", arguments: {} });
+    expect((result as { isError?: boolean }).isError).toBeFalsy();
+    expect(textOf(result as never)).toMatch(/^No app overview yet/);
+    await close();
+  });
+
+  it("get_app_overview returns the overview built from the app brief", async () => {
+    await close();
+    const overview = "# Acme Events\n\n## What it's for\n\nSell seats at community events.";
+    const withBrief = await connectedClient({ ...source, appOverview: overview });
+    const result = await withBrief.client.callTool({ name: "get_app_overview", arguments: {} });
+    expect(textOf(result as never)).toBe(overview);
+    await withBrief.close();
   });
 });

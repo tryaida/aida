@@ -6,7 +6,6 @@ import { describe, expect, it } from "vitest";
 import {
   buildFrontmatterBlock,
   buildBeforeYouStartBlock,
-  buildGoodToKnowBlock,
   buildHeaderBlock,
   buildStepBlock,
   escapeMdxText,
@@ -133,13 +132,6 @@ describe("MDX-unsafe text in generated blocks", () => {
     expect(block.content).toContain("Open \\{Settings\\}");
     expect(block.content).toContain("a \\< b");
     expect(block.content).toContain("**bold**");
-  });
-
-  it("escapes recap bullets", () => {
-    const walkthrough = wf({ outro: { recap: ["Watch for {errors}", "a < b matters"] } });
-    const block = buildGoodToKnowBlock(walkthrough);
-    expect(block!.content).toContain("\\{errors\\}");
-    expect(block!.content).toContain("a \\< b");
   });
 });
 

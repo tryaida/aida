@@ -41,8 +41,9 @@ The test for every feature is whether it removes a step for a vibe coder without
 8. **Safe by default.** Fake data, masked personal details, and no writes to production unless explicitly allowed.
 9. **One engine, many doors.** A single open-source engine. The agent skill, CLI, GitHub Action, GitHub App and web app are thin front ends on it.
 10. **Plain words in the product.** Say "walkthrough", "help site", "help chat" and "agent connector", never "IR", "journey" or "workflow.json".
-11. **Good-looking by default.** The site theme is pulled from the app's own colours, logo and fonts, so it looks on-brand with no design work.
-12. **Nothing new to install or host.** Node is the only runtime: no Docker. The help site is a prescaffolded Next.js app that deploys like any other: Vercel, AWS Amplify, Netlify, Cloudflare or a Node server.
+11. **Good-looking by default.** The look is pulled from the app's own colours, logo, fonts and style, read from its repo and from the running app, so every output (site, PDFs, quick reference cards, video) looks like the app with no design work. One proof sheet shows them side by side to approve once.
+12. **Understand the app before writing about it.** Know what the app is for, who uses it, the things it keeps track of and how they relate, and every way a task can be done, so the docs explain when and why, not just which button.
+13. **Nothing new to install or host.** Node is the only runtime: no Docker. The help site is a prescaffolded Next.js app that deploys like any other: Vercel, AWS Amplify, Netlify, Cloudflare or a Node server.
 
 ## Lessons from existing tools
 
@@ -64,10 +65,10 @@ Each tool below proves one part of the idea works. AIDA takes the lesson and com
 One run produces five outputs from the same walkthroughs, plus the files that keep them current.
 
 - **Help site.** Organised by who the reader is and what they're trying to do: Getting started, How do I…, Screens and settings, Words we use, Troubleshooting and FAQ, and What's new (written from merged PRs). It has search, a version per release, a Markdown copy of every page, and an llms.txt file.
-- **Printable guides.** Print-styled pages, a PDF per page, a full manual as one PDF, and one-page quick reference cards. Screenshots are large, with numbered callouts that match the steps.
+- **Printable guides.** Print-styled pages, a PDF per page, a full manual as one PDF, and one-page quick reference cards, laid out like a designed manual rather than a printed web page. Screenshots are cropped to the part of the screen that matters, with numbered callouts that match the steps and the full screen shown where context helps. Pages fill sensibly (no half-empty pages, a step never split from its screenshot), each guide links to its video with a QR code, and fonts are embedded so text stays crisp and searchable.
 - **Videos.** One short narrated video per walkthrough (aim for 2 minutes or less), with a chapter per step, captions (SRT and VTT) and a transcript. Short clips of single steps sit inline on the pages. Quality checks proven on the first pilot app are built in: correct colour range, −16 LUFS loudness, no black frames, captions timed to the narration.
 - **Help chat.** On the site and as a drop-in widget inside the app (one script tag or a React component). Answers cite the page, show the step's screenshot and jump to the right moment in the video. Inside the app it knows which screen the user is on. Questions it can't answer become suggested new walkthroughs.
-- **Agent connector (MCP server).** Hosted with the site and versioned with it. Tools: `search_docs`, `get_page`, `list_walkthroughs` and `get_procedure`, which returns structured steps an agent can follow.
+- **Agent connector (MCP server).** Hosted with the site and versioned with it. Tools: `search_docs`, `get_page`, `list_walkthroughs`, `get_procedure`, which returns structured steps an agent can follow, and `get_app_overview`, which returns the app brief.
 - **Files in the repo.** A `help/` folder holding the Next.js help app with its walkthrough files, pages, config and Studio, plus the CI workflow.
 
 ## Ways in
@@ -187,17 +188,20 @@ Each step can also carry a caption, callouts and fields to mask.
 
 **Who it signs in as.** One persona per walkthrough: `signed_in_as` is shorthand for the persona's role, and the two can't disagree. A `roles` map in the config gives each role the name readers see ("Sign in as an organiser").
 
+**Several ways to do one task.** Many tasks can be started from more than one screen: a payment can be recorded against one entry, against the competitor, or from the Payments screen. A walkthrough has one main path and may list other `paths`, each with its own start and opening steps, sharing the steps that are the same (the payment form). The planner finds them from the domain model, and the engine finds more from capture: every screen whose code calls the same action (`aida paths`). Pages show the main path in full, then "Other ways to do this" with when to use each; the video follows the main path and each other path gets a short clip. Capture runs every path and compares the data each leaves, so a path that behaves differently (paying against a competitor spreads the money across their entries) is flagged rather than assumed to be the same. The help chat and agent connector know every path, so they can answer from the screen the user is on.
+
 **The outline.** The planned walkthroughs live as cards in `outline.yaml`, each with who it's for, its section and the on-screen names it promises. After a passing capture the engine compares those names with what was really on screen and records any difference on the card, so the plan and the app don't quietly drift apart.
 
 ### Pipeline
 
 1. **Discover** (agent skill). Read routes, roles, features and labels, and draft a glossary.
-2. **Plan** (agent skill). Pick the readers and their top tasks, lay out the site as outline cards, and write the walkthroughs.
-3. **Capture.** Replay each walkthrough in a browser against the app, in the order their data implies, saving screenshots, video, and what each step touched (routes, API calls, components). A failure is classed as the walkthrough's, the app's or the environment's, with what changed after the failing action as evidence.
-4. **Render.** Build pages, print styles and PDFs, narrated video and captions.
-5. **Index.** Build search, embeddings and the step-by-step procedures for chat and MCP.
-6. **Publish.** Deploy the site, chat and MCP server.
-7. **Verify.** Quality, personal-data and secret checks before anything goes live.
+2. **Understand** (agent skill). Write the app brief (`app-brief.md`): what the app is for, who uses it and the real-world job they're doing, the domain model (the things it keeps track of and how they relate, read from the database schema by `aida domain`), the words it uses, its business rules and its yearly or daily rhythm. Sources are the repo's README and docs, the marketing site, seed data, tests and PR descriptions; the person is asked only what can't be inferred. Every later skill, the help chat and the agent connector read the brief.
+3. **Plan** (agent skill). Pick the readers and their top tasks, lay out the site as outline cards, and write the walkthroughs.
+4. **Capture.** Replay each walkthrough in a browser against the app, in the order their data implies, saving screenshots, video, and what each step touched (routes, API calls, components). A failure is classed as the walkthrough's, the app's or the environment's, with what changed after the failing action as evidence.
+5. **Render.** Build pages, print styles and PDFs, narrated video and captions.
+6. **Index.** Build search, embeddings and the step-by-step procedures for chat and MCP.
+7. **Publish.** Deploy the site, chat and MCP server.
+8. **Verify.** Quality, personal-data and secret checks before anything goes live.
 
 ### Capture modes: a ladder from quick to safe
 
@@ -306,7 +310,7 @@ Engineers make the same changes in the walkthrough files, page Markdown and `aid
 
 Modelled on HyperFrames' plan, sketch, build loop, so big changes are cheap until the end.
 
-1. **Outline.** The suggested walkthroughs as cards to approve, rename or remove.
+1. **Outline.** The app brief, the suggested walkthroughs as cards to approve, rename or remove, and the brand proof sheet (a site page, a PDF page, a quick reference card and a video frame side by side).
 2. **Step sheet.** Each walkthrough as screenshots plus narration text, with no video yet, and any outline card whose promised names differ from the screen. Changes here cost almost nothing.
 3. **Build.** Videos, pages and chat, reviewed in the Studio preview.
 4. **Publish** on approval.
@@ -315,7 +319,7 @@ Cosmetic CI updates skip these checkpoints, as set out in Keeping docs current.
 
 ### House styles
 
-An approved setup (voice, pacing, intro and outro, theme, page structure) can be saved as a house style, as HyperFrames saves recipes. The next app then starts from it: "make docs like last time". This matters for anyone producing docs for many apps, such as a done-for-you service.
+Every output starts from a style preset (`minimal`, `friendly` or `bold`) that sets motion, callout and highlight shape, cover layout and screenshot framing on top of the app's colours and fonts; an optional `brand.md` design note or the app's own brand guidelines can refine it. An approved setup (voice, pacing, intro and outro, theme, page structure) can be saved as a house style, as HyperFrames saves recipes. The next app then starts from it: "make docs like last time". This matters for anyone producing docs for many apps, such as a done-for-you service.
 
 ### Where HyperFrames Studio fits
 
@@ -388,19 +392,19 @@ Model tokens are the main running cost, and a long agent context also makes weak
 | --- | --- | --- |
 | Fast | Change-tier triage in CI, glossary and label extraction, caption shortening, personal-data second look, help chat answers from retrieved pages, route summaries in Discover | Short, structured, high volume |
 | Standard | Writing walkthroughs and page text, repairing a failed step, demo-data scripts, Studio "ask in words" edits | Needs care with the app's real names and flow |
-| Deep | Picking readers and top tasks for a new app, repairs the standard tier failed twice, "New" tier drafts | Rare, high-stakes planning; escalation only |
+| Deep | Writing the app brief, picking readers and top tasks for a new app, repairs the standard tier failed twice, "New" tier drafts | Rare, high-stakes planning; escalation only |
 
 Each skill names its tier, so a coding agent can run it with the matching model (Claude Code subagent definitions ship with a `model:` line). Where the user's agent can't switch models, everything runs on its one model and still works.
 
 **Subagents keep contexts small.** The main agent orchestrates and holds only short summaries.
 
 - **Discover** fans out one read-only subagent per area of the app (route group or feature). Each returns a compact summary: routes, roles, on-screen labels, likely tasks.
-- **Write and repair** run one subagent per walkthrough, in parallel, each seeing only its walkthrough, the glossary, the style guide and its own capture report.
+- **Write and repair** run one subagent per walkthrough, in parallel, each seeing only its walkthrough, the app brief, the style guide and its own capture report.
 - **Review** runs in a fresh subagent that sees the output, not the reasoning that produced it.
 
 **The engine feeds agents small inputs.** Commands print a short summary by default and JSON with `--json`. A failed step reports the step, the error, and a trimmed accessibility snapshot of the page, never full HTML or logs. `aida digest` gives a compact map of routes, roles and labels so an agent doesn't read the whole repo. Skills stay short and load reference files only when needed.
 
-**Caching and budgets.** Stable prompt parts (style guide, glossary, schema) come first so provider prompt caching applies. Each run reports tokens per stage and model. Model work runs through Claude Code, not API keys.
+**Caching and budgets.** Stable prompt parts (style guide, app brief, schema) come first so provider prompt caching applies. Each run reports tokens per stage and model. Model work runs through Claude Code, not API keys.
 
 ## Scope by phase
 

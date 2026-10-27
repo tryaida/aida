@@ -22,8 +22,9 @@ compact map an orchestrator or planner can act on without reading the whole code
    - Runs `aida digest --area <path>` (see `aida digest --help` for flags) to get that area's
      routes, roles, and on-screen labels without reading the whole repo.
    - Returns only the summary shape below, nothing else — no code excerpts, no reasoning.
-3. Collect the summaries. Merge duplicate roles/labels across areas. Hand the merged map to
-   `aida-plan`, not the raw per-area output.
+3. Collect the summaries. Merge duplicate roles/labels across areas. Hand the merged map, not
+   the raw per-area output, to `aida-understand` (it writes the app brief), then to `aida-plan`.
+   Discover says what's on screen; understand says what it's for.
 
 ## Summary shape (what each subagent returns)
 

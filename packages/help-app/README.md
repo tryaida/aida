@@ -37,8 +37,8 @@ allows CORS only from configured app origins").
 ## Agent connector (MCP server)
 
 `/api/mcp` mounts a read-only [Model Context Protocol](https://modelcontextprotocol.io) server
-(Streamable HTTP transport) with four tools: `search_docs`, `get_page`, `list_walkthroughs`,
-`get_procedure`. Point any MCP client at `https://your-help-site.example.com/api/mcp`.
+(Streamable HTTP transport) with five tools: `get_app_overview` (from the app brief, when there is
+one), `search_docs`, `get_page`, `list_walkthroughs`, `get_procedure`. Point any MCP client at `https://your-help-site.example.com/api/mcp`.
 
 ## Without an API key
 

@@ -23,12 +23,14 @@ export const DEFAULT_CHAT_CONFIG: ResolvedChatConfig = {
 
 /** Fills in defaults for any `config.chat` field left unset. Chat's own default model is
  * `models.fast` (Haiku 4.5) when set, else the fast-tier default — scope.md "Token efficiency":
- * "help chat answers from retrieved pages" is a fast-tier job. */
-export function resolveChatConfig(chat: ChatConfig | undefined, models: ModelTiers | undefined): ResolvedChatConfig {
+ * "help chat answers from retrieved pages" is a fast-tier job. `brief` is the app brief's chat
+ * prefix (brief/consumers.ts `briefForChat`), when there is one. */
+export function resolveChatConfig(chat: ChatConfig | undefined, models: ModelTiers | undefined, brief?: string): ResolvedChatConfig {
   return {
     model: chat?.model ?? models?.fast ?? DEFAULT_CHAT_CONFIG.model,
     supportContact: chat?.supportContact,
     appName: chat?.appName,
+    ...(brief ? { brief } : {}),
     allowedOrigins: chat?.allowedOrigins ?? DEFAULT_CHAT_CONFIG.allowedOrigins,
     retrievalLimit: chat?.retrievalLimit ?? DEFAULT_CHAT_CONFIG.retrievalLimit,
     maxInputTokens: chat?.maxInputTokens ?? DEFAULT_CHAT_CONFIG.maxInputTokens,
@@ -119,6 +121,7 @@ export async function handleChatRequest(opts: ChatHandlerOptions): Promise<ChatH
     opts.request.history,
     opts.config.maxInputTokens,
     opts.config.appName,
+    opts.config.brief,
   );
 
   const client: AnthropicChatClient = (opts.anthropicClient as AnthropicChatClient | undefined) ?? new RealAnthropicChatClient(opts.apiKey);

@@ -42,8 +42,8 @@ function yamlString(s: string): string {
 }
 
 /**
- * Escapes text pulled from a walkthrough (`title`, `summary`, `for`, `page_text`, `caption`,
- * `outro.recap`) before it goes raw into the generated `.mdx` body. MDX parses `{...}` as a JS
+ * Escapes text pulled from a walkthrough (`title`, `summary`, `for`, `page_text`, `caption`)
+ * before it goes raw into the generated `.mdx` body. MDX parses `{...}` as a JS
  * expression and `<...>` as JSX — a reader-written `{name}` or `a < b` otherwise either breaks
  * the next `next build` or, worse, gets evaluated as code. A backslash escape is MDX's own
  * mechanism for a literal `{`, `}` or `<` (an extension of CommonMark's backslash-escaping), so
@@ -191,13 +191,6 @@ export function buildStepBlock(step: Step, stepNumber: number, status: StepStatu
     lines.push(`![${title}](${status.screenshot})`);
   }
   return { key: stepBlockKey(step, stepNumber), content: lines.join("\n").trimEnd() };
-}
-
-export function buildGoodToKnowBlock(wf: Walkthrough): GeneratedBlock | undefined {
-  const recap = wf.outro?.recap;
-  if (!recap || recap.length === 0) return undefined;
-  const lines = ["## Good to know", "", ...recap.map((r) => `- ${escapeMdxText(r)}`)];
-  return { key: "good-to-know", content: lines.join("\n") };
 }
 
 export function buildLastCheckedBlock(lastChecked: string | undefined, passed: boolean): GeneratedBlock {

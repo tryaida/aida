@@ -38,6 +38,8 @@ export interface RenderPdfOptions {
   };
   /** Edge-to-edge page (no margins) — the manual's cover. */
   bleed?: boolean;
+  /** No page background (for an overlay laid over another page — the manual's page numbers). */
+  transparent?: boolean;
 }
 
 export async function launchBrowser(): Promise<Browser> {
@@ -97,6 +99,7 @@ function pdfOptions(opts: RenderPdfOptions) {
   return {
     format: opts.paper,
     printBackground: true,
+    omitBackground: opts.transparent ?? false,
     displayHeaderFooter: Boolean(f),
     headerTemplate: f ? headerTemplate(f.title, f.brand) : "<span></span>",
     footerTemplate: f ? footerTemplate(f.title, f.lastChecked, f.brand, f.pageNumbers ?? true) : "<span></span>",
@@ -161,4 +164,32 @@ export async function renderHtmlToPdfBytes(browser: Browser, html: string, opts:
 export function writePdfBytes(outFile: string, bytes: Buffer): void {
   mkdirSync(dirname(outFile), { recursive: true });
   writeFileSync(outFile, bytes);
+}
+
+/** Printable width (CSS px at 96/in) for the card's 12mm margins. */
+function cardContentWidthPx(paper: "A4" | "Letter"): number {
+  return Math.floor((((paper === "Letter" ? 215.9 : 210) - 24) * 96) / 25.4);
+}
+
+/**
+ * True when anything in a quick-reference card is cut off: a step's text clamped or a cell or
+ * card page whose content is taller than its box. The card grid hides overflow (so its page
+ * count never grows), which means only measuring the laid-out page tells whether every word
+ * still shows — the card's fit loop then tries smaller text, then the text-only list.
+ */
+export async function cardOverflows(browser: Browser, html: string, paper: "A4" | "Letter"): Promise<boolean> {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "aida-pdf-"));
+  const tmpHtml = path.join(tmpDir, "card.html");
+  await writeFile(tmpHtml, html);
+  const page = await browser.newPage({ viewport: { width: cardContentWidthPx(paper), height: 1200 } });
+  try {
+    await page.emulateMedia({ media: "print" });
+    await loadForPrint(page, tmpHtml);
+    return await page.evaluate(() =>
+      Array.from(document.querySelectorAll<HTMLElement>(".cell-txt, .cell, .card-page")).some((el) => el.scrollHeight > el.clientHeight + 1),
+    );
+  } finally {
+    await page.close();
+    await rm(tmpDir, { recursive: true, force: true });
+  }
 }

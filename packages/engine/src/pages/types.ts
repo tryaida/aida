@@ -11,6 +11,9 @@ export interface BuildPageOptions {
   readers?: string[];
   /** config.roles — role id -> reader-facing name, tried before `readers` (see `readerNameForRole`). */
   roles?: Record<string, string | { name: string }>;
+  /** Where print figures (`printFigures`) are written. Default `<captureDir>/print` — build
+   * output that is never staged into the help app. */
+  printDir?: string;
 }
 
 /** One generated block the rebuild found a human edit in, instead of overwriting. */
@@ -42,4 +45,30 @@ export interface BuildPageResult {
   problems: string[];
   /** Generated blocks that had human edits since the last build, left untouched. */
   suggestions: PageSuggestion[];
+  /** One print figure per captured step (decision 36), for the PDFs. Absent on pages built
+   * before M32 — the PDFs then fall back to the site screenshots. */
+  printFigures?: PrintFigure[];
+}
+
+type FigureBox = { x: number; y: number; w: number; h: number };
+
+/** A step's screenshot prepared for print: clean images (blur burned in, no dimming, no
+ * highlight chrome — print draws its own ring and number over them) plus where the target is. */
+export interface PrintFigure {
+  /** 1-based step number. */
+  step: number;
+  /** Absolute path: the full screen at one pixel per CSS px. */
+  full: string;
+  /** Absolute path: the focus crop around the target at device scale, when there is one. */
+  crop?: string;
+  /** The crop's rectangle in the frame's CSS px. */
+  cropBox?: FigureBox;
+  /** The frame's size in CSS px (the capture viewport). */
+  viewport: { width: number; height: number };
+  /** Boxes to ring, in the frame's CSS px. */
+  targets: FigureBox[];
+  /** User callouts (M22) to pin, in the frame's CSS px, in order. */
+  callouts: { box: FigureBox; label?: string }[];
+  /** A screen the reader hasn't seen yet in this guide (first step, or the route changed). */
+  newScreen: boolean;
 }

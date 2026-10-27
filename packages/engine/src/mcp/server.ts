@@ -1,5 +1,5 @@
-// Builds the aida agent connector: a read-only MCP server with `search_docs`, `get_page`,
-// `list_walkthroughs` and `get_procedure` (docs/scope.md "Agent connector (MCP server)";
+// Builds the aida agent connector: a read-only MCP server with `get_app_overview`, `search_docs`,
+// `get_page`, `list_walkthroughs` and `get_procedure` (docs/scope.md "Agent connector (MCP server)";
 // "Safety and trust": "The MCP server is read-only"; build-plan.md M15 step 3). The help app's
 // `app/api/mcp/route.ts` mounts this over the SDK's Streamable HTTP transport — this module has
 // no HTTP/Next.js knowledge, so it's also usable in-process from tests (test/mcp/**).
@@ -18,6 +18,21 @@ function textResult(text: string) {
  */
 export function createAidaMcpServer(source: AidaMcpSource): McpServer {
   const server = new McpServer({ name: "aida", version: "0.0.1" });
+
+  server.registerTool(
+    "get_app_overview",
+    {
+      title: "Get app overview",
+      description:
+        "What the app is for, who uses it and the job they're doing, the things it keeps track of, the words it uses, the rules that matter, its rhythm, and tasks that can start from more than one screen. Read this first to understand the app before searching its guides.",
+      inputSchema: {},
+    },
+    async () => {
+      // No brief yet is a normal state for a new site, not a failure.
+      const overview = source.appOverview?.trim();
+      return textResult(overview || "No app overview yet. Use search_docs and list_walkthroughs to find guides.");
+    },
+  );
 
   server.registerTool(
     "search_docs",

@@ -126,6 +126,11 @@ describe("import from the plan skill's markdown cards", () => {
     ]);
     expect(cardLabels(cards[1])).toEqual(["Record payment", "Save", "Cash"]);
   });
+
+  it("reads paths: the other screens a task starts from (M31, for M33)", () => {
+    const md = "- Record a payment\n  for: office staff · section: Payments\n  paths: from the booking, from the attendee, from Payments";
+    expect(parseMarkdownCards(md)[0].paths).toEqual(["from the booking", "from the attendee", "from Payments"]);
+  });
 });
 
 describe("drift computation", () => {

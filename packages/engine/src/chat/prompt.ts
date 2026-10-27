@@ -14,6 +14,10 @@
 // stable prefix to cache (e.g. a full site glossary/page index bundled into the system prompt)
 // and request volume dense enough, relative to the 5-minute ephemeral TTL, for reads to amortize
 // the extra write cost.
+//
+// The app brief (decision 33; brief/consumers.ts `briefForChat`) is that prefix in the making: when
+// the site has one, it's the first system block, ahead of the rules, so turning caching on later
+// needs no reordering. Still no `cache_control` here.
 import type { ChatHistoryTurn, ChatCitation, RetrievedContext } from "./types.js";
 
 /** The stable system prompt: the rules never change between requests (no timestamps, no
@@ -47,6 +51,22 @@ export function buildSystemPrompt(supportContact: string | undefined, appName?: 
     `If no guide covers the question, say "The help guides don't cover that yet." and ${support}. If guides cover`,
     "only part of it, answer that part and say plainly which part isn't covered. Read every guide given before",
     "deciding something isn't covered. Don't guess.",
+  ].join("\n");
+}
+
+/** Hard cap on the brief block, whatever `chat-config.json` holds (it's hand-editable). */
+export const MAX_BRIEF_CHARS = 8_000;
+
+/** The brief's system block: background on the app, its people and its words. Stable per site. */
+export function buildBriefBlock(brief: string, appName?: string): string {
+  const app = appName ?? "this app";
+  const text = brief.length > MAX_BRIEF_CHARS ? `${brief.slice(0, MAX_BRIEF_CHARS)}\n…` : brief;
+  return [
+    `About ${app}, from its app brief. Use it to understand the app's words and who you're talking to,`,
+    "and to answer what the app is for or what a word means. How to do something still comes only from",
+    "the help guide excerpts.",
+    "",
+    text.trim(),
   ].join("\n");
 }
 
@@ -144,7 +164,8 @@ export function capHistory(history: ChatHistoryTurn[]): ChatHistoryTurn[] {
 }
 
 /**
- * Builds the full request: system prompt (always first/stable) -> prior history -> this turn's
+ * Builds the full request: the app brief block, when there is one, then the system prompt (both
+ * stable per site) -> prior history -> this turn's
  * retrieved context + question (volatile, always last). History is capped first (`capHistory`),
  * then the context block is capped to whatever's left of `maxInputTokens` after the question and
  * the (now-capped) history, trimming retrieved sections from the end (least relevant first,
@@ -159,8 +180,10 @@ export function assembleRequest(
   history: ChatHistoryTurn[] | undefined,
   maxInputTokens: number,
   appName?: string,
+  brief?: string,
 ): AssembledRequest {
   const system = buildSystemPrompt(supportContact, appName);
+  const briefBlock = brief?.trim() ? buildBriefBlock(brief, appName) : undefined;
   const cappedHistory = capHistory(history ?? []);
   const historyChars = cappedHistory.reduce((n, h) => n + h.content.length, 0);
 
@@ -168,9 +191,10 @@ export function assembleRequest(
 
   // Rough char-per-token budget (~4 chars/token) — a cheap guard, not exact token counting;
   // `client.messages.countTokens` would be exact but costs an extra round trip per request.
-  // History and the question are charged against the same budget as the context block, not
-  // left uncapped.
-  const charBudget = Math.max(0, maxInputTokens * 4 - historyChars - question.length);
+  // The system blocks (the brief and the rules), history and the question are all charged against
+  // the same budget as the context block, not left uncapped.
+  const systemChars = system.length + (briefBlock?.length ?? 0);
+  const charBudget = Math.max(0, maxInputTokens * 4 - systemChars - historyChars - question.length);
   if (contextBlock.length > charBudget) {
     contextBlock = `${contextBlock.slice(0, charBudget)}\n…(truncated)`;
   }
@@ -178,7 +202,7 @@ export function assembleRequest(
   const userContent = `Help guide excerpts:\n${contextBlock}\n\nQuestion: ${question}`;
 
   return {
-    system: [{ type: "text", text: system }],
+    system: [...(briefBlock ? [{ type: "text" as const, text: briefBlock }] : []), { type: "text", text: system }],
     messages: [
       ...cappedHistory.map((h) => ({ role: h.role, content: h.content })),
       { role: "user" as const, content: userContent },

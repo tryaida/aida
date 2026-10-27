@@ -1,8 +1,8 @@
 // Builds a `PdfPageInput` from a walkthrough + its already-built page (pages/build.ts's
 // `BuildPageResult`) — the one place the pdf module reaches into pages' output shape, kept
 // small and isolated so pages/pdf can keep evolving independently.
-import { readFileSync } from "node:fs";
-import type { Walkthrough } from "../walkthrough/index.js";
+import { existsSync, readFileSync } from "node:fs";
+import { libraryPlacement, type Walkthrough } from "../walkthrough/index.js";
 import type { BuildPageResult } from "../pages/index.js";
 import type { ResolvedConfig } from "../config/index.js";
 import { cardStepsFor } from "./html.js";
@@ -32,6 +32,8 @@ export function pdfInputFromPage(wf: Walkthrough, page: BuildPageResult): PdfPag
     if (m) screenshotByStep.set(Number(m[1]), file);
   }
   const section = (wf as { section?: unknown }).section;
+  const figures = page.printFigures?.filter((f) => existsSync(f.full) && (!f.crop || existsSync(f.crop)));
+  const figureByStep = new Map((figures ?? []).map((f) => [f.step, f] as const));
   return {
     id: wf.walkthrough,
     title: wf.title,
@@ -44,7 +46,12 @@ export function pdfInputFromPage(wf: Walkthrough, page: BuildPageResult): PdfPag
     lastChecked: page.lastChecked,
     passed: page.passed,
     publishable: page.publishable,
-    cardSteps: cardStepsFor(wf, (n) => screenshotByStep.get(n)),
+    cardSteps: cardStepsFor(wf, (n) => screenshotByStep.get(n)).map((s) => {
+      const figure = figureByStep.get(s.number);
+      return figure ? { ...s, figure } : s;
+    }),
+    ...(figures && figures.length > 0 ? { figures } : {}),
+    sitePath: libraryPlacement(typeof section === "string" ? section : undefined, wf.walkthrough).url,
   };
 }
 

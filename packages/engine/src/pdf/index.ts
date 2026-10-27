@@ -12,14 +12,25 @@ export {
   buildTocHtml,
   buildCardHtml,
   cardStepsFor,
+  cardLayout,
+  figureView,
+  printMode,
+  stepLayout,
+  isSinglePart,
   type TocEntry,
   type CardRenderOptions,
+  type CardLayout,
+  type FigureView,
+  type PageHtmlOptions,
 } from "./html.js";
+export { guideUrl, qrSvg } from "./qr.js";
+export { cacheFontFaces, fontFaceCss, parseFontFaces, defaultFontCacheDir, type CachedFontFace } from "./fonts.js";
 export {
   launchBrowser,
   renderHtmlToPdf,
   renderHtmlToPdfBytes,
   writePdfBytes,
+  cardOverflows,
   headerTemplate,
   footerTemplate,
   type RenderPdfOptions,

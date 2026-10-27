@@ -91,6 +91,8 @@ Then:
 
 ```bash
 aida digest --app-repo <app-dir>           # compact map of routes, roles and labels
+aida domain --config <cfg>                 # entities, links and states from the database schema
+aida brief init --config <cfg>             # app-brief.md skeleton; fill it, then aida brief check
 aida outline list --config <cfg>          # the planned walkthroughs, and where the screen differs
 aida inspect /some/page --config <cfg>     # what's on screen: exact names, roles, options
 aida inspect --config <cfg> --walkthrough <id> --after <step>   # the page after a save
@@ -110,6 +112,8 @@ aida publish --to static --dry-run         # see what would deploy
 | `theme` | Rewrite the help app's theme from the config's `brand`; `--detect` prints a fresh brand block from the app |
 | `doctor` | Check the machine and the app before capturing; one fix per problem |
 | `digest` | Compact map of an app's routes, roles and on-screen labels (monorepos via `--app`, detail via `--area`) |
+| `domain` | The app's domain model read from its schema (Drizzle, else Prisma, else SQL migrations; never a database connection): one line per entity with key columns, states and links; `--entity` for one in full, `--source` to pick a schema |
+| `brief` | The app brief, `app-brief.md` beside the config (config `brief` moves it): `sources` lists the app's own docs worth reading (paths and headings only), `init` writes the skeleton from the schema, `check` validates sections, glossary and personal data, `show [--section]` prints it. Once it passes `check` with no personal data or prompts left, `build` passes its opening sections to the help chat, an overview to the agent connector's `get_app_overview`, and its first paragraph to the home page |
 | `outline` | Outline cards in `outline.yaml` (`add`, `import`, `list`, `note`, `check`, `status`); capture records where the screen differs from a card |
 | `inspect` | Open one page signed in and list its interactive elements, read-only (`--click` repeatable); `--walkthrough <id> --after <step>` replays the steps (writes, like capture) and maps the page they leave |
 | `record` | "Show me": open the app in a browser window, signed in (`--as`), with `--needs` states set up, and turn one click-through into a draft walkthrough. A toolbar adds **Point at**, **Check shown**, **Note** (the step's narration), **New step**, **Undo** and **Finish**. Targets use on-screen names and are checked against the page as they're recorded; typed emails, phone numbers and card numbers become safe demo values; passwords are never kept. Same safety checks as capture; the draft is replayed once afterwards (`--no-replay` skips it, since a replay saves the same things again) |
@@ -117,7 +121,7 @@ aida publish --to static --dry-run         # see what would deploy
 | `order` | Print the capture order the walkthroughs' `needs`/`leaves`/`clears` imply, and where the database is reset |
 | `capture` | Replay walkthroughs in a browser against the app, in that order (`--with-deps` pulls in the walkthroughs they need); screenshots, checks, a failure report saying whether it looks like the walkthrough, the app or the setup |
 | `voice`, `render` | Narrate, then render video per scene (only changed scenes re-render) |
-| `pages`, `pdf` | Help pages with numbered screenshots; PDFs and quick reference cards |
+| `pages`, `pdf` | Help pages with numbered screenshots; PDFs and quick reference cards (a QR code to each guide when `publish.siteUrl` is set) |
 | `qa` | Loudness, black frames, caption timing, personal-data and secret scans |
 | `build` | All of the above in order, skipping unchanged work (`--with-deps` too); `report.json` names each failed check and its files |
 | `affected` | Map a git diff to the walkthroughs it touches; unknown changes mean all |
@@ -166,10 +170,10 @@ role its reader-facing name (`roles: { admin: "an organiser" }`).
 ## Agent skills
 
 `skills/` holds the Agent Skills that drive AIDA from a coding agent. `aida` is the entry point
-("make help docs for my app"); it hands off to `aida-discover`, `aida-plan`, `aida-write`,
-`aida-repair`, `aida-review` and `aida-demo-data`. Each names a model tier, and Claude Code
-subagent definitions in `skills/agents/` match them: Haiku for discover, Sonnet for write, repair
-and review, Opus for plan. Shared style, safety, token and walkthrough-format references live in
+("make help docs for my app"); it hands off to `aida-discover`, `aida-understand`, `aida-plan`,
+`aida-write`, `aida-repair`, `aida-review` and `aida-demo-data`. Each names a model tier, and
+Claude Code subagent definitions in `skills/agents/` match them: Haiku for discover, Sonnet for
+write, repair and review, Opus for understand and plan. Shared style, safety, token and walkthrough-format references live in
 `skills/references/`.
 
 Install into a target repo with `aida skills install --target <repo>` (copies skills into

@@ -494,6 +494,22 @@ describe("pagesInputHash (bug 1: must bust the pages cache on a capture validati
     const b = pagesInputHash(wf({ start: { page: "/b" } }), manifest, v, undefined, false);
     expect(a).not.toBe(b);
   });
+
+  // M32: pages/focus.ts reads impact.urls to tell which steps moved to another page.
+  it("changes when a step's impact.urls change, but not when only its impact.requests do", () => {
+    const v = fakeValidation(true);
+    const m1 = fakeManifest();
+    const withUrl = { ...m1, steps: m1.steps.map((s) => ({ ...s, impact: { urls: ["/things/new"], requests: [] } })) };
+    const withRequest = { ...m1, steps: m1.steps.map((s) => ({ ...s, impact: { urls: [], requests: [{ method: "GET", path: "/api/x" }] } })) };
+    expect(pagesInputHash(wf(), withUrl, v, undefined, false)).not.toBe(pagesInputHash(wf(), m1, v, undefined, false));
+    expect(pagesInputHash(wf(), withRequest, v, undefined, false)).toBe(pagesInputHash(wf(), m1, v, undefined, false));
+  });
+
+  it("changes when a step gains blur entries (they decide which frame print may show)", () => {
+    const v = fakeValidation(true);
+    const blurred = wf({ steps: [{ id: "only-step", title: "Do it", blur: [{ id: "b", box: { x: 0, y: 0, w: 10, h: 10 } }] }] });
+    expect(pagesInputHash(blurred, fakeManifest(), v, undefined, false)).not.toBe(pagesInputHash(wf(), fakeManifest(), v, undefined, false));
+  });
 });
 
 describe("report.json names each failed check and its files (M26)", () => {

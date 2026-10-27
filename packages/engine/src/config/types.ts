@@ -174,6 +174,12 @@ export interface PublishConfig {
    * Cloudflare's 25 MiB/file), using that host's default provider.
    */
   videoStorage?: "vercel-blob" | "s3" | "netlify-blobs" | "r2" | "supabase-storage";
+  /**
+   * The published help site's public address, e.g. "https://help.example.com". Printed guides
+   * get a QR code linking to each guide's page (and its video) when this is an absolute http(s)
+   * URL; unset, no QR code is printed.
+   */
+  siteUrl?: string;
 }
 
 /**
@@ -400,6 +406,9 @@ export interface AidaConfig {
   /** Outline cards file (`aida outline`), relative to the config file. Default `outline.yaml`
    * next to `walkthroughsDir`. */
   outline?: string;
+  /** The app brief (`aida brief`, decision 33): what the app is for, who uses it, its words and
+   * rules. Relative to the config file. Default `app-brief.md` next to it. */
+  brief?: string;
   /** Where rendered output (site, videos, pdfs) is written. Default `help/`. */
   outDir?: string;
   /** Where intermediate build artifacts (capture frames, manifests) are written. Default `.build`. */

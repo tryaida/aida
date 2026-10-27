@@ -18,6 +18,8 @@ import { runQaCommand } from "./commands/qa.js";
 import { runBuild } from "./commands/build.js";
 import { runVoiceCommand } from "./commands/voice.js";
 import { runDigest } from "./commands/digest.js";
+import { runDomain } from "./commands/domain.js";
+import { runBriefCheck, runBriefInit, runBriefShow, runBriefSources } from "./commands/brief.js";
 import { runAffected } from "./commands/affected.js";
 import { runCiCli, runCiPublishCli } from "./commands/ci.js";
 import { runVersionFreeze, runVersionList } from "./commands/version.js";
@@ -49,6 +51,7 @@ program.version(pkg.version);
 //   M3  voice
 //   M4  render
 //   M6  build, digest
+//   M31 domain, brief
 
 program
   .command("validate <target>")
@@ -390,6 +393,65 @@ program
   .option("--json", "print a single JSON object instead of a summary")
   .action((opts: { appRepo?: string; app?: string; area?: string; json?: boolean }) => {
     process.exitCode = runDigest({ appRepo: opts.appRepo ?? process.cwd(), area: opts.area, app: opts.app }, Boolean(opts.json));
+  });
+
+program
+  .command("domain")
+  .description("the app's domain model from its database schema (Drizzle, Prisma or SQL migrations): entities, key columns, links and states")
+  .option("--config <path>", "aida.config.ts/.mjs; its impact.appRepo (else the app's directory) is the repo read")
+  .option("--repo <dir>", "app repo to read (default: from --config, else cwd)")
+  .option("--entity <name>", "one entity in full: every column, type, reference and value")
+  .option("--source <kind>", "read only this kind of schema: drizzle, prisma or sql (default: the first found, in that order)")
+  .option("--json", "print a single JSON object instead of a summary")
+  .action(async (opts: { config?: string; repo?: string; entity?: string; source?: string; json?: boolean }) => {
+    process.exitCode = await runDomain({ configPath: opts.config, repo: opts.repo, entity: opts.entity, source: opts.source, json: Boolean(opts.json) });
+  });
+
+const briefCmd = program
+  .command("brief")
+  .description("the app brief (app-brief.md beside the config): what the app is for, who uses it, its words, rules and rhythm");
+
+briefCmd
+  .command("sources")
+  .description("list the app's own prose worth reading for the brief (README, docs, landing page, seed data, test titles, commits): paths, sizes and headings only")
+  .option("--config <path>", "aida.config.ts/.mjs; its impact.appRepo (else the app's directory) is the repo read")
+  .option("--repo <dir>", "app repo to read (default: from --config, else cwd)")
+  .option("--json", "print a single JSON object instead of a summary")
+  .action(async (opts: { config?: string; repo?: string; json?: boolean }) => {
+    process.exitCode = await runBriefSources({ configPath: opts.config, repo: opts.repo, json: Boolean(opts.json) });
+  });
+
+briefCmd
+  .command("init")
+  .description("write the brief's skeleton: every section with a prompt, readers from the config's roles, \"Things it keeps track of\" from aida domain")
+  .option("--config <path>", "aida.config.ts/.mjs (the brief goes beside it, or at its `brief` path)")
+  .option("--brief <path>", "brief file to write (default: from --config)")
+  .option("--repo <dir>", "app repo to read the schema from (default: from --config, else cwd)")
+  .option("--force", "replace an existing brief")
+  .option("--json", "print a single JSON object instead of a summary")
+  .action(async (opts: { config?: string; brief?: string; repo?: string; force?: boolean; json?: boolean }) => {
+    process.exitCode = await runBriefInit({ configPath: opts.config, brief: opts.brief, repo: opts.repo, force: Boolean(opts.force), json: Boolean(opts.json) });
+  });
+
+briefCmd
+  .command("check")
+  .description("check the brief has its frontmatter (app, updated, readers), every section filled and a glossary table, and no real-looking emails or phone numbers")
+  .option("--config <path>", "aida.config.ts/.mjs (the brief sits beside it, or at its `brief` path)")
+  .option("--brief <path>", "brief file to check (default: from --config)")
+  .option("--json", "print a single JSON object instead of a summary")
+  .action(async (opts: { config?: string; brief?: string; json?: boolean }) => {
+    process.exitCode = await runBriefCheck({ configPath: opts.config, brief: opts.brief, json: Boolean(opts.json) });
+  });
+
+briefCmd
+  .command("show")
+  .description("print the brief, or only the sections asked for (load just what you need)")
+  .option("--config <path>", "aida.config.ts/.mjs (the brief sits beside it, or at its `brief` path)")
+  .option("--brief <path>", "brief file to read (default: from --config)")
+  .option("--section <name>", "a section, by name or its start, e.g. \"Words it uses\" or words (repeatable)", collect)
+  .option("--json", "print a single JSON object instead of a summary")
+  .action(async (opts: { config?: string; brief?: string; section?: string[]; json?: boolean }) => {
+    process.exitCode = await runBriefShow({ configPath: opts.config, brief: opts.brief, sections: opts.section, json: Boolean(opts.json) });
   });
 
 program

@@ -1,0 +1,5 @@
+{
+  "name": "acme-events",
+  "description": "Book seats at community events and take payments",
+  "private": true
+}

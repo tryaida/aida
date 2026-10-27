@@ -2,6 +2,9 @@
 // manual, and a one-page quick-reference card) to PDF with Playwright Chromium, from a
 // self-contained print HTML document built off the page's own Markdown — no running Next
 // server required (AGENTS.md "hosts only run `next build`"; docs/scope.md "Printable guides").
+import type { PrintFigure } from "../pages/types.js";
+
+export type { PrintFigure };
 
 export interface PdfPaperSettings {
   /** "A4" or "Letter". Default "A4". */
@@ -29,6 +32,9 @@ export interface PdfBrand {
   headingFont?: string;
   /** https stylesheet loading `font`/`headingFont`. */
   fontUrl?: string;
+  /** Local `@font-face` rules for `fontUrl`'s cached static font files (fonts.ts) — filled in by
+   * build.ts's `prepareBrand`; when set, the print HTML uses these instead of `fontUrl`. */
+  fontFaceCss?: string;
   configured?: boolean;
 }
 
@@ -44,6 +50,11 @@ export interface BuildPdfOptions {
    * only a relative path inside the page's own directory is accepted (review finding
    * pdf/markdown.ts:17); set true only when the config explicitly opts into remote images. */
   allowRemoteImages?: boolean;
+  /** Public help-site root (e.g. `https://help.example.com`). When set, each guide gets a QR
+   * code linking to its page there (and so its video). Unset: no QR code. */
+  siteUrl?: string;
+  /** Where downloaded brand font files are cached. Default `.aida-cache/fonts` (fonts.ts). */
+  fontCacheDir?: string;
 }
 
 export interface PdfBuildResult {
@@ -87,6 +98,11 @@ export interface PdfPageInput {
   publishable: boolean;
   /** Short per-step lines for the quick-reference card: caption or first sentence of page_text. */
   cardSteps: CardStepInput[];
+  /** Print figures from pages (`BuildPageResult.printFigures`): clean screenshots, focus crops
+   * and target boxes. Absent for pages built before M32 — the site screenshots are used then. */
+  figures?: PrintFigure[];
+  /** The guide's path on the help site (`/how-do-i/payments/record-a-payment`), for its QR code. */
+  sitePath?: string;
 }
 
 export interface CardStepInput {
@@ -103,4 +119,6 @@ export interface CardStepInput {
    * screenshot exists or its thumbnail failed to render; the card then shows no image for that
    * step rather than falling back to the full-size original. */
   thumbnailSrc?: string;
+  /** The step's print figure, when pages made one: the card shows its focus crop. */
+  figure?: PrintFigure;
 }

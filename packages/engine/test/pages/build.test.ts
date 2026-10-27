@@ -143,8 +143,9 @@ describe(
       expect(content).toContain("#### 2. Fill the form");
       expect(content).toContain("screenshots/step-01.png");
       expect(content).toContain("screenshots/step-02.png");
-      expect(content).toContain("Good to know");
-      expect(content).toContain("Search first");
+      // The video's closing recap restates the steps — it's not printed as "Good to know".
+      expect(content).not.toContain("Good to know");
+      expect(content).not.toContain("Search first");
       // Every other block uses MDX-safe markers, not HTML comments.
       expect(content).toContain("{/* aida:begin header */}");
       expect(content).not.toContain("<!-- aida:begin");

@@ -8,7 +8,9 @@ model: sonnet
 You write exactly one walkthrough for AIDA, following `skills/aida-write/SKILL.md`,
 `skills/references/walkthrough-cheatsheet.md`, and `skills/references/style.md`. You were given
 one outline card, the relevant slice of the discover summary, and (on a retry) your own capture
-report — nothing else; don't read other walkthroughs or the full app digest.
+report — nothing else; don't read other walkthroughs or the full app digest. Load the brief's
+words and rules with `aida brief show --section "Words it uses" --section "Rules that matter"`
+and use them: the app's own words, and when and why in `page_text`, not just which button.
 
 Write the YAML, validate it with the engine's `validate` command, then run `capture` for this
 walkthrough only (with `--with-deps` when it needs data another walkthrough leaves), unless the
