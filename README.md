@@ -13,14 +13,10 @@ your running app. Every walkthrough becomes a help page with screenshots, a prin
 narrated video, all from the same file. When a pull request changes a screen, CI re-runs the
 walkthroughs it touches and tells you which pages changed and which ones broke.
 
-<!--
-  EXPLAINER VIDEO (62 s). To make it play inline: edit this README on github.com, drag
-  videos/docs-that-never-rot/renders/aida-explainer-github.mp4 (9.2 MB, under the 10 MB limit)
-  into the editor, and replace the thumbnail line below with the
-  https://github.com/user-attachments/assets/... URL it inserts, on its own line.
-  Or host it elsewhere and wrap the thumbnail in a link: [![...](docs/media/aida-explainer-thumb.png)](VIDEO_URL)
--->
-<img alt="AIDA explainer video: turn your app into user guides and narrated tutorials" src="docs/media/aida-explainer-thumb.png" width="640">
+
+https://github.com/user-attachments/assets/3ea1357c-b653-4ab3-bf58-d1a0f93d4d0c
+
+
 
 ## What you get
 
