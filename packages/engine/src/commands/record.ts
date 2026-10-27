@@ -134,7 +134,7 @@ export async function runRecordCommand(opts: RunRecordOptions): Promise<number> 
     ...(opts.needs?.length ? { needs: opts.needs } : {}),
     steps: [{ id: RECORD_STEP, actions: [] }],
   };
-  const storageStatePath = join(config.buildDir, ".aida-session", `storageState-${storageStateKey(config.app.baseUrl, persona)}.json`);
+  const storageStatePath = join(config.buildDir, ".aida-session", `storageState-${storageStateKey(config.app.baseUrl, persona, config)}.json`);
   const log = json ? undefined : (line: string): void => console.error(`  ● ${line}`);
 
   let recorded: RecordedAction[] | undefined;

@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Script, constants } from "node:vm";
@@ -120,6 +121,7 @@ async function resolveConfig(config: AidaConfig, configDir: string): Promise<Res
   if (!config.walkthroughsDir) throw new Error("config.walkthroughsDir is required");
 
   const signIn = config.signIn ? await resolveSignIn(config.signIn, configDir) : undefined;
+  const signInHash = config.signIn ? signInFingerprint(config.signIn, configDir) : undefined;
   const database = config.database ? await resolveDatabase(config.database, configDir) : undefined;
   // Hook module paths are checked to exist here but imported lazily, at the hook's first run
   // (states/hooks.ts): loading a config for `order`/`validate` never runs a hook module's code.
@@ -141,9 +143,29 @@ async function resolveConfig(config: AidaConfig, configDir: string): Promise<Res
         }
       : undefined,
     signIn,
+    ...(signInHash ? { signInHash } : {}),
     database,
     states,
   };
+}
+
+/** The sign-in adapter's identity for the saved-session key: its module file's content plus the
+ * export name, or an inline function's source. */
+function signInFingerprint(ref: SignInAdapterRef, configDir: string): string {
+  const hash = createHash("sha256");
+  if (typeof ref === "function") {
+    hash.update(`fn:${ref.toString()}`);
+  } else {
+    const modulePath = typeof ref === "string" ? ref : ref.modulePath;
+    const file = isAbsolute(modulePath) ? modulePath : join(configDir, modulePath);
+    hash.update(`file:${typeof ref === "string" ? "" : (ref.export ?? "")}:`);
+    try {
+      hash.update(readFileSync(file));
+    } catch {
+      hash.update(file);
+    }
+  }
+  return hash.digest("hex").slice(0, 16);
 }
 
 function absolute(configDir: string, p: string): string {

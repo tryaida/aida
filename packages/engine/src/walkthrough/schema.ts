@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TargetSchema, BoxSchema } from "./target.js";
-import { ActionSchema } from "./action.js";
+import { ActionSchema, type Action } from "./action.js";
 import { parseDoString } from "./parse-do.js";
 import { sectionProblems } from "./placement.js";
 import type { Step, Walkthrough, WalkthroughPath } from "./types.js";
@@ -231,8 +231,9 @@ const PATH_FORBIDDEN_FIELDS = ["needs", "leaves", "clears", "setup", "validate"]
 export const PATH_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /**
- * One other way to do the task (decision 34): its own start and opening steps, then the main
- * steps from `joins` on. `when` is one plain sentence a reader uses to pick this way.
+ * One other way to do the task (decisions 34, 37): its own start and opening steps, then the main
+ * steps from `joins` on — or, without `joins`, its own steps to its own end, the last one ending
+ * in a check. `when` is one plain sentence a reader uses to pick this way.
  */
 const PathSchema = z
   .object({
@@ -240,8 +241,9 @@ const PathSchema = z
     title: z.string().min(1),
     when: z.string().min(1, "say in one plain sentence when to use this way"),
     start: PathStartSchema,
-    steps: z.array(RawStepSchema).min(1, "a path needs at least one opening step before it joins the main steps"),
-    joins: z.string().min(1),
+    steps: z.array(RawStepSchema).min(1, "a path needs at least one step of its own"),
+    // The main step this path joins; leave it out for a path that runs to its own end.
+    joins: z.string().min(1).optional(),
     // Shown on the page only when capture flagged this path as saving differently (pathDiffs).
     note: z.string().optional(),
     // Accepted only so the refinement below can explain why they're not allowed.
@@ -366,7 +368,7 @@ function checkPaths(
   doc: {
     start?: { signed_in_as?: string; persona?: { role?: string } };
     steps: { id?: string }[];
-    paths?: { id: string; start: { signed_in_as?: string }; steps: { id?: string }[]; joins: string }[];
+    paths?: { id: string; start: { signed_in_as?: string }; steps: RawStep[]; joins?: string }[];
   },
   ctx: z.RefinementCtx,
 ): void {
@@ -379,7 +381,17 @@ function checkPaths(
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["paths", i, "id"], message: `path id "${path.id}" is used twice; give each path its own id` });
     }
     pathIds.add(path.id);
-    if (!mainIds.has(path.joins)) {
+    if (path.joins === undefined) {
+      // Runs to its own end (decision 37): its last step proves the task is done.
+      const last = path.steps[path.steps.length - 1];
+      if (last && !stepEndsInCheck(last)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["paths", i, "steps", path.steps.length - 1],
+          message: `path "${path.id}" has no \`joins\`, so it runs to its own end: its last step needs a check that the task is done (\`check:\`, or an \`expect\`, \`waitFor\` or \`waitForUrl\` action) — or add \`joins:\` naming the main step it continues from`,
+        });
+      }
+    } else if (!mainIds.has(path.joins)) {
       const ids = [...mainIds];
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -415,6 +427,22 @@ function checkPaths(
   });
 }
 
+
+/** Actions that prove something is on screen: what a path without `joins` must end with. */
+export const CHECK_ACTIONS: ReadonlySet<string> = new Set(["expect", "waitFor", "waitForUrl"]);
+
+/** True when a raw step ends in a check: a `check:` field, or a check action as its last action. */
+export function stepEndsInCheck(raw: RawStep): boolean {
+  if (raw.check !== undefined && toArray(raw.check).length > 0) return true;
+  let actions: Action[];
+  try {
+    actions = rawStepToStep(raw).actions;
+  } catch {
+    return false;
+  }
+  const last = actions[actions.length - 1];
+  return Boolean(last && CHECK_ACTIONS.has(last.do));
+}
 
 /** Turns a step's `do:` / `check:` / `actions:` fields into one action list. */
 export function rawStepToStep(raw: RawStep): Step {
@@ -502,7 +530,7 @@ export function rawPathToPath(raw: RawPath): WalkthroughPath {
       ...(raw.start.signed_in_as !== undefined ? { signed_in_as: raw.start.signed_in_as } : {}),
     },
     steps: raw.steps.map(rawStepToStep),
-    joins: raw.joins,
+    ...(raw.joins !== undefined ? { joins: raw.joins } : {}),
     ...(raw.note !== undefined ? { note: raw.note } : {}),
   };
 }

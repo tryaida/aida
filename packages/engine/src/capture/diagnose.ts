@@ -11,6 +11,7 @@ import type { Target } from "../walkthrough/index.js";
 import { locate } from "./locate.js";
 import { redactLine, stripOpaqueSegments, stripQueryAndHash } from "./redact.js";
 import type { FailureActionRef, FailureCategory, FailureChanges, FailureRequest } from "./types.js";
+import { NETWORK_IDLE_CAP_MS, waitForNetworkQuiet } from "./page-ready.js";
 
 const WRITE_CAP = 8;
 const ERROR_RESPONSE_CAP = 5;
@@ -389,7 +390,7 @@ export async function targetShownAfterReload(page: Page, target: Target, timeout
   await page.route("**/*", block);
   try {
     await page.goto(page.url(), { waitUntil: "load", timeout: timeoutMs });
-    await page.waitForLoadState("networkidle", { timeout: timeoutMs }).catch(() => {});
+    await waitForNetworkQuiet(page, Math.min(timeoutMs, NETWORK_IDLE_CAP_MS));
     await (await locate(target, page)).waitFor({ state: "visible", timeout: timeoutMs });
     return true;
   } catch {

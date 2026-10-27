@@ -1,7 +1,7 @@
 // Reads a Prisma schema statically: `model` blocks (scalar fields, `@relation(fields, references)`
 // foreign keys, `@@map` table names are ignored in favour of the model name people see in code),
 // and `enum` blocks.
-import { findMatching, stripComments } from "./text.js";
+import { findMatching, readableDefault, stripComments } from "./text.js";
 import type { RawColumn, RawSchema, RawTable } from "./types.js";
 
 export function parsePrisma(text: string): RawSchema {
@@ -50,6 +50,13 @@ export function parsePrisma(text: string): RawSchema {
         col.enum = type;
       }
       if (/@id\b/.test(attrs)) col.primaryKey = true;
+      const dflt = /@default\(/.exec(attrs);
+      if (dflt) {
+        const open = dflt.index + dflt[0].length - 1;
+        const close = findMatching(attrs, open, "ts");
+        const value = close > 0 ? readableDefault(attrs.slice(open + 1, close)) : undefined;
+        if (value !== undefined) col.default = value;
+      }
       columns.push(col);
     }
     for (const rel of relations) {

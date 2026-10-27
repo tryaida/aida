@@ -16,11 +16,12 @@
 // the same way commands/capture.ts keys it, so a session capture already signed in with is
 // reused here too; `assertWritesAllowed`/`isLocalBaseUrl` (capture/write-guard.ts) gate the one
 // write-shaped thing inspect can do (`--click`), the same way capture gates click/type/select.
-import { createHash } from "node:crypto";
+import { sessionKey } from "../capture/session-key.js";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { chromium } from "playwright";
 import { NAME_SHIM_SCRIPT } from "../capture/init-scripts.js";
+import { gotoReady } from "../capture/page-ready.js";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { loadConfig } from "../config/index.js";
 import type { ResolvedConfig } from "../config/index.js";
@@ -86,11 +87,15 @@ async function installWriteGate(context: BrowserContext, gate: WriteGate): Promi
   });
 }
 
-/** Same persona+baseUrl -> session-file hash commands/capture.ts uses, so a session either
- * command signs in reuses across both. */
-export function storageStateKey(baseUrl: string, persona: Persona | undefined): string {
-  const hash = createHash("sha256").update(JSON.stringify({ baseUrl, persona: persona ?? null })).digest("hex");
-  return hash.slice(0, 16);
+/** Same baseUrl + persona + sign-in adapter -> session-file hash every command uses
+ * (capture/session-key.ts), so a session one command signs in is reused by the others, and a
+ * changed sign-in adapter signs in again. */
+export function storageStateKey(
+  baseUrl: string,
+  persona: Persona | undefined,
+  config?: Partial<Pick<ResolvedConfig, "signIn" | "signInHash">>,
+): string {
+  return sessionKey(baseUrl, persona, config);
 }
 
 /** Finds a persona to sign in as: `--as <role>` matches a walkthrough whose `start.persona.role`
@@ -137,7 +142,7 @@ async function openSignedIn(
   gate: WriteGate,
 ): Promise<{ browser: Browser; context: BrowserContext; page: Page }> {
   const baseUrl = config.app.baseUrl;
-  const storageStatePath = join(config.buildDir, ".aida-session", `storageState-${storageStateKey(baseUrl, persona)}.json`);
+  const storageStatePath = join(config.buildDir, ".aida-session", `storageState-${storageStateKey(baseUrl, persona, config)}.json`);
   const reuseState = existsSync(storageStatePath) ? storageStatePath : undefined;
 
   const browser = await chromium.launch();
@@ -176,11 +181,11 @@ async function openSignedIn(
     await doSignIn();
   }
 
-  await page.goto(baseUrl + path, { waitUntil: "networkidle", timeout: 120_000 });
+  await gotoReady(page, baseUrl + path, 120_000);
 
   if (reuseState && config.signIn && isSignInPath(page.url())) {
     await doSignIn();
-    await page.goto(baseUrl + path, { waitUntil: "networkidle", timeout: 120_000 });
+    await gotoReady(page, baseUrl + path, 120_000);
   }
 
   return { browser, context, page };
@@ -294,7 +299,7 @@ async function runInspectAfter(config: ResolvedConfig, opts: RunInspectOptions, 
   const storageStatePath = join(
     config.buildDir,
     ".aida-session",
-    `storageState-${storageStateKey(baseUrl, walkthrough.start?.persona)}.json`,
+    `storageState-${storageStateKey(baseUrl, walkthrough.start?.persona, config)}.json`,
   );
 
   let scanned: InspectResult | undefined;

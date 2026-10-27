@@ -21,6 +21,7 @@ import { redactErrorMessage, redactLine, stripQueryAndHash } from "./redact.js";
 import { StepWatch, isSignInPath, type ActionProgress } from "./diagnose.js";
 import { accessibleName, pageHeadings, seenField } from "./seen.js";
 import { ImpactTracker } from "./impact.js";
+import { gotoReady } from "./page-ready.js";
 import { seenTargets } from "./target-names.js";
 import type {
   Box,
@@ -287,7 +288,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
 
     const startPath = walkthrough.start?.page ?? "/";
     log("opening", startPath);
-    await page.goto(baseUrl + startPath, { waitUntil: "networkidle", timeout: 120_000 });
+    await gotoReady(page, baseUrl + startPath, 120_000);
     await settle(page);
 
     // A reused session can go stale (cookie expiry, server restart since the
@@ -296,7 +297,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
     if (reuseState && config.signIn && isSignInPath(page.url())) {
       log("stored session looks stale — signing in again");
       await doSignIn();
-      await page.goto(baseUrl + startPath, { waitUntil: "networkidle", timeout: 120_000 });
+      await gotoReady(page, baseUrl + startPath, 120_000);
       await settle(page);
     }
 
@@ -325,7 +326,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
         return setupFailureResult(walkthrough, baseUrl, viewport, deviceScaleFactor, capturedAt, runStarted, framesDir, record ? opts.outDir : undefined, page.url(), err);
       }
       await page.bringToFront();
-      await page.goto(baseUrl + startPath, { waitUntil: "networkidle", timeout: 120_000 });
+      await gotoReady(page, baseUrl + startPath, 120_000);
       await settle(page);
     }
 
@@ -471,6 +472,10 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
     }
 
     manifest.finalUrl = page.url();
+    // Before the end checks read the database: the last save's request has answered (capped).
+    if (needsDb && config.database && dbUrl) await watch.writesSettled(waitCap(15_000));
+    // Every server action's response headers read, so its read/save flag is in the manifest.
+    await impact.settled(waitCap(5_000));
     impact.dispose();
     if (stopped && opts.onStopped) {
       // `networkidle` returns at once on a page that already loaded, so a save's follow-up
@@ -749,7 +754,7 @@ async function runAction({
       if (target.origin !== baseOrigin) {
         throw new Error(`refusing cross-origin goto to ${target.origin} (walkthrough origin is ${baseOrigin})`);
       }
-      await page.goto(target.href, { waitUntil: "networkidle", timeout: waitCap(120_000) });
+      await gotoReady(page, target.href, waitCap(120_000));
       watch.navigated(target.pathname);
       await settle(page);
       events.push({ type: "frame", image: await shot("state", step.mask), transition: "fade" });

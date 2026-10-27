@@ -3,7 +3,7 @@
 // AS ENUM / ALTER TYPE ... ADD VALUE. `DO $$ ... $$` blocks (drizzle-kit wraps enum and foreign
 // key statements in them) are opened and replayed too; functions, policies and grants are skipped.
 // Tables outside the public schema are left out of the model.
-import { findMatching, parseCheckEnums, skipNonCode, splitTopLevel, stringLiterals } from "./text.js";
+import { findMatching, parseCheckEnums, readableDefault, skipNonCode, splitTopLevel, stringLiterals } from "./text.js";
 import type { RawColumn, RawSchema, RawTable } from "./types.js";
 
 const IDENT = String.raw`(?:"[^"]+"|[A-Za-z_][\w$]*)`;
@@ -168,6 +168,13 @@ function applyAlterAction(action: string, table: RawTable, state: State): void {
       delete col.enum;
     }
     state.checks.delete(key);
+  } else if ((m = new RegExp(String.raw`^alter\s+(?:column\s+)?(${IDENT})\s+(set\s+default\s+([\s\S]+)|drop\s+default)$`, "i").exec(action))) {
+    const col = table.columns.find((c) => c.name === unquote(m![1]));
+    if (col) {
+      const value = m[3] !== undefined ? readableDefault(m[3]) : undefined;
+      if (value !== undefined) col.default = value;
+      else delete col.default;
+    }
   } else if ((m = new RegExp(String.raw`^rename\s+(?:column\s+)?(${IDENT})\s+to\s+(${IDENT})`, "i").exec(action))) {
     renameColumn(table, unquote(m[1]), unquote(m[2]), state);
   } else if ((m = new RegExp(String.raw`^alter\s+(?:column\s+)?(${IDENT})\s+(?:set\s+data\s+)?type\s+([\s\S]+?)(?:\s+using\s[\s\S]*)?$`, "i").exec(action))) {
@@ -204,6 +211,16 @@ function addColumn(raw: string, table: RawTable, state: State): void {
   }
   const col: RawColumn = { name, type: normalizeType(typeWords.join(" ")) || "unknown" };
   if (/\bprimary\s+key\b/i.test(rest)) col.primaryKey = true;
+  const at = words.findIndex((w) => /^default$/i.test(w));
+  if (at >= 0) {
+    const expr: string[] = [];
+    for (const w of words.slice(at + 1)) {
+      if (COLUMN_STOP.test(w)) break;
+      expr.push(w);
+    }
+    const value = readableDefault(expr.join(" "));
+    if (value !== undefined) col.default = value;
+  }
   const ref = new RegExp(String.raw`\breferences\s+${QNAME}\s*(?:\(\s*(${IDENT})\s*\))?`, "i").exec(rest);
   if (ref) col.ref = { table: refName(ref[1]), column: ref[2] ? unquote(ref[2]) : "id" };
   const existing = table.columns.findIndex((c) => c.name === name);

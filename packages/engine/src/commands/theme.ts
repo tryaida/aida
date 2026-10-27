@@ -148,7 +148,7 @@ async function themeFromApp(config: ResolvedConfig, configFile: string, options:
     pages,
     signIn: config.signIn as never,
     persona,
-    storageStatePath: join(config.buildDir, ".aida-session", `storageState-${storageStateKey(config.app.baseUrl, persona)}.json`),
+    storageStatePath: join(config.buildDir, ".aida-session", `storageState-${storageStateKey(config.app.baseUrl, persona, config)}.json`),
     isSignInPath,
     assetsDir: brandDir,
     viewport: config.viewport,

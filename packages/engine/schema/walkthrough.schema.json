@@ -703,9 +703,6 @@
                   "signed_in_as": {
                     "type": "string",
                     "minLength": 1
-                  },
-                  "persona": {
-                    "$ref": "#/definitions/Walkthrough/properties/start/properties/persona"
                   }
                 },
                 "required": [
@@ -738,8 +735,7 @@
               "title",
               "when",
               "start",
-              "steps",
-              "joins"
+              "steps"
             ],
             "additionalProperties": false
           }

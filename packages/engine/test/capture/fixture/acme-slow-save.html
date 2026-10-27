@@ -1,0 +1,15 @@
+<!doctype html>
+<html><head><title>Slow save</title></head>
+<body><main><h1>Acme settings</h1>
+<button type="button" id="save">Save</button>
+<p id="sent" hidden>Saving…</p>
+</main>
+<script>
+  // The save is slow to answer and the screen doesn't wait for it: only the request finishing
+  // proves it was stored.
+  document.getElementById("save").addEventListener("click", () => {
+    document.getElementById("sent").hidden = false;
+    fetch("/api/slow-save", { method: "POST", body: "x" });
+  });
+</script>
+</body></html>

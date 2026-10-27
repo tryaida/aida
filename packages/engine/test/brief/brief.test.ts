@@ -20,6 +20,7 @@ import {
   findSection,
   formatBriefSources,
   parseBrief,
+  scoreDoc,
   sectionText,
 } from "../../src/brief/index.js";
 import { runIndexStage } from "../../src/build/index-stage.js";
@@ -242,6 +243,50 @@ describe("findBriefSources", () => {
     const text = formatBriefSources(result);
     expect(text).not.toContain("must never be listed");
     expect(text.split("\n").length).toBeLessThan(60);
+  });
+});
+
+describe("M36: brief sources rank product docs above ops notes", () => {
+  it("puts guides, help, FAQs and marketing copy above migrations, runbooks and fix summaries", () => {
+    const repo = mkdtempSync(path.join(os.tmpdir(), "aida-brief-rank-"));
+    try {
+      const files: Record<string, string> = {
+        "README.md": "# Acme Events\n",
+        "PERMISSIONS_IMPLEMENTATION.md": "# Roles: implementation\n",
+        "WEBSITE_CONTENT.md": "# Acme Events website copy\n",
+        "TODO.md": "# Todo\n",
+        "docs/production-migration-runbook.md": "# Production migration\n",
+        "docs/deploy-checklist.md": "# Deploy\n",
+        "docs/SECURITY_REVIEW.md": "# Security\n",
+        "docs/BUGFIX_SUMMARY.md": "# Fixes\n",
+        "docs/TIMEZONE_IMPLEMENTATION_COMPLETE.md": "# Timezones done\n",
+        "docs/ops/restore.md": "# Restore\n",
+        "docs/faq.md": "# FAQ\n",
+        "docs/tutorials/first-booking/README.md": "# Take your first booking\n",
+        "docs/marketing/one-pager.md": "# Acme Events in one page\n",
+        "docs/seating-plans.md": "# Seating plans\n",
+      };
+      for (const [rel, text] of Object.entries(files)) {
+        mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true });
+        writeFileSync(path.join(repo, rel), text);
+      }
+      const order = findBriefSources(repo).sources.map((s) => s.path);
+      const product = ["WEBSITE_CONTENT.md", "docs/faq.md", "docs/tutorials/first-booking/README.md", "docs/marketing/one-pager.md", "docs/seating-plans.md"];
+      const ops = ["PERMISSIONS_IMPLEMENTATION.md", "TODO.md", "docs/production-migration-runbook.md", "docs/deploy-checklist.md", "docs/SECURITY_REVIEW.md", "docs/BUGFIX_SUMMARY.md", "docs/TIMEZONE_IMPLEMENTATION_COMPLETE.md", "docs/ops/restore.md"];
+      const lastProduct = Math.max(...product.map((p) => order.indexOf(p)));
+      for (const p of product) expect(order).toContain(p);
+      for (const o of ops) if (order.includes(o)) expect(order.indexOf(o)).toBeGreaterThan(lastProduct);
+      // "production" is not "product": the migration runbook gets no product bonus.
+      expect(scoreDoc("docs/production-migration-runbook.md", 60)).toBeLessThan(scoreDoc("docs/seating-plans.md", 60));
+      // Net of helpful and ops words (M36 review): a user guide naming an ops topic ranks between
+      // plain product docs and pure ops notes, not with the ops notes.
+      const guide = scoreDoc("docs/guides/security-settings-guide.md", 60);
+      expect(guide).toBeLessThan(scoreDoc("docs/guides/seating-guide.md", 60));
+      expect(guide).toBeGreaterThan(scoreDoc("docs/SECURITY_REVIEW.md", 60));
+      expect(guide).toBeGreaterThan(scoreDoc("docs/ops/restore.md", 60));
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
   });
 });
 

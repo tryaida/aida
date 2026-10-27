@@ -7,7 +7,7 @@ import type { ResolvedConfig } from "../config/index.js";
 import { loadWalkthroughFile } from "../walkthrough/index.js";
 import type { Walkthrough } from "../walkthrough/index.js";
 import * as captureModule from "../capture/index.js";
-import { capturePaths, diffPaths, readPathCaptures, markPathsNotCaptured, prunePathDirs, recordPathDiffs, runCapture, runLevelFailure, withFrameStabilization } from "../capture/index.js";
+import { capturePaths, comparePathRuns, readPathCaptures, markPathsNotCaptured, prunePathDirs, recordPathDiffs, runCapture, runLevelFailure, withFrameStabilization } from "../capture/index.js";
 import { markNotCaptured, notCapturedReason } from "../capture/not-captured.js";
 import { assertLocalDatabase } from "../capture/write-guard.js";
 import { AppDatabaseRefusedError, runCaptureSafetyChecks } from "../safety/index.js";
@@ -259,8 +259,8 @@ async function runCaptureStage(
     let pathNote = "";
     let pathManifests: CaptureManifest[] = [];
     if (pathRun) {
-      const pathDiffs = result.validation.ok ? diffPaths(result.manifest, pathRun.manifests) : [];
-      recordPathDiffs(state.captureDir, pathDiffs);
+      const { pathDiffs, pathChecks } = comparePathRuns(result, pathRun);
+      recordPathDiffs(state.captureDir, pathDiffs, pathChecks);
       pathManifests = Object.values(pathRun.manifests);
       const ran = pathRun.paths.filter((p) => p.skipped === undefined);
       const failedPaths = ran.filter((p) => !p.ok).map((p) => p.path);
@@ -355,7 +355,7 @@ function stripImpact(manifest: CaptureManifest): CaptureManifest {
 
 /** Bumped when what `buildPage()` writes changes shape, so pages cached by an older engine
  * rebuild (M32: print figures in `BuildPageResult.printFigures`, no recap "Good to know"). */
-export const PAGES_LAYOUT_VERSION = "m35-path-clips";
+export const PAGES_LAYOUT_VERSION = "m36-print-figures";
 
 /** Stable summary of a capture's validation result — ok + per-step ok only, so volatile fields
  * (`ranAt`, per-step `ms`, error text) never affect the hash, but a pass->fail (or fail->pass)

@@ -1,4 +1,5 @@
-import { createHash } from "node:crypto";
+import { sessionKey } from "../capture/session-key.js";
+import type { ResolvedConfig } from "../config/types.js";
 import { join } from "node:path";
 import { existsSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { loadConfig } from "../config/index.js";
@@ -6,7 +7,7 @@ import type { Walkthrough } from "../walkthrough/index.js";
 import {
   capturePaths,
   countFrames,
-  diffPaths,
+  comparePathRuns,
   pathsPassed,
   formatFailureLines,
   markPathsNotCaptured,
@@ -54,10 +55,8 @@ function findWalkthroughs(dir: string, ids: string[]): string[] {
  * walkthroughs that sign in as different hosts/people never share (or
  * clobber) one another's storage state.
  */
-function storageStateKey(baseUrl: string, walkthrough: Walkthrough): string {
-  const persona = walkthrough.start?.persona ?? null; // normalised at load: always an object
-  const hash = createHash("sha256").update(JSON.stringify({ baseUrl, persona })).digest("hex").slice(0, 16);
-  return hash;
+function storageStateKey(baseUrl: string, walkthrough: Walkthrough, config: Pick<ResolvedConfig, "signIn" | "signInHash">): string {
+  return sessionKey(baseUrl, walkthrough.start?.persona, config); // persona normalised at load: always an object
 }
 
 /** Runs `aida capture`, writing `.build/<id>/capture/{manifest,run,validation}.json` per walkthrough. */
@@ -109,7 +108,7 @@ export async function runCaptureCommand(opts: RunCaptureOptions): Promise<number
     const storageStatePath = join(
       config.buildDir,
       ".aida-session",
-      `storageState-${storageStateKey(baseUrl, walkthrough)}.json`,
+      `storageState-${storageStateKey(baseUrl, walkthrough, config)}.json`,
     );
 
     const started = Date.now();
@@ -168,9 +167,10 @@ export async function runCaptureCommand(opts: RunCaptureOptions): Promise<number
       run.tracker.record(item.id, result.validation.ok, { category: result.failure?.category });
 
       const paths: PathCaptureSummary[] | undefined = pathRun?.paths;
-      const pathDiffs: PathDiff[] = pathRun && result.validation.ok ? diffPaths(result.manifest, pathRun.manifests) : [];
+      const compared = pathRun ? comparePathRuns(result, pathRun) : { pathDiffs: [], pathChecks: [] };
+      const pathDiffs: PathDiff[] = compared.pathDiffs;
       const pathManifests: CaptureManifest[] = Object.values(pathRun?.manifests ?? {});
-      if (pathRun) recordPathDiffs(outDir, pathDiffs);
+      if (pathRun) recordPathDiffs(outDir, pathDiffs, compared.pathChecks);
 
       // Outline drift (M29): quiet without an outline file; never fails the capture.
       const outlineLine = recordCaptureDrift({ config, walkthrough, manifest: result.manifest, validation: result.validation, pathManifests });

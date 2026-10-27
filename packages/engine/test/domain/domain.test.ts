@@ -7,6 +7,7 @@ import { runDomain } from "../../src/commands/domain.js";
 import { buildDomain, findEntity, formatDomain, formatEntity, plainDomainList, type DomainEntity, type DomainModel } from "../../src/domain/index.js";
 import { parseSqlMigrations, splitStatements } from "../../src/domain/sql.js";
 import { parseDrizzle } from "../../src/domain/drizzle.js";
+import { parsePrisma } from "../../src/domain/prisma.js";
 import { buildModel } from "../../src/domain/model.js";
 import { entityLabel, parseCheckEnums, plural, singular } from "../../src/domain/text.js";
 
@@ -155,8 +156,8 @@ describe("formatting", () => {
     const text = formatDomain(m);
     const lines = text.split("\n");
     expect(lines[0]).toBe("domain from drizzle (src/db/schema.ts): 4 entities, 4 enums, 4 links");
-    expect(lines[2]).toMatch(/^Booking \(bookings\): seats, status: held\|confirmed\|cancelled, notes — belongs to Event, Attendee; has many Payments$/);
-    expect(text).toContain("Payment (payments): amount, method: card|cash|bank transfer, status: pending|completed|refunded, paid_at — belongs to Booking");
+    expect(lines[2]).toMatch(/^Booking \(bookings\): seats, status: held\|confirmed\|cancelled \(default held\), notes — belongs to Event, Attendee; has many Payments$/);
+    expect(text).toContain("Payment (payments): amount, method: card|cash|bank transfer, status: pending|completed|refunded (default pending), paid_at — belongs to Booking");
     // Bookkeeping and foreign-key columns are left out of the summary.
     expect(text).not.toMatch(/created_at|event_id/);
   });
@@ -164,7 +165,8 @@ describe("formatting", () => {
   it("shows one entity in full", () => {
     const text = formatEntity(m, findEntity(m, "Payment")!);
     expect(text).toContain("booking_id uuid -> bookings.id");
-    expect(text).toContain("status payment_status : pending | completed | refunded");
+    expect(text).toContain("status payment_status : pending | completed | refunded (default pending)");
+    expect(text).toContain("created_at timestamp (default now())");
   });
 
   it("finds an entity by table name, label or plural", () => {
@@ -175,7 +177,7 @@ describe("formatting", () => {
 
   it("writes plain-words bullets for the brief", () => {
     const text = plainDomainList(m);
-    expect(text).toContain("- **Booking**: belongs to an Event and an Attendee; has many Payments. Details: seats, notes. Status: held, confirmed or cancelled.");
+    expect(text).toContain("- **Booking**: belongs to an Event and an Attendee; has many Payments. Details: seats, notes. Status: held, confirmed or cancelled (new ones start as held).");
   });
 });
 
@@ -295,5 +297,71 @@ describe("review fixes: the brief's pre-fill", () => {
     const text = plainDomainList(m);
     expect(text).not.toContain("Also stored");
     expect(text).not.toContain("Api token");
+  });
+});
+
+describe("M36: column defaults", () => {
+  it("reads Drizzle .default(), .defaultNow() and sql`...` defaults", () => {
+    const raw = parseDrizzle([
+      {
+        path: "schema.ts",
+        text: [
+          'export const statusEnum = pgEnum("payment_status", ["pending", "completed"]);',
+          'export const payments = pgTable("payments", {',
+          "  id: uuid().primaryKey().defaultRandom(),",
+          '  status: statusEnum("status").notNull().default("pending"),',
+          "  amount: integer().default(0),",
+          '  method: text("method", { enum: ["cash", "card"] }).default("cash" as const),',
+          "  paidAt: timestamp().defaultNow(),",
+          "  note: text().default(sql`'none'`),",
+          "});",
+        ].join("\n"),
+      },
+    ]);
+    const cols = Object.fromEntries(raw.tables[0].columns.map((c) => [c.name, c.default]));
+    expect(cols).toMatchObject({ status: "pending", amount: "0", method: "cash", paidAt: "now()", note: "none" });
+    expect(cols.id).toBeUndefined();
+  });
+
+  it("reads Prisma @default and SQL DEFAULT / ALTER COLUMN SET DEFAULT", () => {
+    const m = buildModel(
+      parseSqlMigrations([
+        {
+          path: "0.sql",
+          text: [
+            "create type payment_status as enum ('pending', 'completed');",
+            "create table payments (id uuid primary key default gen_random_uuid(), status payment_status not null default 'pending'::payment_status, amount integer default 0, created_at timestamptz default CURRENT_TIMESTAMP, note text default null);",
+            "alter table payments alter column amount set default 5;",
+            "alter table payments alter column created_at drop default;",
+          ].join("\n"),
+        },
+      ]),
+      { kind: "sql", files: ["0.sql"] },
+    );
+    const payments = entity(m, "payments");
+    expect(col(payments, "status")?.default).toBe("pending");
+    expect(col(payments, "amount")?.default).toBe("5");
+    expect(col(payments, "created_at")?.default).toBeUndefined();
+    expect(col(payments, "note")?.default).toBeUndefined();
+    expect(col(payments, "id")?.default).toBe("gen_random_uuid()");
+    expect(formatDomain(m)).toContain("status: pending|completed (default pending)");
+    expect(formatEntity(m, payments)).toMatch(/amount integer \(default 5\)/);
+
+    const prisma = parsePrisma(
+      'enum Status {\n  PENDING\n  DONE\n}\nmodel Order {\n  id Int @id @default(autoincrement())\n  status Status @default(PENDING)\n  label String @default("draft")\n  at DateTime @default(now())\n}\n',
+    );
+    const order = Object.fromEntries(prisma.tables[0].columns.map((c) => [c.name, c.default]));
+    expect(order).toMatchObject({ status: "PENDING", label: "draft", at: "now()", id: "autoincrement()" });
+  });
+
+  it("says the state a record starts in, in the brief's plain words", () => {
+    const raw = parseSqlMigrations([
+      {
+        path: "0.sql",
+        text: "create table events (id uuid primary key); create table bookings (id uuid primary key, event_id uuid references events(id), status text default 'held' check (status in ('held', 'confirmed')))",
+      },
+    ]);
+    const text = plainDomainList(buildModel(raw, { kind: "sql", files: ["0.sql"] }));
+    expect(text).toContain("Status: held or confirmed (new ones start as held).");
   });
 });

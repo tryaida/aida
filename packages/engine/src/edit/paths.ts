@@ -1,7 +1,8 @@
 // Walkthrough path edit actions (decision 34): addPath, removePath, setPathField,
 // setPathStepField, setPathStepActions. The same shape as the step actions in steps.ts: read the
 // YAML document, check locks for an agent edit, change one node, validate the whole walkthrough
-// (joins must name a main step, path ids unique, one persona), write, and record history with a
+// (joins must name a main step or be left out with a final check, path ids unique, one persona),
+// write, and record history with a
 // registered revert so `aida undo` works.
 //
 // Lock keys, broader to narrower:
@@ -106,8 +107,8 @@ export function resolveStepRef(doc: YAML.Document.Parsed, wtId: string, ref: str
 
 const PathInputSchema = z.object({ id: z.string() }).passthrough();
 
-/** Adds a path (an object with at least `id`, `title`, `when`, `start.page`, `steps` and
- * `joins`), at the end of `paths:` or at `index`. The whole walkthrough is validated first. */
+/** Adds a path (an object with at least `id`, `title`, `when`, `start.page` and `steps`, plus
+ * `joins` unless its last step ends in a check), at the end of `paths:` or at `index`. The whole walkthrough is validated first. */
 export function addPath(walkthroughFile: string, path: unknown, opts: EditOptions & { index?: number } = {}): EditResult {
   const helpRoot = findHelpRoot(walkthroughFile);
   const doc = readYamlDocument(walkthroughFile);
@@ -175,7 +176,8 @@ registerRevert("removePath", (entry) => {
 });
 
 /** Sets one field of a path: `title`, `when`, `note`, `joins` (a main step id) or `page` (its
- * `start.page`). An empty `note` removes it. */
+ * `start.page`). An empty `note` removes it; an empty `joins` too, making the path run to its own
+ * end (decision 37: validation then needs its last step to end in a check). */
 export function setPathField(walkthroughFile: string, pathId: string, field: PathField, value: string, opts: EditOptions = {}): EditResult {
   if (!PATH_FIELDS.includes(field)) throw new Error(`setPathField: unknown field "${field}" (expected one of: ${PATH_FIELDS.join(", ")})`);
   const helpRoot = findHelpRoot(walkthroughFile);
@@ -186,13 +188,14 @@ export function setPathField(walkthroughFile: string, pathId: string, field: Pat
 
   const yamlPath = field === "page" ? ["paths", index, "start", "page"] : ["paths", index, field];
   const before = doc.getIn(yamlPath) as string | undefined;
-  if (field === "note" && value === "") doc.deleteIn(yamlPath);
+  const removes = (field === "note" || field === "joins") && value === "";
+  if (removes) doc.deleteIn(yamlPath);
   else doc.setIn(yamlPath, value);
   validateDocOrThrow(doc, walkthroughFile);
   writeYamlDocument(walkthroughFile, doc);
 
   const target = `${wtId}#paths.${pathId}.${field}`;
-  const after = field === "note" && value === "" ? undefined : value;
+  const after = removes ? undefined : value;
   record(helpRoot, walkthroughFile, opts, "setPathField", target, before, after);
   return { target, before, after };
 }

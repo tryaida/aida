@@ -66,6 +66,9 @@ export interface PathCandidate {
   slot?: string;
   /** An intercepting route: the URL it opens as over `route`. */
   intercepts?: string;
+  /** The page edits a record that already exists (an `/edit` route or an edit/update form): it
+   * calls the same save but is rarely another way to create one, so it's listed last. */
+  edits?: true;
 }
 
 export interface CoveredRoute {
@@ -314,6 +317,50 @@ function coveredUrls(walkthrough: Walkthrough, manifest: CaptureManifest, captur
   return out;
 }
 
+/** How specific one route segment is: static beats `[id]`, which beats `[...rest]`, which beats
+ * `[[...rest]]`. */
+function segmentRank(segment: string): number {
+  if (segment.startsWith("[[...")) return 0;
+  if (segment.startsWith("[...")) return 1;
+  if (segment.startsWith("[")) return 2;
+  return 3;
+}
+
+/** Positive when route `a` is more specific than `b` (both matching the same URL): compared
+ * segment by segment from the left, as Next.js picks a route (`/payments/new` over
+ * `/payments/[id]`). */
+export function compareRouteSpecificity(a: string, b: string): number {
+  const as = a.split("/").filter(Boolean);
+  const bs = b.split("/").filter(Boolean);
+  for (let i = 0; i < Math.max(as.length, bs.length); i++) {
+    const ra = i < as.length ? segmentRank(as[i]!) : -1;
+    const rb = i < bs.length ? segmentRank(bs[i]!) : -1;
+    if (ra !== rb) return ra - rb;
+  }
+  return 0;
+}
+
+/** The route pattern a URL opens, among `routes`: the most specific one that matches, or
+ * undefined. A dynamic `/payments/[id]` never claims `/payments/new` when that's a page. */
+export function bestRouteFor(url: string, routes: { pattern: string; regex: RegExp }[]): string | undefined {
+  let best: string | undefined;
+  for (const r of routes) {
+    if (!r.regex.test(url)) continue;
+    if (best === undefined || compareRouteSpecificity(r.pattern, best) > 0) best = r.pattern;
+  }
+  return best;
+}
+
+/** True for a page that edits an existing record: an `edit` segment in its route or page path,
+ * or a call site in an edit/update form (`edit-payment-form.tsx`, `UpdatePayment.tsx`). */
+export function editsExistingRecord(screen: Pick<Screen, "route" | "file">, via: string): boolean {
+  if (screen.route.split("/").some((s) => /^edit$/i.test(s))) return true;
+  if (screen.file.split("/").some((s) => /^edit$/i.test(s))) return true;
+  const siteFile = via.split(/[\s:(]/)[0] ?? "";
+  const base = siteFile.split("/").pop() ?? "";
+  return /(^|[-_.])(edit|update)([-_.]|$)/i.test(base) || /^(Edit|Update)[A-Z]/.test(base);
+}
+
 interface Found {
   screen: Screen;
   via: string;
@@ -414,6 +461,10 @@ export function discoverPaths(opts: DiscoverPathsOptions): DiscoverPathsResult {
   }
 
   const covered = coveredUrls(opts.walkthrough, manifest, opts.captureDir);
+  const knownRoutes = [...new Set([...digest.routes.map((r) => r.path), ...screens.map((s) => s.intercepts ?? s.route)])].map((pattern) => ({
+    pattern,
+    regex: routeToRegex(pattern),
+  }));
   const candidates: PathCandidate[] = [];
   const coveredRoutes: CoveredRoute[] = [];
   const listed = new Set<string>();
@@ -426,8 +477,10 @@ export function discoverPaths(opts: DiscoverPathsOptions): DiscoverPathsResult {
       listed.add(screenKey);
       // The browser's URL on an intercepted screen is the URL it intercepts, not the page under it:
       // covered only when a capture opened that URL.
-      const regex = routeToRegex(screen.intercepts ?? screen.route);
-      const hit = covered.find((c) => regex.test(c.url));
+      // Covered only when a visited URL opens this exact route: the most specific route matching
+      // it, so a visit to `/payments/new` doesn't cover an unvisited `/payments/[id]`.
+      const pattern = screen.intercepts ?? screen.route;
+      const hit = covered.find((c) => bestRouteFor(c.url, knownRoutes) === pattern);
       if (hit) coveredRoutes.push({ route: screen.route, by: hit.by });
       else
         candidates.push({
@@ -438,9 +491,12 @@ export function discoverPaths(opts: DiscoverPathsOptions): DiscoverPathsResult {
           ...(layout ? { layout } : {}),
           ...(screen.slot ? { slot: screen.slot } : {}),
           ...(screen.intercepts ? { intercepts: screen.intercepts } : {}),
+          ...(editsExistingRecord(screen, via) ? { edits: true as const } : {}),
         });
     }
   }
+  // Edit pages call the same save but rarely start the task: listed after every other candidate.
+  candidates.sort((a, b) => Number(a.edits ?? false) - Number(b.edits ?? false));
   const limit = opts.limit ?? 20;
   if (candidates.length > limit) notes.push(`${candidates.length - limit} more candidate page(s) not listed (raise --limit)`);
   if (writes.length === 0) notes.push("the main path's capture made no saves, so there's no action to look for other ways to");
@@ -468,7 +524,7 @@ export function formatDiscoverPaths(result: DiscoverPathsResult): string {
   }
   if (result.writes.length === 0) lines.push("  (none)");
   lines.push(result.candidates.length > 0 ? "candidates (not covered by the walkthrough or its paths):" : "candidates: none");
-  for (const c of result.candidates) lines.push(`  ${c.route}  ${c.file}  via ${c.via}  (${c.write})`);
+  for (const c of result.candidates) lines.push(`  ${c.route}  ${c.file}  via ${c.via}  (${c.write})${c.edits ? "  edits an existing record" : ""}`);
   if (result.covered.length > 0) lines.push(`covered: ${result.covered.map((c) => `${c.route} (${c.by})`).join(", ")}`);
   for (const n of result.notes) lines.push(`note: ${n}`);
   return lines.join("\n");

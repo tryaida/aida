@@ -140,9 +140,10 @@ export interface PathStart {
 }
 
 /**
- * Another way to do the same task (decision 34): e.g. recording a payment from the attendee's page
- * instead of the booking. Its own start and opening `steps`, then the walkthrough's main steps from
- * the one named by `joins` to the end. Captured on its own from the same starting data.
+ * Another way to do the same task (decisions 34, 37): e.g. recording a payment from the attendee's
+ * page instead of the booking. Its own start and opening `steps`, then the walkthrough's main steps
+ * from the one named by `joins` to the end — or, with no `joins`, only its own steps, the last one
+ * ending in a check. Captured on its own from the same starting data.
  */
 export interface WalkthroughPath {
   /** kebab-case, unique in the walkthrough, e.g. "from-attendee". */
@@ -152,10 +153,11 @@ export interface WalkthroughPath {
   /** One plain sentence: when to use this way. */
   when: string;
   start: PathStart;
-  /** The opening steps, before the path joins the main steps. Same step schema. */
+  /** The path's own steps: its opening steps before it joins, or every step when it doesn't. */
   steps: Step[];
-  /** Id of the main step where this path joins the shared rest. */
-  joins: string;
+  /** Id of the main step where this path joins the shared rest; absent for a path that runs to
+   * its own end (see `pathRunsAlone`). */
+  joins?: string;
   /** Written by the writer when capture flags that this path saves differently (pathDiffs). */
   note?: string;
 }
@@ -190,6 +192,7 @@ export interface Walkthrough {
   outro?: TitleCard;
   steps: Step[];
   validate?: Validate;
-  /** Other ways to do this task, each sharing the main steps from its `joins` step on. */
+  /** Other ways to do this task, each sharing the main steps from its `joins` step on, or
+   * running to its own end. */
   paths?: WalkthroughPath[];
 }

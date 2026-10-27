@@ -187,7 +187,7 @@ describe("pages: other ways to do this", { timeout: 60_000 }, () => {
     expect(input.pathFigures?.["from-attendee"]).toHaveLength(1);
     const html = buildPageHtml(input);
     expect(html).toContain('<h2 class="other-ways-h">Other ways to do this</h2>');
-    expect(html).toMatch(/<section class="path"><h3>From the attendee(&#39;|')s page<\/h3><p class="path-when">/);
+    expect(html).toMatch(/<section class="path"><div class="path-start"><h3>From the attendee(&#39;|')s page<\/h3><p class="path-when">/);
     expect(html).toContain('<p class="path-join">Then continue from');
     // The path's figure (its own print file), never the main step 1 figure.
     const pathSection = html.slice(html.indexOf('<section class="path">'));
@@ -207,7 +207,58 @@ describe("pages: other ways to do this", { timeout: 60_000 }, () => {
   });
 });
 
+describe("pages: a path that runs to its own end (decision 37)", { timeout: 60_000 }, () => {
+  function alone(): Walkthrough {
+    const wf = walkthrough();
+    wf.paths = [
+      {
+        id: "from-list",
+        title: "From the Entries list",
+        when: "Use this when you're already on Entries.",
+        start: { page: "/entries" },
+        steps: [
+          { id: "list-open", title: "Open Record payment", page_text: "Select **Record payment** on the row.", actions: [] },
+          { id: "list-save", title: "Record it", page_text: "Select **Record**.", actions: [{ do: "expect", target: { text: "Payment recorded" } }] },
+        ],
+      },
+    ];
+    return wf;
+  }
+  function aloneCapture(): string {
+    const captureDir = tmpDir("aida-paths-capture-");
+    writeRun(captureDir, [step("open", "m1.png", "/bookings/12"), step("save", "m2.png", "/payments/new")]);
+    writeRun(join(captureDir, "paths", "from-list"), [step("list-open", "p1.png", "/entries"), step("list-save", "p2.png", "/entries")]);
+    return captureDir;
+  }
+
+  it("shows every one of its steps and no 'continue from step N'", async () => {
+    const result = await buildPage(alone(), aloneCapture(), tmpDir("aida-paths-out-"));
+    expect(result.publishable).toBe(true);
+    const text = readFileSync(result.plainFile, "utf8");
+    const section = text.slice(text.indexOf("## Other ways to do this"));
+    expect(section).toContain("#### 1. Open Record payment");
+    expect(section).toContain("#### 2. Record it");
+    expect(section).toContain("screenshots/paths/from-list-step-02.png");
+    expect(section).not.toMatch(/continue from/i);
+    // The PDF: both steps, no join line, the heading kept with its first step.
+    const html = buildPageHtml(pdfInputFromPage(alone(), result));
+    const pathHtml = html.slice(html.indexOf('<section class="path">'));
+    expect(pathHtml).not.toContain("path-join");
+    expect(pathHtml).toMatch(/<div class="path-start"><h3>From the Entries list<\/h3><p class="path-when">[\s\S]*?<div class="step [^"]*"><div class="step-text"><h4 class="step-h"><span class="step-num">1<\/span>[\s\S]*?<\/div><\/div>\n<div class="step/);
+  });
+});
+
 describe("pdf html: other ways section", () => {
+  it("keeps a path's heading on the page with its first step, never orphaned at a page bottom", () => {
+    const html = otherWaysHtml(
+      '<h2>Other ways to do this</h2><h3>P</h3><p>when</p><h4>1. B</h4><p>b</p><h4>2. C</h4><p>c</p><p>Then continue from <a href="#1-a">step 1 (A)</a>.</p>',
+      {},
+    );
+    expect(html).toMatch(/<section class="path"><div class="path-start"><h3>P<\/h3><p class="path-when">when<\/p><div class="step [^"]*"><div class="step-text"><h4 class="step-h"><span class="step-num">1<\/span><span>B<\/span><\/h4><p>b<\/p><\/div><\/div><\/div>\n<div class="step/);
+    expect(html).toContain('<p class="path-join">Then continue from');
+    expect(buildPageHtml).toBeTypeOf("function");
+  });
+
   it("splits the section from the main steps and the verified line", () => {
     const body = "<h2>Steps</h2><h4>1. A</h4><p>a</p><h2>Other ways to do this</h2><h3>P</h3><p>when</p><h4>1. B</h4><p>b</p><p>Then continue from <a href=\"#1-a\">step 1 (A)</a>.</p><hr /><p><em>Steps verified</em></p>";
     const parts = splitOtherWays(body);

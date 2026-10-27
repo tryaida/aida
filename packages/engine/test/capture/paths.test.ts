@@ -31,13 +31,15 @@ describe("path write keys", () => {
     });
     expect(comparePathWrites("same", main, ["POST /api/payments"])).toBeUndefined();
     expect(comparePathWrites("from-attendee", main, ["POST /api/payments/allocate"])?.message).toBe(
-      "path from-attendee saves differently: POST /api/payments/allocate vs POST /api/payments",
+      "path from-attendee saves POST /api/payments/allocate once; main path saves POST /api/payments once",
     );
-    expect(comparePathWrites("quiet", main, [])?.message).toBe("path quiet saves differently: no save vs POST /api/payments");
-    // Counted per key: saving the same thing twice is a difference.
-    expect(comparePathWrites("twice", main, ["POST /api/payments", "POST /api/payments"])?.message).toBe(
-      "path twice saves differently: POST /api/payments ×2 vs POST /api/payments",
-    );
+    expect(comparePathWrites("quiet", main, [])?.message).toBe("path quiet saves nothing; main path saves POST /api/payments once");
+    // Counted per key: saving the same thing twice is a difference, said in words (M36).
+    const twice = comparePathWrites("twice", main, ["POST /api/payments", "POST /api/payments"]);
+    expect(twice?.message).toBe("path twice saves POST /api/payments twice; main path saves POST /api/payments once");
+    expect(twice).toMatchObject({ onlyInPath: ["POST /api/payments ×2"], onlyInMain: ["POST /api/payments"], reasons: ["saves"] });
+    // Order never matters.
+    expect(comparePathWrites("order", ["POST /b", "POST /a", "POST /b"], ["POST /b", "POST /b", "POST /a"])).toBeUndefined();
   });
 });
 
@@ -159,7 +161,7 @@ describe("aida capture: paths", () => {
     const summary = (out.walkthroughs as Record<string, unknown>[])[0];
     expect(summary).toMatchObject({ ok: true, paths: [{ path: "from-attendee", ok: true, steps: { total: 3, passed: 3 } }] });
     expect((summary.pathDiffs as { message: string }[])[0].message).toBe(
-      "path from-attendee saves differently: POST /api/payments/allocate vs POST /api/bookings/:id/payments",
+      "path from-attendee saves POST /api/payments/allocate once; main path saves POST /api/bookings/:id/payments once",
     );
 
     const captureDir = join(dir, ".build", "record-payment", "capture");

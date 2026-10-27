@@ -22,6 +22,9 @@ export interface DomainColumn {
    * enum, or a CHECK constraint listing them). */
   enum?: string;
   primaryKey?: true;
+  /** The value a new row gets when none is given, as a reader would say it: `pending`, `0`,
+   * `now()`. Most useful on a status column: the state every record starts in. */
+  default?: string;
 }
 
 /** One link between entities, seen from either end. `column` is the foreign-key column on the
@@ -61,6 +64,7 @@ export interface RawColumn {
   ref?: { table: string; column: string };
   enum?: string;
   primaryKey?: boolean;
+  default?: string;
 }
 
 export interface RawSchema {

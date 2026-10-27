@@ -114,6 +114,48 @@ describe("doctor checks", () => {
     expect(checkDatabase(await checkAppDatabase({ env: { DATABASE_URL: "postgres://u@localhost/db" } })).status).toBe("ok");
   });
 
+  it("database: a local app.database.url over remote env files suggests ignoreEnv by name, not throwaway (M36)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "aida-doctor-db-"));
+    dirs.push(dir);
+    const remoteUrl = "postgresql://acme_owner:pw@ep-acme-123456.us-east-2.aws.neon.tech/acme";
+    writeFileSync(join(dir, ".env"), `DATABASE_URL=${remoteUrl}\nDATABASE_URL_DIRECT=${remoteUrl}\n`);
+    const check = await checkAppDatabase({
+      config: { app: { dir, database: { url: "postgresql://demo@127.0.0.1:55432/acme_demo" } } },
+      env: {},
+    });
+    const row = checkDatabase(check);
+    expect(row.status).toBe("fail");
+    // The first fix names the exact overridden settings, fingerprinted.
+    expect(row.fix).toMatch(/^Only if the server you capture against is started with app.database.url/);
+    expect(row.fix).toContain('ignoreEnv: [".env:DATABASE_URL#');
+    expect(row.fix).toContain('".env:DATABASE_URL_DIRECT#');
+    // The message doesn't push throwaway for a database that may hold real data.
+    expect(row.detail).not.toMatch(/app\.database\.throwaway/);
+    // Any throwaway suggestion carries the disposable-copy warning.
+    for (const s of check.suggestions.filter((s) => s.includes("throwaway:"))) expect(s).toMatch(/^Only if .* a disposable copy holding no real data/);
+  });
+
+  it("database: a remote app.database.url over remote env files keeps the throwaway sentence, with its warning (M36 review)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "aida-doctor-db-"));
+    dirs.push(dir);
+    writeFileSync(join(dir, ".env"), "DATABASE_URL=postgresql://acme_owner:pw@ep-acme-123456.us-east-2.aws.neon.tech/acme\n");
+    const check = await checkAppDatabase({
+      config: { app: { dir, database: { url: "postgresql://acme_owner:pw@ep-acme-999999.us-east-2.aws.neon.tech/acme_copy" } } },
+      env: {},
+    });
+    // ignoreEnv can't make a remote app.database.url safe: throwaway is the only opt-in for it.
+    expect(check.message).toMatch(/Only if (it is|they are) a disposable copy holding no real data, name (it|them) in aida.config: app.database.throwaway/);
+    expect(check.suggestions.filter((s) => s.includes("throwaway:")).length).toBeGreaterThan(0);
+  });
+
+  it("database: a remote database with no app.database.url only suggests throwaway with the disposable-copy warning", async () => {
+    const check = await checkAppDatabase({ env: { DATABASE_URL: "postgres://u:pw@ep-acme-1.neon.tech/db" } });
+    expect(check.message).toMatch(/Only if it is a disposable copy holding no real data, name it/);
+    const throwaway = check.suggestions.filter((s) => s.includes("throwaway:"));
+    expect(throwaway.length).toBeGreaterThan(0);
+    for (const s of throwaway) expect(s).toMatch(/^Only if this database is a disposable copy holding no real data/);
+  });
+
   it("outbound: warns unless acknowledged", () => {
     expect(checkOutboundSenders(checkOutbound({ env: { RESEND_API_KEY: "x" } })).status).toBe("warn");
     expect(checkOutboundSenders(checkOutbound({ env: { RESEND_API_KEY: "x" }, config: { app: { outbound: "dry-run" } } })).status).toBe("ok");

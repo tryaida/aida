@@ -41,13 +41,20 @@ export function resolveAfterTarget(wt: Walkthrough, ref: string): AfterTarget | 
   }
   if (!run.walkthrough.steps.some((s) => s.id === stepId)) {
     const opening = path.steps.map((s) => s.id).filter(Boolean);
+    const listed = `path steps: ${opening.join(", ") || "none with an id"}`;
+    if (run.alone) {
+      // Runs to its own end (decision 37): no main step is ever part of it.
+      const main = wt.steps.some((s) => s.id === stepId);
+      const why = main ? `"${stepId}" is a main step; path ${pathId} runs its own steps to its own end, so it never runs it` : `no step "${stepId}" in path ${pathId}`;
+      return { error: `${why} (${listed})` };
+    }
     const shared = wt.steps.slice(run.joinIndex).map((s) => s.id).filter(Boolean);
     const before = wt.steps.slice(0, run.joinIndex).some((s) => s.id === stepId);
     const why = before
       ? `"${stepId}" is a main step before the path joins at "${path.joins}", so this path never runs it`
       : `no step "${stepId}" in path ${pathId}`;
     return {
-      error: `${why} (path steps: ${opening.join(", ") || "none with an id"}; then main steps from ${path.joins}: ${shared.join(", ")})`,
+      error: `${why} (${listed}; then main steps from ${path.joins}: ${shared.join(", ")})`,
     };
   }
   return { walkthrough: run.walkthrough, stopAfterStep: stepId, path: pathId };

@@ -3,7 +3,7 @@
 // `foreignKey({...})` and `check(...)` in the extra-config callback, `pgEnum`/`mysqlEnum`/
 // `{ enum: [...] }` values, and `relations(... one(...))` for links with no foreign key. Never
 // imports or runs the schema module.
-import { findMatching, parseCheckEnums, splitTopLevel, stringLiterals, stripComments } from "./text.js";
+import { findMatching, parseCheckEnums, readableDefault, splitTopLevel, stringLiterals, stripComments } from "./text.js";
 import type { RawColumn, RawSchema, RawTable } from "./types.js";
 
 export interface SourceFile {
@@ -170,6 +170,13 @@ function readColumns(body: string, t: ParsedTable, enumVars: Map<string, string>
     }
     if (/\.array\s*\(/.test(rest)) col.type += "[]";
     if (/\.primaryKey\s*\(/.test(rest)) col.primaryKey = true;
+    const dflt = /\.default\s*\(/.exec(rest);
+    if (dflt) {
+      const open = dflt.index + dflt[0].length - 1;
+      const close = findMatching(rest, open, "ts");
+      const value = close > 0 ? readableDefault(rest.slice(open + 1, close)) : undefined;
+      if (value !== undefined) col.default = value;
+    } else if (/\.defaultNow\s*\(/.test(rest)) col.default = "now()";
     const ref = /\.references\s*\(\s*(?:\([^)]*\))?\s*(?::\s*[\w<>]+\s*)?=>\s*(?:\{\s*return\s+)?(\w+)\.(\w+)/.exec(rest);
     if (ref) t.pendingRefs.set(key, [ref[1], ref[2]]);
     t.table.columns.push(col);

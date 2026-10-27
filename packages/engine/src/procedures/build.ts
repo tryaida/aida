@@ -140,7 +140,8 @@ function publishScreenshot(src: string, id: string, name: string, publicDir: str
 /**
  * The walkthrough's other ways in (decision 34), for `get_procedure`: each path whose capture
  * passed, with its start page, its opening steps (screenshots copied from the page's own
- * annotated `screenshots/paths/` files, never raw frames) and the main step it joins. A path that
+ * annotated `screenshots/paths/` files, never raw frames) and the main step it joins (none for a
+ * path that runs to its own end). A path that
  * didn't pass is left out, as a failed main step is.
  */
 function buildProcedurePaths(
@@ -158,8 +159,8 @@ function buildProcedurePaths(
     const capture = captures.get(path.id);
     if (!capture?.manifest || !capture.validation?.ok) continue;
     const run = pathWalkthrough(wf, path);
-    const joinsAt = run.joinIndex + 1;
-    if (!mainSteps.some((s) => s.n === joinsAt)) continue; // the step it joins isn't a verified one
+    const joinsAt = run.alone ? undefined : run.joinIndex + 1;
+    if (joinsAt !== undefined && !mainSteps.some((s) => s.n === joinsAt)) continue; // the step it joins isn't a verified one
     const steps: ProcedureStep[] = path.steps.map((step, i) => {
       const n = i + 1;
       const rel = pathScreenshotFile(path.id, n);
@@ -169,15 +170,14 @@ function buildProcedurePaths(
           : undefined;
       return { n, title: step.title ?? `Step ${n}`, instruction: instructionFor(step), ...(screenshot ? { screenshot } : {}) };
     });
-    const joinStep = wf.steps[run.joinIndex];
+    const joinStep = joinsAt !== undefined ? wf.steps[run.joinIndex] : undefined;
     out.push({
       id: path.id,
       title: path.title,
       when: path.when,
       start: { page: path.start.page },
       steps,
-      joinsAt,
-      joinsTitle: joinStep.title ?? `Step ${joinsAt}`,
+      ...(joinsAt !== undefined ? { joinsAt, joinsTitle: joinStep?.title ?? `Step ${joinsAt}` } : {}),
       ...(flagged.has(path.id) && path.note ? { note: path.note } : {}),
     });
   }

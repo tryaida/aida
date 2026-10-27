@@ -95,7 +95,7 @@ export function createAidaMcpServer(source: AidaMcpSource): McpServer {
     {
       title: "Get procedure",
       description:
-        "Returns one walkthrough's structured, ordered steps an agent can follow (title, instruction, screenshot, video moment). `paths` are other ways to start the same task: each has when to use it, its start page, its own opening steps and `joinsAt`, the main step number to continue from.",
+        "Returns one walkthrough's structured, ordered steps an agent can follow (title, instruction, screenshot, video moment). `paths` are other ways to start the same task: each has when to use it, its start page, its own opening steps and `joinsAt`, the main step number to continue from (absent when that way runs to its own end, its steps being the whole task).",
       inputSchema: { id: z.string().describe("Walkthrough id, e.g. \"add-competitor\"") },
     },
     async ({ id }) => {

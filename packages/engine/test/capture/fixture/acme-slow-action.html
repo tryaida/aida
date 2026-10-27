@@ -1,0 +1,9 @@
+<!doctype html>
+<html><head><title>Slow action</title></head>
+<body><main><h1>Acme</h1><button type="button" id="go">Go</button></main>
+<script>
+  document.getElementById("go").addEventListener("click", () => {
+    fetch(location.pathname, { method: "POST", headers: { "next-action": "slow-read" }, body: "[]" });
+  });
+</script>
+</body></html>

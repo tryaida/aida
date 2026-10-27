@@ -10,10 +10,16 @@
 // aren't run at all: each is marked not captured with the reason, never captured on the main
 // run's leftovers.
 //
-// After the main run, the data each path changed is compared with the main run's: a path whose
-// write requests (method + route pattern, ids ignored; a server action by its id; counted per
-// key) differ is flagged in the main `validation.json` as `pathDiffs`, never assumed to be the
-// same. A difference doesn't fail the capture: the writer explains it in the path's `note`.
+// After the main run, what each path saved is compared with the main run's (decision 37): its
+// saves (method + route pattern, ids ignored; a server action by its id; counted per key; reads —
+// GET, a server action that revalidated nothing, a GraphQL query — left out) and its end checks
+// (the final step's checks and `validate.database`, run after every path). A path that saves
+// differently or leaves different data is flagged in the main `validation.json` as `pathDiffs`,
+// never assumed to be the same; every path's end checks are recorded as `pathChecks`, a failed
+// path's too. A difference doesn't fail the capture, nor does a path's failing database check;
+// a failing step does, the final step's check included (the path is then failed, its end checks
+// still recorded). The writer explains a difference in the path's `note`. A path without `joins`
+// runs its own steps to its own end.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Persona, Walkthrough } from "../walkthrough/index.js";
@@ -25,8 +31,8 @@ import { withFrameStabilization } from "./frame-diff.js";
 import { assertLocalDatabase } from "./write-guard.js";
 import { runLevelFailure } from "./failure-report.js";
 import { markNotCaptured } from "./not-captured.js";
-import { comparePathWrites, countFrames, pathCaptureDir, readPathCaptures, writeKeys } from "./path-files.js";
-import type { CaptureManifest, FailureReport, FrameDiffSummary, ManifestStep, PathDiff, ValidationResult } from "./types.js";
+import { actionIds, comparePathWrites, countFrames, endChecks, pathCaptureDir, readPathCaptures, writeKeys, type EndChecks } from "./path-files.js";
+import type { CaptureManifest, FailureReport, FrameDiffSummary, ManifestStep, PathCheckResult, PathDiff, ValidationResult } from "./types.js";
 
 export interface PathCaptureSummary {
   path: string;
@@ -64,6 +70,10 @@ export interface CapturePathsResult {
   paths: PathCaptureSummary[];
   /** Each passing path's manifest, by path id (the write comparison and outline drift read them). */
   manifests: Record<string, CaptureManifest>;
+  /** Each passing path's end checks, by path id (decision 37). */
+  endChecks: Record<string, EndChecks>;
+  /** End checks of paths whose capture failed (recorded in `pathChecks`, never compared). */
+  failedEndChecks?: Record<string, EndChecks>;
 }
 
 /** Why paths can't run before this walkthrough's main run, or undefined when they can. */
@@ -106,10 +116,12 @@ export async function capturePaths(opts: CapturePathsOptions): Promise<CapturePa
   const blocked = cannotRunPaths(opts);
   if (blocked) {
     for (const path of walkthrough.paths ?? []) opts.log?.(`path ${path.id}: not captured: ${blocked}`);
-    return { paths: markPathsNotCaptured(captureDir, walkthrough, blocked), manifests: {} };
+    return { paths: markPathsNotCaptured(captureDir, walkthrough, blocked), manifests: {}, endChecks: {} };
   }
   const summaries: PathCaptureSummary[] = [];
   const manifests: Record<string, CaptureManifest> = {};
+  const checks: Record<string, EndChecks> = {};
+  const failedChecks: Record<string, EndChecks> = {};
   const settings = resolveCaptureSettings(config.capture);
   const stabilizeOpts = { threshold: settings.frameDiffThreshold, tolerance: settings.frameDiffTolerance };
   const baseUrl = walkthrough.start?.baseUrl ?? config.app.baseUrl;
@@ -119,7 +131,7 @@ export async function capturePaths(opts: CapturePathsOptions): Promise<CapturePa
     const outDir = pathCaptureDir(captureDir, path.id);
     mkdirSync(outDir, { recursive: true });
     const started = Date.now();
-    opts.log?.(`path ${path.id}: from ${path.start.page}, joining at ${path.joins}`);
+    opts.log?.(`path ${path.id}: from ${path.start.page}, ${run.alone ? "running to its own end" : `joining at ${path.joins}`}`);
     try {
       // The same gate as the main run: never reset without proving the database is local.
       const dbUrl = await config.database!.url();
@@ -138,6 +150,11 @@ export async function capturePaths(opts: CapturePathsOptions): Promise<CapturePa
         });
       const { result, frameDiff } =
         opts.stabilize === false ? { result: await capture(), frameDiff: undefined } : await withFrameStabilization(outDir, stabilizeOpts, capture);
+      // A path's end checks are compared with the main run's, not a reason for it to fail: one
+      // that leaves different data is flagged (decision 37), its frames still published.
+      const ends = endChecks(result.validation, run.walkthrough.steps.length);
+      result.validation.ok = pathRunOk(result.validation, run.walkthrough.steps.length);
+      result.validation.endChecks = ends;
       writeFileSync(join(outDir, "manifest.json"), `${JSON.stringify(result.manifest, null, 2)}\n`);
       writeFileSync(join(outDir, "run.json"), `${JSON.stringify(result.run, null, 2)}\n`);
       writeFileSync(join(outDir, "validation.json"), `${JSON.stringify(result.validation, null, 2)}\n`);
@@ -152,22 +169,69 @@ export async function capturePaths(opts: CapturePathsOptions): Promise<CapturePa
         ...(frameDiff ? { frameDiff } : {}),
         ...(result.warnings ? { warnings: result.warnings } : {}),
       });
-      if (result.validation.ok) manifests[path.id] = result.manifest;
+      if (result.validation.ok) {
+        manifests[path.id] = result.manifest;
+        checks[path.id] = ends;
+      } else {
+        failedChecks[path.id] = ends;
+      }
     } catch (err) {
       const failure = runLevelFailure(err);
       markNotCaptured(outDir, { walkthrough: walkthrough.walkthrough, reason: failure.error, failure, baseUrl });
       summaries.push({ path: path.id, ok: false, steps: { total: 0, passed: 0 }, frames: 0, durationMs: Date.now() - started, failure });
     }
   }
-  return { paths: summaries, manifests };
+  return { paths: summaries, manifests, endChecks: checks, ...(Object.keys(failedChecks).length > 0 ? { failedEndChecks: failedChecks } : {}) };
 }
 
-/** After the main run: each passing path whose writes differ from the main run's. */
-export function diffPaths(mainManifest: CaptureManifest, manifests: Record<string, CaptureManifest>): PathDiff[] {
+/** A path run passed: every step ran and passed, and the page and server reported no errors. Its
+ * database checks are left out (they're compared with the main run's instead). */
+function pathRunOk(validation: ValidationResult, totalSteps: number): boolean {
+  return (
+    validation.steps.length === totalSteps &&
+    validation.steps.every((s) => s.ok) &&
+    validation.problems.page.length === 0 &&
+    validation.problems.server.length === 0
+  );
+}
+
+/** After the main run: each passing path whose saves differ from the main run's, or — with
+ * `checks` — whose end checks pass or fail where the main run's don't. */
+export function diffPaths(
+  mainManifest: CaptureManifest,
+  manifests: Record<string, CaptureManifest>,
+  checks?: { main: EndChecks; paths: Record<string, EndChecks> },
+): PathDiff[] {
   const main = writeKeys(mainManifest);
+  const mainActions = actionIds(mainManifest);
   return Object.entries(manifests)
-    .map(([id, m]) => comparePathWrites(id, main, writeKeys(m)))
+    .map(([id, m]) => {
+      const pathChecks = checks?.paths[id];
+      return comparePathWrites(id, main, writeKeys(m), checks && pathChecks ? { main: checks.main, path: pathChecks } : undefined, {
+        main: mainActions,
+        path: actionIds(m),
+      });
+    })
     .filter((d): d is PathDiff => Boolean(d));
+}
+
+/**
+ * Compares every passing path with the main run (decision 37): `pathDiffs` for the flagged ones
+ * (saves differently, leaves different data) and `pathChecks`, every path's end checks. Nothing
+ * when the main run didn't pass.
+ */
+export function comparePathRuns(
+  main: { manifest: CaptureManifest; validation: ValidationResult },
+  pathRun: Pick<CapturePathsResult, "manifests" | "endChecks" | "failedEndChecks">,
+): { pathDiffs: PathDiff[]; pathChecks: PathCheckResult[] } {
+  if (!main.validation.ok) return { pathDiffs: [], pathChecks: [] };
+  const mainChecks = endChecks(main.validation);
+  const pathDiffs = diffPaths(main.manifest, pathRun.manifests, { main: mainChecks, paths: pathRun.endChecks });
+  const pathChecks: PathCheckResult[] = [
+    ...Object.entries(pathRun.endChecks).map(([path, c]) => ({ path, ok: c.ok, failed: c.failed, captured: true })),
+    ...Object.entries(pathRun.failedEndChecks ?? {}).map(([path, c]) => ({ path, ok: c.ok, failed: c.failed, captured: false })),
+  ];
+  return { pathDiffs, pathChecks };
 }
 
 /** True when no path failed (a path not run because no reset was allowed is reported, not failed). */
@@ -175,13 +239,16 @@ export function pathsPassed(paths: PathCaptureSummary[] | undefined): boolean {
   return (paths ?? []).every((p) => p.ok || p.skipped !== undefined);
 }
 
-/** Writes `pathDiffs` into the main run's `validation.json` (removed when there are none). */
-export function recordPathDiffs(captureDir: string, pathDiffs: PathDiff[]): void {
+/** Writes `pathDiffs` (and `pathChecks`) into the main run's `validation.json` (each removed
+ * when there are none). */
+export function recordPathDiffs(captureDir: string, pathDiffs: PathDiff[], pathChecks: PathCheckResult[] = []): void {
   const file = join(captureDir, "validation.json");
   if (!existsSync(file)) return;
   const validation = JSON.parse(readFileSync(file, "utf8")) as ValidationResult;
   if (pathDiffs.length > 0) validation.pathDiffs = pathDiffs;
   else delete validation.pathDiffs;
+  if (pathChecks.length > 0) validation.pathChecks = pathChecks;
+  else delete validation.pathChecks;
   writeFileSync(file, `${JSON.stringify(validation, null, 2)}\n`);
 }
 

@@ -95,6 +95,35 @@ describe("procedures: paths", () => {
     ]);
   });
 
+  it("lists a path that runs to its own end with all its steps and no step to continue from (decision 37)", () => {
+    const captureDir = tmpDir("aida-proc-paths-");
+    const alone: Walkthrough = {
+      ...wf,
+      paths: [
+        {
+          id: "from-list",
+          title: "From the list",
+          when: "Use this when you're on the list.",
+          start: { page: "/payments" },
+          steps: [
+            { id: "list-open", title: "Open the form", actions: [] },
+            { id: "list-save", title: "Record it", actions: [{ do: "expect", target: { text: "Payment recorded" } }] },
+          ],
+        },
+      ],
+    };
+    writeRun(captureDir, [step("open"), step("save")], true);
+    writeRun(join(captureDir, "paths", "from-list"), [step("list-open"), step("list-save")], true);
+    const proc = buildProcedure(alone, captureDir, {})!;
+    expect(proc.paths).toHaveLength(1);
+    expect(proc.paths![0].steps.map((s) => s.title)).toEqual(["Open the form", "Record it"]);
+    expect(proc.paths![0]).not.toHaveProperty("joinsAt");
+    const retrieved = { pages: [{ slug: "record-payment", title: "Record a payment", url: "/record-payment", sections: [], procedure: proc }] } as never;
+    const context = buildContextBlock(retrieved, [{ n: 1, title: "Record a payment", url: "/record-payment" }] as never);
+    expect(context).toContain("That's the whole task this way.");
+    expect(context).not.toMatch(/continue from step/);
+  });
+
   it("copies a path step's annotated page screenshot, never a raw frame", () => {
     const captureDir = tmpDir("aida-proc-paths-");
     const pagesDir = tmpDir("aida-proc-pages-");

@@ -5,7 +5,8 @@ import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Walkthrough } from "../../src/walkthrough/index.js";
 import type { CaptureManifest } from "../../src/capture/index.js";
-import { callSiteMethod, discoverPaths, formatDiscoverPaths, literalRouteRegex } from "../../src/paths/index.js";
+import { bestRouteFor, callSiteMethod, compareRouteSpecificity, discoverPaths, editsExistingRecord, formatDiscoverPaths, literalRouteRegex } from "../../src/paths/index.js";
+import { routeToRegex } from "../../src/impact/match.js";
 import { runPaths } from "../../src/commands/paths.js";
 
 const dirs: string[] = [];
@@ -108,6 +109,41 @@ describe("aida paths: discovery", () => {
     const result = discoverPaths({ walkthrough: walkthrough(paths), captureDir: capture(), appRepo: app() });
     expect(result.candidates.map((c) => c.route)).toEqual(["/attendees/[id]"]);
     expect(result.covered).toContainEqual({ route: "/payments", by: "path from-payments" });
+  });
+
+  it("a visit to a static page never covers the dynamic route beside it (M36)", () => {
+    const root = app();
+    // `/payments/new` is a page of its own; `/payments/[id]` (a payment's page) also records one.
+    write(root, "app/payments/new/page.tsx", 'import { QuickPay } from "@/components/quick-pay";\nexport default function P() { return <QuickPay />; }\n');
+    write(root, "app/payments/[id]/page.tsx", 'import { QuickPay } from "@/components/quick-pay";\nexport default function P() { return <QuickPay />; }\n');
+    const paths = [{ id: "from-new", title: "New payment", when: "w", start: { page: "/payments/new" }, steps: [{ actions: [] }], joins: "save" }];
+    const result = discoverPaths({ walkthrough: walkthrough(paths), captureDir: capture(), appRepo: root });
+    expect(result.covered).toContainEqual({ route: "/payments/new", by: "path from-new" });
+    expect(result.covered.map((c) => c.route)).not.toContain("/payments/[id]");
+    expect(result.candidates.map((c) => c.route)).toContain("/payments/[id]");
+  });
+
+  it("lists edit pages last and says they edit an existing record (M36)", () => {
+    const root = app();
+    write(root, "app/payments/[id]/edit/page.tsx", 'import { QuickPay } from "@/components/quick-pay";\nexport default function P() { return <QuickPay />; }\n');
+    write(root, "app/invoices/page.tsx", 'import { EditPaymentForm } from "@/components/edit-payment-form";\nexport default function P() { return <EditPaymentForm />; }\n');
+    write(root, "components/edit-payment-form.tsx", 'export function EditPaymentForm() { fetch("/api/payments", { method: "POST" }); return null; }\n');
+    const result = discoverPaths({ walkthrough: walkthrough(), captureDir: capture(), appRepo: root });
+    const routes = result.candidates.map((c) => c.route);
+    expect(routes.slice(-2).sort()).toEqual(["/invoices", "/payments/[id]/edit"]);
+    expect(result.candidates.find((c) => c.route === "/payments")?.edits).toBeUndefined();
+    expect(result.candidates.find((c) => c.route === "/payments/[id]/edit")?.edits).toBe(true);
+    expect(formatDiscoverPaths(result)).toMatch(/\/payments\/\[id\]\/edit .*edits an existing record/);
+  });
+
+  it("picks the most specific route for a URL", () => {
+    const routes = ["/payments/[id]", "/payments/new", "/payments/[...rest]", "/[[...all]]"].map((pattern) => ({ pattern, regex: routeToRegex(pattern) }));
+    expect(bestRouteFor("/payments/new", routes)).toBe("/payments/new");
+    expect(bestRouteFor("/payments/7", routes)).toBe("/payments/[id]");
+    expect(bestRouteFor("/payments/7/a", routes)).toBe("/payments/[...rest]");
+    expect(compareRouteSpecificity("/a/b", "/a/[id]")).toBeGreaterThan(0);
+    expect(editsExistingRecord({ route: "/x", file: "app/x/page.tsx" }, "components/UpdateThing.tsx:3")).toBe(true);
+    expect(editsExistingRecord({ route: "/x", file: "app/x/page.tsx" }, "components/credit-form.tsx:3")).toBe(false);
   });
 
   it("never follows symlinks out of the app", () => {

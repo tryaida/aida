@@ -1,7 +1,7 @@
 // A short narrated clip per walkthrough path (decision 34; M35): the path's title card, its
 // opening steps from its own capture — the same player, brand, style preset, zoom and blur rules
 // as the main video — and a closing card "Then continue from step N: <title>", pointing at that
-// step's chapter in the main video. Written next to the main video as `<id>.path-<pathId>.mp4`
+// step's chapter in the main video ("Done" for a path that runs to its own end, decision 37). Written next to the main video as `<id>.path-<pathId>.mp4`
 // with `.srt`/`.vtt` captions, and cached by content hash per scene exactly like the main video.
 //
 // Blur is per screen across every capture of the task: the main run's and every path's boxes are
@@ -86,6 +86,9 @@ export interface RenderPathClipsContext {
   outDir: string;
   sharedBlur: RouteBlur;
   encode: (timeline: Timeline, files: EncodeFiles, ctx: EncodeContext) => Promise<EncodeResult>;
+  /** `frameChangeReader` (frame-change.ts), passed in so this module — reachable from the help
+   * app through the index stage — never imports the PNG decoder itself. */
+  frameChange?: (captureDir: string, deviceScaleFactor: number | undefined) => (from: string, to: string) => number | undefined;
 }
 
 /** The narration a clip's timeline reads, keyed the way `buildTimeline` asks for it. */
@@ -155,9 +158,10 @@ export async function renderPathClips(wf: Walkthrough, mainTimeline: Timeline, c
       zoomToTarget: options.zoomToTarget,
       sharedBlur: ctx.sharedBlur,
       blurDeclaredElsewhere: blurElsewhere,
-      clip: { introMinSeconds: 3, facts: [`${n} step${n === 1 ? "" : "s"}`, `then step ${text.continueAt.step}`] },
+      frameChange: ctx.frameChange?.(capture.dir, capture.manifest.deviceScaleFactor),
+      clip: { introMinSeconds: 3, facts: [`${n} step${n === 1 ? "" : "s"}`, ...(text.continueAt ? [`then step ${text.continueAt.step}`] : [])] },
     });
-    const at = mainTimeline.scenes?.find((s) => s.id === text.continueAt.stepId)?.t0;
+    const at = text.continueAt ? mainTimeline.scenes?.find((s) => s.id === text.continueAt!.stepId)?.t0 : undefined;
     const encoded = await ctx.encode(timeline, files, {
       options,
       quality,
@@ -175,7 +179,7 @@ export async function renderPathClips(wf: Walkthrough, mainTimeline: Timeline, c
       timelineJson: files.timelineJson,
       durationSec: timeline.duration,
       skipped: encoded.skipped,
-      continueAt: { ...text.continueAt, ...(at !== undefined ? { t: Number(at.toFixed(2)) } : {}) },
+      ...(text.continueAt ? { continueAt: { ...text.continueAt, ...(at !== undefined ? { t: Number(at.toFixed(2)) } : {}) } } : {}),
     });
   }
   return results;
@@ -187,9 +191,11 @@ export interface PathClipLink {
   src: string;
   vtt?: string;
   srt?: string;
-  /** The main step the path joins, and where its chapter starts in the main video. */
-  continueAt: { step: number; title?: string; t?: number };
-  /** Site URL of the main video at that chapter (`…mp4#t=42.3`), when the main video exists. */
+  /** The main step the path joins, and where its chapter starts in the main video; absent for a
+   * path that runs to its own end. */
+  continueAt?: { step: number; title?: string; t?: number };
+  /** Site URL of the main video at that chapter (`…mp4#t=42.3`), when the main video exists and
+   * the path joins it. */
   mainVideoAt?: string;
 }
 
@@ -220,14 +226,15 @@ export function pathClipLinks(videoDir: string | undefined, wf: Walkthrough): Pa
     } catch {
       continue;
     }
-    const t = scenes.find((s) => s.id === text.continueAt.stepId)?.t0;
+    const at = text.continueAt;
+    const t = at ? scenes.find((s) => s.id === at.stepId)?.t0 : undefined;
     out.push({
       pathId: p.id,
       src: url(files.mp4),
       ...(existsSync(files.vtt) ? { vtt: url(files.vtt) } : {}),
       ...(existsSync(files.srt) ? { srt: url(files.srt) } : {}),
-      continueAt: { step: text.continueAt.step, title: text.continueAt.title, ...(t !== undefined ? { t: Number(t.toFixed(2)) } : {}) },
-      ...(mainVideo ? { mainVideoAt: t !== undefined ? `${mainVideo}#t=${Number(t.toFixed(2))}` : mainVideo } : {}),
+      ...(at ? { continueAt: { step: at.step, title: at.title, ...(t !== undefined ? { t: Number(t.toFixed(2)) } : {}) } } : {}),
+      ...(mainVideo && at ? { mainVideoAt: t !== undefined ? `${mainVideo}#t=${Number(t.toFixed(2))}` : mainVideo } : {}),
     });
   }
   return out;

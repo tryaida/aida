@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><title>Payment</title></head>
+<body><main><h1>Record a payment</h1>
+<label>Amount <input id="amount" /></label>
+<button type="button" id="save">Save</button>
+<p id="done" hidden>Payment saved</p>
+</main>
+<script>
+  // Next.js-style server actions: every one is a POST to the page's own URL with a Next-Action
+  // header, reads included. From the attendee's page the form calls the same reads more often and
+  // in another order, and saves the same thing.
+  const from = new URLSearchParams(location.search).get("from");
+  const act = (id, body) => fetch(location.pathname, { method: "POST", headers: { "next-action": id }, body });
+  (async () => {
+    if (from === "attendee") await act("read-options", "[]");
+    await act("read-people", "[]");
+    await act("read-options", "[]");
+    if (from === "attendee") await act("read-people", "[]");
+    await fetch("/api/graphql", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query: "query Bookings { bookings { id } }" }) });
+  })();
+  document.getElementById("save").addEventListener("click", async () => {
+    await act("save-booking", document.getElementById("amount").value);
+    document.getElementById("done").hidden = false;
+  });
+</script>
+</body></html>

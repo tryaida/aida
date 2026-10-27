@@ -34,8 +34,25 @@ const MAX_COMMITS = 50;
 const CAPS: Record<BriefSourceKind, number> = { readme: 2, package: 1, metadata: 2, landing: 4, docs: 15, notes: 10, seed: 6, tests: 6, "pr-template": 2 };
 const BASE: Record<BriefSourceKind, number> = { readme: 100, package: 95, metadata: 90, landing: 85, docs: 60, notes: 50, seed: 45, tests: 40, "pr-template": 30 };
 
-const HELPFUL = /(overview|guide|user|getting[-_ ]?started|intro|faq|help|manual|feature|how[-_ ]?to|concept|glossary|domain|business|process|about|product|roles?|permissions?|quick[-_ ]?reference|website|marketing|landing|content|copy|pricing|tutorial)/i;
-const UNHELPFUL = /(changelog|license|contributing|code[-_ ]of[-_ ]conduct|security|todo|fix|bug|audit|deploy|setup|install|architecture|cleanup|performance|loading|agents|claude|^\.|summary|backup|migrat|runbook|cookbook|handoff|optimi[sz]ation|status|plan)/i;
+// Matched against a file name's words (`TIMEZONE_QUICK_START.md` -> `-timezone-quick-start-`), so
+// "product" never matches "production" and "fix" never matches "prefix".
+const HELPFUL = /-(overview|guides?|users?|getting-started|quick-start|intro|introduction|faqs?|help|manual|features?|how-to|howto|concepts?|glossary|domain|business|process(es)?|about|product|roles?|permissions?|quick-reference|website|marketing|landing|content|copy|pricing|tutorials?|handbook|walkthroughs?)-/;
+// Notes for the people who build and run the app, not its users: ranked below every product doc.
+const OPS = /-(migrat\w*|runbooks?|deploy\w*|security|bugs?|bugfix\w*|fix|fixes|fixed|hotfix\w*|implement\w*|summary|summaries|todos?|tasks|changelog|changes|release-notes|update-notes|improvements?|refactor\w*|complete|audit\w*|incidents?|postmortems?|backups?|cleanup|handoff|optimi[sz]ation\w*|performance|architecture|setup|install\w*|contributing|license|code-of-conduct|agents|claude|status|plan|cookbook|loading|debug\w*|troubleshoot\w*|infra\w*)-/;
+const OPS_DIR = /(^|\/)(ops|runbooks?|migrations?|deploy\w*|incidents?|postmortems?|security|adrs?|decisions|internal|dev|development|engineering|infra\w*|archive)\//i;
+const PRODUCT_DIR = /(^|\/)(users?|guides?|help|marketing|product|tutorials?|faqs?|handbook|features)\//i;
+
+/** A file name's words, lowercased, dash-joined and dash-wrapped: `PermissionsImplementation.md`
+ * -> `-permissions-implementation-`. */
+function nameWords(name: string): string {
+  const stem = name.replace(/\.[^.]+$/, "");
+  const words = stem
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((w) => w.toLowerCase());
+  return `-${words.join("-")}-`;
+}
 
 function size(repo: string, rel: string): number {
   try {
@@ -82,12 +99,20 @@ export function jsxHeadings(text: string, max = 4): string[] {
   return out;
 }
 
-function scoreDoc(rel: string, base: number): number {
+/** Product and user docs (guides, help, FAQs, marketing copy) first; notes for the people who
+ * build and run the app (migrations, runbooks, deploys, fix and implementation summaries,
+ * changelogs, to-dos) last, whatever else their name says. */
+export function scoreDoc(rel: string, base: number): number {
   const name = posix.basename(rel);
+  const words = nameWords(name);
+  // Net of both: a user guide that mentions an ops word ("security settings guide", under
+  // docs/guides/) keeps its product boost and lands between product docs and pure ops notes.
   let score = base;
-  if (HELPFUL.test(name)) score += 20;
-  if (UNHELPFUL.test(name)) score -= 25;
-  if (/^docs\/(user|guide|help|marketing|product)/i.test(rel)) score += 10;
+  if (HELPFUL.test(words)) score += 20;
+  if (PRODUCT_DIR.test(rel)) score += 15;
+  if (name.startsWith(".")) score -= 40;
+  if (OPS.test(words)) score -= 40;
+  if (OPS_DIR.test(rel)) score -= 30;
   return score;
 }
 

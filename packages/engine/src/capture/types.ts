@@ -36,6 +36,15 @@ export interface ImpactRequest {
   path: string;
   /** A Next.js server action's id (the `Next-Action` request header), when the request was one. */
   action?: string;
+  /**
+   * True when the request is known to have saved nothing (decision 37): a server action whose
+   * response revalidated nothing (no `x-action-revalidated`, or one saying nothing changed), set
+   * no cookie and didn't redirect, or a GraphQL query. Path comparison ignores these.
+   */
+  read?: boolean;
+  /** A GraphQL mutation's operation name (`mutation CreatePayment`), so two mutations posted to
+   * the same endpoint compare as different saves. */
+  operation?: string;
 }
 
 /** aida addition: what a step touched, for the CI impact map. */
@@ -143,8 +152,33 @@ export interface PathDiff {
   onlyInPath: string[];
   /** The same keys as the main run made them. */
   onlyInMain: string[];
-  /** One line: "path from-attendee saves differently: POST /api/payments/allocate vs POST /api/payments". */
+  /** Server actions only this path called (none of them told apart as saves), when any. */
+  actionsOnlyInPath?: string[];
+  /** Server actions only the main run called, likewise. */
+  actionsOnlyInMain?: string[];
+  /** Why the path is flagged: it saves differently, calls server actions the other run doesn't
+   * (read by their headers, but they may still save), leaves different data (end checks). */
+  reasons: ("saves" | "actions" | "data")[];
+  /** The end checks of both runs (decision 37), when they ran. */
+  endChecks?: { main: PathEndChecks; path: PathEndChecks };
+  /** One line: "path from-attendee saves POST /api/payments/allocate once; main path saves POST
+   * /api/payments once", then "path … leaves different data: end checks fail where …". */
   message: string;
+}
+
+/** Pass/fail of one run's end checks: the final step's checks and `validate.database`. */
+export interface PathEndChecks {
+  ok: boolean;
+  failed: string[];
+}
+
+/** One path's end checks, recorded for every path that ran (passed or not). */
+export interface PathCheckResult {
+  path: string;
+  ok: boolean;
+  failed: string[];
+  /** False when the path's own capture failed (a failing final step fails the path). */
+  captured?: boolean;
 }
 
 /** Same shape as the original pipeline's `capture/validation.json`. */
@@ -161,8 +195,14 @@ export interface ValidationResult {
     page: ProblemEntry[];
     server: ProblemEntry[];
   };
-  /** Paths whose writes differ from this (main) run's; absent when none do (decision 34). */
+  /** Paths whose writes or end checks differ from this (main) run's; absent when none do
+   * (decisions 34, 37). */
   pathDiffs?: PathDiff[];
+  /** Every compared path's end checks (pass/fail), whether or not it was flagged (decision 37). */
+  pathChecks?: PathCheckResult[];
+  /** A path run's own end checks (only in `paths/<id>/validation.json`): its `ok` leaves out the
+   * database checks, which are compared with the main run's instead (decision 37). */
+  endChecks?: PathEndChecks;
 }
 
 /**

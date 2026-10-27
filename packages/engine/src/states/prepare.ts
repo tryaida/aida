@@ -5,7 +5,7 @@
 //
 // `prepareWalkthrough` is reusable on purpose: anything that replays part of a walkthrough
 // (`inspect --after <step>`) calls it with its own signed-in browser context first.
-import { createHash } from "node:crypto";
+import { sessionKey } from "../capture/session-key.js";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Browser, BrowserContext, BrowserContextOptions, Page } from "playwright";
@@ -16,6 +16,7 @@ import { locate } from "../capture/locate.js";
 import { settle } from "../capture/settle.js";
 import { isSignInPath } from "../capture/diagnose.js";
 import { NAME_SHIM_SCRIPT } from "../capture/init-scripts.js";
+import { gotoReady } from "../capture/page-ready.js";
 import { loadRunWalkthroughs } from "./run.js";
 
 const WRITE_ACTIONS = new Set(["click", "type", "select"]);
@@ -41,7 +42,7 @@ export interface PrepareOptions {
   walkthrough: Walkthrough;
   /** `clock` is installed on every setup page, as on the capture page; `walkthroughsDir` is only
    * read to word a failed need (does any walkthrough leave it?). */
-  config: Pick<ResolvedConfig, "states" | "signIn"> & Partial<Pick<ResolvedConfig, "clock" | "walkthroughsDir">>;
+  config: Pick<ResolvedConfig, "states" | "signIn"> & Partial<Pick<ResolvedConfig, "clock" | "walkthroughsDir" | "signInHash">>;
   browser: Browser;
   /** The walkthrough's own signed-in context. Hooks and setup steps for its persona open a new page in it. */
   context: BrowserContext;
@@ -257,7 +258,7 @@ class RoleSessions {
     const persona = this.opts.personaFor?.(role) ?? { role };
     // Same key shape as capture's own session files, so a role's session is shared with capture.
     const statePath = this.opts.sessionDir
-      ? join(this.opts.sessionDir, `storageState-${createHash("sha256").update(JSON.stringify({ baseUrl, persona })).digest("hex").slice(0, 16)}.json`)
+      ? join(this.opts.sessionDir, `storageState-${sessionKey(baseUrl, persona, config)}.json`)
       : undefined;
     const reuse = statePath && existsSync(statePath) ? statePath : undefined;
     const context = await browser.newContext({
@@ -317,7 +318,7 @@ async function runSetupAction(page: Page, a: Action, baseOrigin: string): Promis
     case "goto": {
       const target = new URL(a.path, page.url());
       if (target.origin !== baseOrigin) throw new Error(`refusing cross-origin goto to ${target.origin} (walkthrough origin is ${baseOrigin})`);
-      await page.goto(target.href, { waitUntil: "networkidle", timeout: 120_000 });
+      await gotoReady(page, target.href, 120_000);
       await settle(page);
       return;
     }

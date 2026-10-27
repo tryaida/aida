@@ -11,7 +11,20 @@ import { redactLine } from "../capture/redact.js";
 import { pathClipLinks } from "../render/clips.js";
 import { annotateFrame, renderPrintFrame } from "./annotate.js";
 import { PNG } from "pngjs";
-import { edgeMap, focusCrop, planStepFigures, refineCrop, type StepFigurePlan } from "./focus.js";
+import {
+  cropClassFor,
+  edgeMap,
+  focusCrop,
+  grayFrame,
+  normaliseCropClasses,
+  placeCropClass,
+  planStepFigures,
+  refineCrop,
+  tightenCropClass,
+  type EdgeMap,
+  type GrayFrame,
+  type StepFigurePlan,
+} from "./focus.js";
 import {
   buildBeforeYouStartBlock,
   buildChapterBlock,
@@ -121,7 +134,10 @@ export async function buildPage(written: Walkthrough, captureDir: string, outDir
   const screenshotJobs: ScreenshotJob[] = [];
   // Which frame each step shows and which boxes on it are real (focus.ts) — a highlight drawn
   // before a click that opened another page belongs to that earlier frame, not `doc.image`.
-  const plans = new Map(planStepFigures(wf, manifest).map((p) => [p.step, p] as const));
+  // Blur declared on any step — main or any path's — rules out every before-click frame here:
+  // that frame can show a screen a path blurs, with nothing covering it (M32 privacy rule).
+  const blurAnywhere = [...wf.steps, ...(wf.paths ?? []).flatMap((p) => p.steps)].some((s) => (s.blur?.length ?? 0) > 0);
+  const plans = new Map(planStepFigures(wf, manifest, { anyBlur: blurAnywhere, frames: frameGrays(captureDir, manifest) }).map((p) => [p.step, p] as const));
 
   for (let i = 0; i < wf.steps.length; i++) {
     const stepNumber = i + 1;
@@ -165,11 +181,13 @@ export async function buildPage(written: Walkthrough, captureDir: string, outDir
   if (beforeYouStart) blocks.push(beforeYouStart);
   blocks.push(buildStepsHeadingBlock());
 
+  // A "Part 1" heading over every step of a single-part guide says nothing the title doesn't
+  // (decision 36): parts are headed only when there are two or more.
   const chapters = chaptersOf(wf.steps);
   let lastChapter: string | undefined;
   for (let i = 0; i < wf.steps.length; i++) {
     const step = wf.steps[i];
-    if (step.chapter && step.chapter !== lastChapter) {
+    if (chapters.length > 1 && step.chapter && step.chapter !== lastChapter) {
       blocks.push(buildChapterBlock(step.chapter, chapters.indexOf(step.chapter)));
       lastChapter = step.chapter;
     }
@@ -281,7 +299,8 @@ function pathCaptureProblem(capture: PathCapture | undefined): string | undefine
 /**
  * "Other ways to do this": per path, its title, `when` sentence, the writer's note when capture
  * flagged a difference, its opening steps with screenshots and print figures (the same focus and
- * blur handling as main steps, from the path's own capture), and where it joins the main steps.
+ * blur handling as main steps, from the path's own capture), and where it joins the main steps
+ * (nothing more for a path that runs to its own end).
  * A path that didn't pass its capture is marked not verified and stops the page publishing.
  */
 async function buildOtherWays(
@@ -318,7 +337,7 @@ async function buildOtherWays(
     const jobs: ScreenshotJob[] = [];
     const statuses: StepStatus[] = [];
     const plans = manifest
-      ? new Map(planStepFigures(run.walkthrough, manifest, { anyBlur: blurAnywhere }).map((pl) => [pl.step, pl] as const))
+      ? new Map(planStepFigures(run.walkthrough, manifest, { anyBlur: blurAnywhere, frames: capture ? frameGrays(capture.dir, manifest) : undefined }).map((pl) => [pl.step, pl] as const))
       : new Map<number, StepFigurePlan>();
     for (let i = 0; i < p.steps.length; i++) {
       const n = i + 1;
@@ -338,7 +357,8 @@ async function buildOtherWays(
       if (mStep.doc.image && plan) jobs.push(screenshotJob(p.steps[i], mStep, n, plan));
     }
     p.steps.forEach((step, i) => out.blocks.push(buildPathStepBlock(p.id, step, i + 1, statuses[i])));
-    out.blocks.push(buildPathJoinBlock(p.id, wf.steps[run.joinIndex], run.joinIndex + 1));
+    // A path that runs to its own end shows all its steps and no "continue from" (decision 37).
+    if (!run.alone) out.blocks.push(buildPathJoinBlock(p.id, wf.steps[run.joinIndex]!, run.joinIndex + 1));
 
     if (manifest && capture && jobs.length > 0) {
       const rendered = await renderScreenshots(capture.dir, manifest, jobs, pathShotsDir, path.join(printDir, "paths", p.id), opts, {
@@ -361,6 +381,32 @@ interface ScreenshotNaming {
 }
 
 const MAIN_NAMING: ScreenshotNaming = { fileName: (n) => path.basename(screenshotFile(n)) };
+
+function readEdges(pngFile: string): EdgeMap {
+  const png = PNG.sync.read(readFileSync(pngFile));
+  return edgeMap(png.data, png.width, png.height);
+}
+
+/** Reads capture frames as grey levels at one pixel per CSS px, for `planStepFigures` to tell a
+ * target still on screen after its click from one a dialog now covers. Cached per frame;
+ * undefined when a frame can't be read (then the step is planned as before M36). */
+export function frameGrays(captureDir: string, manifest: Pick<CaptureManifest, "deviceScaleFactor">): (frame: string) => GrayFrame | undefined {
+  const cache = new Map<string, GrayFrame | undefined>();
+  return (frame) => {
+    if (cache.has(frame)) return cache.get(frame);
+    let out: GrayFrame | undefined;
+    try {
+      const png = PNG.sync.read(readFileSync(path.join(captureDir, "frames", frame)));
+      out = grayFrame(png.data, png.width, png.height, Math.max(manifest.deviceScaleFactor ?? 1, 1));
+    } catch {
+      out = undefined;
+    }
+    // Keep the last few only: a frame is compared with its neighbours, not across the guide.
+    if (cache.size > 6) cache.delete(cache.keys().next().value!);
+    cache.set(frame, out);
+    return out;
+  };
+}
 
 async function renderScreenshots(
   captureDir: string,
@@ -396,6 +442,9 @@ async function renderScreenshots(
     // printed larger than it was on screen stays sharp.
     const scale = Math.min(Math.max(manifest.deviceScaleFactor ?? 1, 1), 2);
     const printPage = await browser.newPage({ deviceScaleFactor: scale });
+    // Pass 1: the site screenshot, the clean full screen, and each step's focus crop as a size
+    // class (focus.ts) — planned from its targets, refined against the clean screen.
+    const measured: { job: ScreenshotJob; framePath: string; full: string; cls?: number }[] = [];
     for (const job of jobs) {
       const framePath = path.join(captureDir, "frames", job.frame);
       const outPath = path.join(screenshotsDir, naming.fileName(job.stepNumber));
@@ -408,28 +457,50 @@ async function renderScreenshots(
 
       const nn = String(job.stepNumber).padStart(2, "0");
       const full = path.join(printDir, `step-${nn}.full.png`);
+      await renderPrintFrame(printPage, framePath, manifest.viewport, job.blur, { full });
       const planned = focusCrop(job.plan.targets, manifest.viewport, job.plan.points);
-      const cropPath = path.join(printDir, `step-${nn}.crop.png`);
-      // Refined against the clean full screen just written (blur burned in): placed where
-      // there's most to see, edges moved off slivers and through-text cuts (focus.ts).
-      const refine = (fullPng: string) => {
-        if (!planned) return undefined;
+      let cls: number | undefined;
+      if (planned) {
+        // Refined against the clean full screen just written (blur burned in): how much
+        // context the target needs, which picks its size class.
+        let refined = planned;
+        let edges: EdgeMap | undefined;
         try {
-          const png = PNG.sync.read(readFileSync(fullPng));
-          return refineCrop(edgeMap(png.data, png.width, png.height), planned, job.plan.targets, job.plan.points);
+          edges = readEdges(full);
+          refined = refineCrop(edges, planned, job.plan.targets, job.plan.points);
         } catch {
-          return planned;
+          // Unreadable: the planned crop stands.
         }
-      };
-      const cropBox = await renderPrintFrame(printPage, framePath, manifest.viewport, job.blur, {
-        full,
-        crop: planned ? { box: refine, path: cropPath } : undefined,
-      });
-      const crop = cropBox ? cropPath : undefined;
+        cls = cropClassFor(refined, job.plan.targets, job.plan.points, manifest.viewport);
+        // A smaller class when what the bigger one adds is blank space.
+        if (cls !== undefined && edges) cls = tightenCropClass(edges, cls, job.plan.targets, job.plan.points, manifest.viewport);
+      }
+      measured.push({ job, framePath, full, cls });
+    }
+
+    // Pass 2: one or two neighbouring sizes across the guide (M36), each crop centred on its own
+    // step's target and nudged onto clean edges, cut from the same blurred render.
+    // Only crops the guide prints as crops count: a new screen prints in full (its crop is for
+    // the card, whose cells are one size anyway).
+    const printed = normaliseCropClasses(measured.map((m) => (m.job.plan.newScreen ? undefined : m.cls)));
+    const classes = measured.map((m, i) => (m.job.plan.newScreen ? m.cls : printed[i]));
+    for (let i = 0; i < measured.length; i++) {
+      const { job, framePath, full } = measured[i];
+      const cls = classes[i];
+      const nn = String(job.stepNumber).padStart(2, "0");
+      const cropPath = path.join(printDir, `step-${nn}.crop.png`);
+      let edges: EdgeMap | undefined;
+      try {
+        if (cls !== undefined) edges = readEdges(full);
+      } catch {
+        // Unreadable: centred on the target, no edge nudge.
+      }
+      const box = cls !== undefined ? placeCropClass(edges, cls, job.plan.targets, job.plan.points, manifest.viewport) : undefined;
+      const cropBox = box ? await renderPrintFrame(printPage, framePath, manifest.viewport, job.blur, { crop: { box, path: cropPath } }) : undefined;
       printFigures.push({
         step: job.stepNumber,
         full,
-        ...(crop && cropBox ? { crop, cropBox } : {}),
+        ...(cropBox ? { crop: cropPath, cropBox } : {}),
         viewport: { width: manifest.viewport.width, height: manifest.viewport.height },
         targets: job.highlights,
         callouts: job.callouts,

@@ -513,6 +513,10 @@ export interface ResolvedConfig extends Omit<AidaConfig, "signIn" | "database" |
   outDir: string;
   buildDir: string;
   signIn?: SignInAdapter;
+  /** 16 hex characters of the sign-in adapter's file content and export name (or its source when
+   * given inline), set by `loadConfig()`: part of the saved sign-in session's key, so changing the
+   * adapter signs in again instead of reusing a session the old adapter made. */
+  signInHash?: string;
   database?: DatabaseAdapter;
   /** `states` with every hook loaded (see states/hooks.ts). */
   states?: Record<string, ResolvedStateConfig>;

@@ -5,6 +5,8 @@ import path, { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { loadConfig } from "../../src/config/load.js";
+import { sessionKey } from "../../src/capture/session-key.js";
+import { storageStateKey } from "../../src/commands/inspect.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const engineRoot = path.join(__dirname, "..", "..");
@@ -63,6 +65,32 @@ describe("loadConfig", () => {
     expect(typeof config.signIn).toBe("function");
     await config.signIn?.({ page: {} as never, context: {} as never, baseUrl: "x", env: {} });
     expect((globalThis as { __signedIn?: boolean }).__signedIn).toBe(true);
+  });
+
+  it("keys the saved sign-in session by the adapter's content: a changed adapter signs in again (M36)", async () => {
+    const dir = tmpDir();
+    const adapter = join(dir, "sign-in.mjs");
+    writeFileSync(adapter, `export default async function signIn() { /* Acme v1 */ }`);
+    writeFileSync(
+      join(dir, "aida.config.mjs"),
+      `export default { app: { baseUrl: "http://127.0.0.1:3100" }, walkthroughsDir: "./walkthroughs", signIn: "./sign-in.mjs" };`,
+    );
+    const persona = { role: "admin", email: "ada@example.com" };
+    const first = await loadConfig(join(dir, "aida.config.mjs"));
+    expect(first.signInHash).toMatch(/^[0-9a-f]{16}$/);
+    const again = await loadConfig(join(dir, "aida.config.mjs"));
+    expect(sessionKey("http://127.0.0.1:3100", persona, again)).toBe(sessionKey("http://127.0.0.1:3100", persona, first));
+
+    writeFileSync(adapter, `export default async function signIn() { /* Acme v2: another sign-in route */ }`);
+    const changed = await loadConfig(join(dir, "aida.config.mjs"));
+    expect(changed.signInHash).not.toBe(first.signInHash);
+    expect(sessionKey("http://127.0.0.1:3100", persona, changed)).not.toBe(sessionKey("http://127.0.0.1:3100", persona, first));
+    // Every command builds the same file name from it (capture, inspect, record, theme, ci, state setup).
+    expect(storageStateKey("http://127.0.0.1:3100", persona, changed)).toBe(sessionKey("http://127.0.0.1:3100", persona, changed));
+    // A hand-built config with an inline adapter is keyed by the function's source.
+    const inlineA = sessionKey("http://x", persona, { signIn: async () => { (globalThis as { __acme?: string }).__acme = "a"; } });
+    const inlineB = sessionKey("http://x", persona, { signIn: async () => { (globalThis as { __acme?: string }).__acme = "b"; } });
+    expect(inlineA).not.toBe(inlineB);
   });
 
   it("resolves capture frame-diff defaults, and keeps explicit overrides", async () => {

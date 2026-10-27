@@ -17,6 +17,7 @@ export function buildModel(raw: RawSchema, source: DomainSource): DomainModel {
         ...(c.ref ? { ref: `${c.ref.table}.${c.ref.column}` } : {}),
         ...(c.enum ? { enum: c.enum } : {}),
         ...(c.primaryKey ? { primaryKey: true as const } : {}),
+        ...(c.default !== undefined ? { default: c.default } : {}),
       })),
       belongsTo: [],
       hasMany: [],

@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { Walkthrough } from "../../src/walkthrough/index.js";
 import type { CaptureManifest, ManifestStep, ValidationResult } from "../../src/capture/index.js";
 import { pathClipFiles, pathClipLinks, renderPathClips, taskRouteBlur } from "../../src/render/clips.js";
-import { pathClipText } from "../../src/render/clip-lines.js";
+import { pathClipLines, pathClipText } from "../../src/render/clip-lines.js";
 import { buildTimeline, UNKNOWN_ROUTE } from "../../src/render/timeline.js";
 import type { NarrationBeat, Timeline } from "../../src/render/types.js";
 import { qualityFor } from "../../src/render/video.js";
@@ -153,6 +153,16 @@ describe("pathClipText", () => {
     expect(t.intro).toMatchObject({ eyebrow: "Another way", title: "From the attendee's page", subtitle: "Use this when the attendee pays for several bookings at once." });
     expect(t.outro).toEqual({ title: "Then continue from step 2: Save the payment", say: "Then continue from step 2: Save the payment." });
     expect(t.continueAt).toEqual({ step: 2, stepId: "save", title: "Save the payment" });
+  });
+
+  it("ends a path that runs to its own end on a Done card, pointing nowhere (decision 37)", () => {
+    const wf = walkthrough();
+    const { joins: _joins, ...alone } = wf.paths![0];
+    wf.paths = [alone];
+    const t = pathClipText(wf, alone);
+    expect(t.outro).toEqual({ title: "Done", say: "Done." });
+    expect(t.continueAt).toBeUndefined();
+    expect(pathClipLines(wf).at(-1)).toEqual({ id: "from-attendee/outro", text: "Done." });
   });
 });
 

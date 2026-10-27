@@ -90,8 +90,47 @@ describe("walkthrough paths: schema", () => {
   });
 
   it("rejects a path with no opening steps or no when", () => {
-    expect(errorsOf(base(attendeePath.replace(/    steps:\n      - id: open-attendee-payment\n        title: Open the payment form\n        do: click "Pay" button\n/, "    steps: []\n"))).join("\n")).toMatch(/at least one opening step/);
+    expect(errorsOf(base(attendeePath.replace(/    steps:\n      - id: open-attendee-payment\n        title: Open the payment form\n        do: click "Pay" button\n/, "    steps: []\n"))).join("\n")).toMatch(/at least one step of its own/);
     expect(errorsOf(base(attendeePath.replace(/    when: .*\n/, ""))).length).toBeGreaterThan(0);
+  });
+
+  // Decision 37: a path may run to its own end with its own steps and its own final check.
+  const listPath = (lastStep: string) => `paths:
+  - id: from-list
+    title: From the list
+    when: Use this when you're on the list.
+    start: { page: /payments }
+    steps:
+      - id: list-amount
+        title: Enter the amount
+        do: fill "Amount" with "50"
+${lastStep}`;
+
+  it("loads a path with no joins whose last step ends in a check", () => {
+    for (const last of [
+      `      - id: list-save
+        title: Save
+        do: click "Record" button
+        check: text "Payment recorded" is visible
+`,
+      `      - id: list-save
+        title: Save
+        actions:
+          - { do: click, target: { role: button, name: Record } }
+          - { do: waitForUrl, pattern: /payments }
+`,
+    ]) {
+      const wt = loadWalkthroughText(base(listPath(last)), "fixture.yaml");
+      expect(wt.paths![0].joins).toBeUndefined();
+    }
+  });
+
+  it("rejects a path with no joins whose last step doesn't end in a check, saying how to fix it", () => {
+    const errors = errorsOf(base(listPath(`      - id: list-save
+        title: Save
+        do: click "Record" button
+`)));
+    expect(errors.join("\n")).toMatch(/path "from-list" has no `joins`, so it runs to its own end: its last step needs a check/);
   });
 });
 
@@ -105,6 +144,19 @@ describe("pathWalkthrough", () => {
     expect(run.openingSteps).toBe(1);
     expect(run.joinIndex).toBe(1);
     expect(run.walkthrough.walkthrough).toBe("record-a-payment");
+    expect(run.alone).toBe(false);
+  });
+
+  it("runs only a path's own steps when it has no joins", () => {
+    const wt = loadWalkthroughText(
+      base(attendeePath.replace("    joins: fill-amount\n", "").replace('do: click "Pay" button', 'do: click "Pay" button\n        check: text "Paid" is visible')),
+      "fixture.yaml",
+    );
+    const run = pathWalkthrough(wt, wt.paths![0]);
+    expect(run.walkthrough.steps.map((s) => s.id)).toEqual(["open-attendee-payment"]);
+    expect(run).toMatchObject({ alone: true, joinIndex: -1, openingSteps: 1 });
+    // Its end checks are the walkthrough's: validate.database is kept.
+    expect(run.walkthrough.start?.page).toBe("/attendees/7");
   });
 });
 

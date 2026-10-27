@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { Walkthrough } from "../../src/walkthrough/index.js";
 import type { CaptureManifest, ValidationResult } from "../../src/capture/index.js";
 import { buildPage } from "../../src/pages/build.js";
+import { setPdfFrontmatter } from "../../src/pdf/frontmatter.js";
 
 // A tiny, valid 1x1 PNG — annotateFrame scales to manifest.viewport regardless of the source
 // image's real pixel size, so this stands in for a real captured frame in these unit tests.
@@ -157,6 +158,40 @@ describe(
       const plain = readFileSync(result.plainFile, "utf8");
       expect(plain).not.toContain("aida:begin");
       expect(plain).toContain("Add a thing");
+      // M36: a guide with one part has no "Part 1" heading on the site page either.
+      expect(content).not.toContain("Part 1");
+    }, 60_000);
+
+    it("heads parts only when a guide has two or more (M36)", async () => {
+      const captureDir = tmpDir("aida-pages-capture-");
+      const outDir = tmpDir("aida-pages-out-");
+      writeCapture(captureDir);
+      const wf = walkthrough();
+      wf.steps[1].chapter = "Finishing";
+      const content = readFileSync((await buildPage(wf, captureDir, outDir)).indexFile, "utf8");
+      expect(content).toContain("### Part 1: Getting started");
+      expect(content).toContain("### Part 2: Finishing");
+      // Back to one part: the old part heading (aida's own, unedited) goes away on rebuild.
+      const again = readFileSync((await buildPage(walkthrough(), captureDir, outDir)).indexFile, "utf8");
+      expect(again).not.toContain("Part 1");
+      expect(again).not.toContain("Part 2");
+    }, 60_000);
+
+    it("recomputes the frontmatter step count every build, even after the PDF stage patched in its links (M36)", async () => {
+      const captureDir = tmpDir("aida-pages-capture-");
+      const outDir = tmpDir("aida-pages-out-");
+      writeCapture(captureDir);
+      const wf = walkthrough();
+      const first = await buildPage({ ...wf, steps: [wf.steps[0]] }, captureDir, outDir);
+      expect(readFileSync(first.indexFile, "utf8")).toContain("steps: 1");
+      setPdfFrontmatter(first.indexFile, { pdf: "/pdf/add-thing.pdf", pdfCard: "/pdf/add-thing.card.pdf" });
+      const second = await buildPage(wf, captureDir, outDir);
+      const content = readFileSync(second.indexFile, "utf8");
+      expect(content).toContain("steps: 2");
+      expect(content).not.toContain("steps: 1");
+      // The PDF links survive the rebuild, and nothing was treated as a person's edit.
+      expect(content).toContain('pdf: "/pdf/add-thing.pdf"');
+      expect(second.suggestions.filter((s) => s.key === "frontmatter")).toHaveLength(0);
     }, 60_000);
 
     it("refuses to mark the page publishable when a step failed, with a clear problem", async () => {

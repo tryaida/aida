@@ -17,6 +17,7 @@ import {
   writeHashSidecar,
   type HashSettings,
 } from "./hash.js";
+import { frameChangeReader } from "./frame-change.js";
 import { renderScenesToSegments } from "./segments.js";
 import { beatIds, buildTimeline } from "./timeline.js";
 import type { RenderOptions, RenderResult } from "./types.js";
@@ -112,6 +113,7 @@ export async function render(written: Walkthrough, optionsIn: RenderOptions): Pr
     zoomToTarget: options.zoomToTarget,
     sharedBlur,
     blurDeclaredElsewhere: pathsDeclareBlur(wf),
+    frameChange: frameChangeReader(options.captureDir, manifest.deviceScaleFactor),
   });
 
   const stepOutDir = path.join(options.outDir, id);
@@ -151,6 +153,7 @@ export async function render(written: Walkthrough, optionsIn: RenderOptions): Pr
     outDir: stepOutDir,
     sharedBlur,
     encode: encodeTimeline,
+    frameChange: frameChangeReader,
   });
 
   return {

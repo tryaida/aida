@@ -76,8 +76,8 @@ and validate YAML concurrently: capture must never run from two at once (see ste
    **Other ways to start the task** (card `paths:`, the brief's "Several ways to do one thing"):
    one walkthrough, not one per way. `aida inspect` each way's start page, then add a `paths:`
    entry (cheat sheet → "Several ways to do one task"): `start.page`, opening steps (each with a
-   `say`: they narrate the path's own short clip), `joins:` (the main step where it meets the
-   shared rest) and a `when:` sentence from the brief. Edit with `aida edit addPath`/`setPath*`.
+   `say`: it narrates the path's clip), `joins:` (the main step it meets; none if it uses its own
+   form to the end, last step a check), a `when:` from the brief; edit with `aida edit addPath`.
 4. **Demo data and state**: invented values through example.com/reserved phone ranges (see
    `references/safety.md`), written into `data:` directly when authoring, or via `aida edit
    setData` on a repair. A walkthrough that changes data declares it (from the card):

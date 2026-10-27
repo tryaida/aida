@@ -43,7 +43,9 @@ function entityLine(model: DomainModel, e: DomainEntity): string {
   const plainShown = new Set(keys.filter((c) => !c.enum).slice(0, room));
   const cols = keys.filter((c) => c.enum || plainShown.has(c)).map((c) => {
     const v = values(model, c, "|");
-    return v ? `${c.name}: ${v}` : c.name;
+    // The state a new record starts in is part of the lifecycle: `status: pending|paid (default pending)`.
+    const d = c.enum && c.default !== undefined ? ` (default ${c.default})` : "";
+    return v ? `${c.name}: ${v}${d}` : c.name;
   });
   if (keys.length > cols.length) cols.push(`+${keys.length - cols.length}`);
   const links: string[] = [];
@@ -86,6 +88,7 @@ export function formatEntity(model: DomainModel, e: DomainEntity): string {
     if (c.ref) parts.push(`-> ${c.ref}`);
     const v = values(model, c, " | ", 50);
     if (v) parts.push(`: ${v}`);
+    if (c.default !== undefined) parts.push(`(default ${c.default})`);
     lines.push(parts.join(" "));
   }
   return lines.join("\n");
@@ -107,7 +110,8 @@ export function describeEntityPlainly(model: DomainModel, e: DomainEntity): stri
   if (details.length > 0) parts.push(`Details: ${details.join(", ")}.`);
   for (const c of states.slice(0, 3)) {
     const list = model.enums[c.enum!] ?? [];
-    parts.push(`${capitalize(columnLabel(c.name))}: ${joinWords(list.slice(0, 8), "or")}${list.length > 8 ? " (and more)" : ""}.`);
+    const starts = c.default !== undefined && list.includes(c.default) ? ` (new ones start as ${c.default})` : "";
+    parts.push(`${capitalize(columnLabel(c.name))}: ${joinWords(list.slice(0, 8), "or")}${list.length > 8 ? " (and more)" : ""}${starts}.`);
   }
   return `- **${e.label}**: ${parts.join(" ")}`;
 }

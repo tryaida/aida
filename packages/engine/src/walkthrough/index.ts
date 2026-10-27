@@ -51,7 +51,7 @@ export {
   hasPlaceholder,
   type UnresolvedDisplayText,
 } from "./display.js";
-export { pathWalkthrough, joinIndex, findPath, pathStartPage, type PathRun } from "./paths.js";
+export { pathWalkthrough, pathRunsAlone, joinIndex, findPath, pathStartPage, type PathRun } from "./paths.js";
 export {
   loadWalkthroughFile,
   loadWalkthroughText,

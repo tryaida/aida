@@ -5,6 +5,7 @@ import type { Target } from "../walkthrough/index.js";
 import type { CaptureEvent } from "./types.js";
 import { locate } from "./locate.js";
 import { profileAsync } from "./profile.js";
+import { waitForNetworkQuiet } from "./page-ready.js";
 
 /** Waits two animation frames so a just-made DOM change is actually painted. */
 export function paint(page: Page): Promise<void> {
@@ -36,14 +37,19 @@ export async function waitForAnimations(page: Page, timeoutMs = 2000): Promise<v
   });
 }
 
+/** Settle's network-idle cap: longer than a page load's (a save's follow-up fetches), still short. */
+const SETTLE_IDLE_CAP_MS = 5_000;
+
 /**
- * Waits for the page to go quiet: network idle, skeleton loaders gone, the
+ * Waits for the page to go quiet: network idle (capped), skeleton loaders gone, the
  * route-change progress bar gone, running animations/transitions settled, then a short settle
  * pause. Matches the original pipeline's `settle()`; every wait is best-effort (never throws).
  */
 export async function settle(page: Page): Promise<void> {
   await profileAsync("settle", async () => {
-    await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
+    // Capped (decision 37): a page with a long-lived request never goes idle, and a step's own
+    // wait (`expect`, `waitFor`) is what proves a save finished.
+    await waitForNetworkQuiet(page, SETTLE_IDLE_CAP_MS);
     await page
       .waitForFunction(
         () =>

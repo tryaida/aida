@@ -16,8 +16,9 @@ export interface ProcedureStep {
 }
 
 /**
- * Another way to do the task (decision 34): where it starts, its own opening steps, and the main
- * step it joins. Only paths whose capture passed are listed.
+ * Another way to do the task (decisions 34, 37): where it starts, its own steps, and the main step
+ * it joins — or none, for a way that runs to its own end. Only paths whose capture passed are
+ * listed.
  */
 export interface ProcedurePath {
   id: string;
@@ -29,12 +30,13 @@ export interface ProcedurePath {
     /** Path this way starts on, e.g. "/attendees/[id]" or "/payments". */
     page: string;
   };
-  /** The path's own opening steps, numbered from 1. */
+  /** The path's own steps, numbered from 1: its opening steps, or every step when it runs alone. */
   steps: ProcedureStep[];
-  /** The main step (`Procedure.steps[].n`) to continue from once these are done. */
-  joinsAt: number;
-  /** That main step's title. */
-  joinsTitle: string;
+  /** The main step (`Procedure.steps[].n`) to continue from once these are done; absent when
+   * this way runs to its own end (its steps are the whole task). */
+  joinsAt?: number;
+  /** That main step's title (absent with `joinsAt`). */
+  joinsTitle?: string;
   /** The writer's note, when capture found this way saves differently (validation `pathDiffs`). */
   note?: string;
 }

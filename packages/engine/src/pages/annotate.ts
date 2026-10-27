@@ -243,7 +243,7 @@ export async function renderPrintFrame(
   framePath: string,
   frameSize: { width: number; height: number },
   blur: Box[],
-  out: { full: string; crop?: { box: Box | ((fullPng: string) => Box | undefined); path: string } },
+  out: { full?: string; crop?: { box: Box | ((fullPng: string) => Box | undefined); path: string } },
 ): Promise<Box | undefined> {
   const { width, height } = frameSize;
   const frameUrl = `file://${encodeURI(framePath)}`;
@@ -267,10 +267,13 @@ export async function renderPrintFrame(
     });
     // Same guard as annotateFrame: never screenshot before every blur box is drawn.
     await page.waitForFunction(() => (window as unknown as { __aidaBlurDone?: boolean }).__aidaBlurDone === true);
-    await mkdir(path.dirname(out.full), { recursive: true });
-    await page.screenshot({ path: out.full, scale: "css" });
+    if (out.full) {
+      await mkdir(path.dirname(out.full), { recursive: true });
+      await page.screenshot({ path: out.full, scale: "css" });
+    }
     if (!out.crop) return undefined;
-    const b = typeof out.crop.box === "function" ? out.crop.box(out.full) : out.crop.box;
+    if (typeof out.crop.box === "function" && !out.full) throw new Error("renderPrintFrame: a crop measured on the full screen needs `out.full`");
+    const b = typeof out.crop.box === "function" ? out.crop.box(out.full!) : out.crop.box;
     if (!b) return undefined;
     await page.screenshot({ path: out.crop.path, scale: "device", clip: { x: b.x, y: b.y, width: b.w, height: b.h } });
     return b;

@@ -3,4 +3,4 @@ export * from "./format.js";
 export * from "./check.js";
 export * from "./consumers.js";
 export { briefTemplate, type BriefTemplateInput } from "./template.js";
-export { findBriefSources, formatBriefSources, markdownHeadings, jsxHeadings, type BriefSource, type BriefSourceKind, type BriefSourcesResult } from "./sources.js";
+export { findBriefSources, formatBriefSources, markdownHeadings, jsxHeadings, scoreDoc, type BriefSource, type BriefSourceKind, type BriefSourcesResult } from "./sources.js";

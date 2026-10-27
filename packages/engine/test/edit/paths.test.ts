@@ -42,6 +42,18 @@ describe("path edit actions", () => {
     expect(loadWalkthroughFile(walkthroughFile).paths).toBeUndefined();
   });
 
+  it("an empty joins makes a path run to its own end, only when its last step ends in a check; undo puts joins back", () => {
+    const { helpRoot, walkthroughFile } = setupHelpApp();
+    addPath(walkthroughFile, fromCompetitors);
+    // Its only step clicks and checks nothing: it can't stand alone.
+    expect(() => setPathField(walkthroughFile, "from-competitors", "joins", "")).toThrow(/runs to its own end: its last step needs a check/);
+    setPathStepField(walkthroughFile, "from-competitors", "open-add-from-list", "check", 'text "Add competitor" is visible');
+    setPathField(walkthroughFile, "from-competitors", "joins", "");
+    expect(loadWalkthroughFile(walkthroughFile).paths![0].joins).toBeUndefined();
+    undo(helpRoot);
+    expect(loadWalkthroughFile(walkthroughFile).paths![0].joins).toBe("enter-name");
+  });
+
   it("rejects a path whose joins isn't a main step, writing nothing", () => {
     const { walkthroughFile } = setupHelpApp();
     expect(() => addPath(walkthroughFile, { ...fromCompetitors, joins: "nope" })).toThrow(EditValidationError);

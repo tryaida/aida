@@ -63,7 +63,10 @@ will use, and `capture`/`build` (`--with-deps`) and `ci` follow it.
 One walkthrough per task. When the task can start from more than one screen (a payment from the
 booking, from the attendee, or from Payments), the main `steps` are one way and `paths` lists the
 others. Each path has its own start page and opening steps, then joins the main steps at the step
-named by `joins:` and shares the rest.
+named by `joins:` and shares the rest. When a way uses its own form to the end (a dialog on a list
+row that records the payment itself), leave `joins:` out: the path runs its own steps to its own
+end, and its last step must end in a check (`check:`, or an `expect`/`waitFor`/`waitForUrl`).
+Never invent a shared step just to have something to join.
 
 ```yaml
 paths:
@@ -78,6 +81,18 @@ paths:
         page_text: On the attendee's page, select **Pay**.
     joins: fill-amount                    # a main step id
     note: Paying here spreads the amount across the attendee's bookings.   # only when capture flags it
+  - id: from-entries-list                 # runs to its own end: no joins
+    title: From the Entries list
+    when: Use this when they're paying for one entry and you're on Entries.
+    start: { page: /entries }
+    steps:
+      - id: list-record-payment
+        title: Record Payment on the row
+        do: click "Record Payment" button
+      - id: list-save
+        title: Record it
+        do: click "Record" button
+        check: text "Paid" is visible        # required: the last step proves the task is done
 ```
 
 - A path can't have `needs`/`leaves`/`clears`/`setup`/`validate`: it shares the walkthrough's data.
@@ -88,22 +103,34 @@ paths:
   each path is marked not captured with the reason, and the page won't publish until it is.
 - Each path gets a short narrated clip, `<id>.path-<pathId>.mp4` (+ captions) next to the main
   video: a title card (`title`, `when`), its opening steps narrated from their own `say`, then
-  "Then continue from step N: <title>". The page embeds it under the path; PDFs keep the crops.
+  "Then continue from step N: <title>" ("Done" for a path without `joins`). The page embeds it
+  under the path; PDFs keep the crops.
 - To see the screen after a path step: `aida inspect --walkthrough <id> --after <pathId>/<stepId>`.
 - A path's steps are screenshotted on their own: give them their own `mask:` and `blur:` for any
   personal data they show (the main steps' blur doesn't cover them). Blur and callout edits take
   `<pathId>/<stepId>`: `aida edit addBlur <file> from-attendee/open-attendee-payment '<json>'`.
-- Capture compares the saves each path makes with the main path's. A different one prints
-  `path from-attendee saves differently: POST /api/payments/allocate vs POST /api/payments` and is
-  recorded as `pathDiffs` in `validation.json`; it doesn't fail the capture. Find out what the
-  difference means, then write `note:`. The page shows the note only for a flagged path.
+- Capture compares what each path saved with the main path. Reads don't count as saves (GET, a
+  Next.js server action that revalidated nothing and didn't redirect, a query to a GraphQL
+  endpoint), but a server action only one of the two runs called is still flagged: it may save
+  without revalidating. After every run it also runs the walkthrough's end checks (the final
+  step's checks and `validate.database`), so give the walkthrough a `validate.database` check of
+  what the task should leave (the entry is paid) — that's what catches a way that saves but
+  leaves different data. A failing step (the final check included) fails the path; a failing
+  database check only flags it. A difference prints e.g.
+  `path from-attendee saves POST /api/payments/allocate once; main path saves POST /api/payments
+  once` or `path from-list leaves different data: end checks fail where the main path's pass
+  (entry-paid)` and is recorded as `pathDiffs` in `validation.json` (every path's end checks as
+  `pathChecks`); it doesn't fail the capture. Find out what the difference means, then write
+  `note:`. The page shows the note only for a flagged path.
 - `aida paths <id> --config <cfg> --json` lists other screens whose code makes the same save as the
   captured main path, not yet covered by `paths`. Candidates only: ask before adding one.
 - Edit with `aida edit addPath <file> '<json>'`, `removePath`, `setPathField <file> <pathId>
-  <title|when|note|joins|page> <value>`, `setPathStepField` and `setPathStepActions`. Lock keys:
+  <title|when|note|joins|page> <value>` (an empty `joins` makes the path run to its own end),
+  `setPathStepField` and `setPathStepActions`. Lock keys:
   `path:<walkthroughId>:<pathId>` (whole path), `...:<field>`, `...:step:<stepId>`.
 - Pages show the main path in full, then "Other ways to do this": each path's title, `when`, its
-  opening steps with screenshots and "Then continue from step N". The video follows the main path.
+  opening steps with screenshots and "Then continue from step N" (a path without `joins` shows all
+  its steps and no continue line; its clip ends on "Done"). The video follows the main path.
 
 ### Who it signs in as
 

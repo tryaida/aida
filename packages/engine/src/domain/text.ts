@@ -206,3 +206,24 @@ export function entityLabel(name: string): string {
 export function columnLabel(name: string): string {
   return identifierWords(name).join(" ");
 }
+
+/** A column default as a reader would say it, from Drizzle `.default(...)`, Prisma `@default(...)`
+ * or SQL `DEFAULT ...`: a quoted value unquoted (`'pending'::payment_status` -> `pending`), a
+ * number, boolean or enum member as written (`Status.PENDING` -> `PENDING`), a function call kept
+ * (`now()`); `NULL`, empty and long expressions give undefined. */
+export function readableDefault(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  let text = raw.trim().replace(/\s+as\s+const$/, "").trim();
+  // Drizzle's sql`now()` and a SQL expression in parentheses.
+  const tagged = /^sql\s*`([^`]*)`$/.exec(text);
+  if (tagged) text = tagged[1].trim();
+  while (/^\(.*\)$/.test(text) && findMatching(text, 0, "sql") === text.length - 1) text = text.slice(1, -1).trim();
+  text = text.replace(/::[\w\s."\[\]]+$/, "").trim();
+  if (!text || /^null$/i.test(text)) return undefined;
+  const quoted = /^(['"`])([\s\S]*)\1$/.exec(text);
+  if (quoted) return quoted[2].replace(/''/g, "'");
+  const member = /^[A-Za-z_$][\w$]*\.([A-Za-z_$][\w$]*)$/.exec(text);
+  if (member) return member[1];
+  if (text.length > 40) return undefined;
+  return text.replace(/^current_timestamp$/i, "now()");
+}

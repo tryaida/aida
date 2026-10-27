@@ -27,8 +27,20 @@ const T = {
   lead: 0.5,
   tailMin: 0.7,
   voiceDelay: 0.3,
-  camera: 0.95,
+  /** Every camera move — a step's framing, the push-in to a target, the pull-back — takes this
+   * long on the same ease, so motion reads as one rhythm (M36). */
+  camera: 0.8,
+  /** The pointer rests on the target this long before it clicks (and the push-in has landed). */
+  settle: 0.2,
 };
+
+/** Push-in framing (M36): the target plus this much space each side stays in view. */
+const ZOOM_PAD = { min: 56, share: 0.35 };
+
+/** A screen change smaller than this share of the screen, with no navigation (a menu or
+ * dropdown opening or closing in place), cuts rather than crossfades: a crossfade between two
+ * near-identical frames leaves a ghosted double image of whatever moved. */
+export const IN_PLACE_CHANGE_MAX = 0.22;
 
 function moveTime(a: Point, b: Point): number {
   return Math.min(0.95, Math.max(0.42, 0.42 + Math.hypot(b.x - a.x, b.y - a.y) / 2400));
@@ -68,6 +80,68 @@ export interface BuildTimelineOptions {
   blurDeclaredElsewhere?: boolean;
   /** A path clip (M35): its shorter title card and the facts shown on it. */
   clip?: { introMinSeconds: number; facts: string[] };
+  /** Share of the screen that differs between two capture frames (by file name), or undefined
+   * when unknown. With it, a small in-place change cuts instead of crossfading (M36). */
+  frameChange?: (from: string, to: string) => number | undefined;
+}
+
+/**
+ * The push-in toward a target (M36): the preset's zoom at most, less when the target with its
+ * padding wouldn't fit the zoomed window, centred on the target but held inside the frame so
+ * the window never runs off an edge. Undefined when the zoom would be too slight to notice.
+ */
+export function zoomFrame(b: Box, viewport: { w: number; h: number }, maxZoom: number): CameraFrame | undefined {
+  const pad = Math.max(ZOOM_PAD.min, Math.min(b.w, b.h) * ZOOM_PAD.share);
+  const fit = Math.min(viewport.w / Math.max(b.w + pad * 2, 1), viewport.h / Math.max(b.h + pad * 2, 1));
+  const z = Math.min(maxZoom, fit);
+  if (z < 1.06) return undefined;
+  const zr = Number(z.toFixed(3));
+  const halfW = viewport.w / (2 * zr), halfH = viewport.h / (2 * zr);
+  const cx = Math.min(viewport.w - halfW, Math.max(halfW, b.x + b.w / 2));
+  const cy = Math.min(viewport.h - halfH, Math.max(halfH, b.y + b.h / 2));
+  return { z: zr, cx: Number(cx.toFixed(2)), cy: Number(cy.toFixed(2)) };
+}
+
+/**
+ * A step's events with every click landing where its ring is (M36). Only one action's own
+ * sequence is re-aimed — a pointer move, its frame(s), the target's highlight, then the click —
+ * when the capture's click point fell outside that highlight: the click and the move before it
+ * go to the box's centre, so the cursor comes to rest on the target. A highlight never carries
+ * over to a later action (every move starts afresh), and anything else between the move and the
+ * click leaves the click as captured.
+ */
+export function alignClicks(events: CaptureManifest["steps"][number]["events"]): CaptureManifest["steps"][number]["events"] {
+  const out = events.map((e) => ({ ...e })) as CaptureManifest["steps"][number]["events"];
+  let box: Box | undefined;
+  let lastMove: number | undefined;
+  let clean = false;
+  out.forEach((e, i) => {
+    if (e.type === "move") {
+      lastMove = i;
+      box = undefined;
+      clean = true;
+    } else if (e.type === "highlight") {
+      if (lastMove !== undefined && clean) box = e.box;
+    } else if (e.type === "frame") {
+      // The hover frame between the move and the click.
+    } else if (e.type === "click") {
+      const prev = lastMove !== undefined ? out[lastMove] : undefined;
+      const inside = box && e.at.x >= box.x - 2 && e.at.x <= box.x + box.w + 2 && e.at.y >= box.y - 2 && e.at.y <= box.y + box.h + 2;
+      if (box && clean && !inside && prev && prev.type === "move" && prev.to.x === e.at.x && prev.to.y === e.at.y) {
+        const at = { x: Math.round(box.x + box.w / 2), y: Math.round(box.y + box.h / 2) };
+        prev.to = { ...at };
+        e.at = at;
+      }
+      box = undefined;
+      lastMove = undefined;
+      clean = false;
+    } else {
+      // Anything else (a clear, typing, scrolling, a hold) ends the action's sequence.
+      box = undefined;
+      clean = false;
+    }
+  });
+  return out;
 }
 
 type Style = "minimal" | "friendly" | "bold";
@@ -385,18 +459,18 @@ export function buildTimeline(
   // move that has started, so an overlap would jump).
   let camEnd = 0;
   const pushCamera = (t0: number, d: number, to: CameraFrame) => {
+    // A move to where the camera already is would only hold back the next real one (the first
+    // is kept: the player reads `cameras[0]` before any move has started).
+    if (tl.cameras.length > 0 && to.z === camera.z && to.cx === camera.cx && to.cy === camera.cy) return;
     const start = Math.max(t0, camEnd);
     tl.cameras.push({ t0: start, t1: start + d, from: { ...camera }, to: { ...to } });
     camera = { ...to };
     camEnd = start + d;
   };
-  /** The push-in toward a target box: the preset's zoom, less if the box wouldn't fit. */
-  const zoomOn = (b: Box): CameraFrame | undefined => {
-    const fit = Math.min((VW * 0.7) / Math.max(b.w, 1), (VH * 0.7) / Math.max(b.h, 1));
-    const z = Math.min(motion.zoom, fit);
-    if (z < 1.06) return undefined;
-    return { z: Number(z.toFixed(3)), cx: b.x + b.w / 2, cy: b.y + b.h / 2 };
-  };
+  /** The push-in toward a target box (`zoomFrame`). */
+  const zoomOn = (b: Box): CameraFrame | undefined => zoomFrame(b, { w: VW, h: VH }, motion.zoom);
+  // The frame on screen, for telling a small in-place change from a new screen.
+  let shownImage: string | undefined;
   const autoZoom = opts.zoomToTarget !== false;
   let hiOpen: TimelineHighlight | null = null;
   const closeHi = (at: number) => {
@@ -407,6 +481,7 @@ export function buildTimeline(
   };
 
   const stepById = new Map(manifest.steps.map((s) => [s.id, s]));
+  const { routesOf } = stepRoutes(wf, manifest);
   // Each step's own window and its own resolved blur boxes; turned into per-screen windows once
   // every step is placed (see `blurWindowsByScreen`).
   const stepBlur: { t0: number; t1: number; boxes: import("../capture/types.js").Box[] }[] = [];
@@ -419,14 +494,34 @@ export function buildTimeline(
     const d = stepBeat.durationMs / 1000;
 
     // Base duration of the step's actions, then spread any slack the narration needs.
-    const holds = cap.events.filter((e) => e.type === "hold");
+    const events = alignClicks(cap.events);
+    const holds = events.filter((e) => e.type === "hold");
+    const stepZooms = autoZoom && (!step.camera || step.camera === "full");
+    // Did this step change screen? Then a frame in it may be a new page: never cut to it.
+    const changesRoute = (routesOf[si]?.length ?? 1) > 1;
+    // The step's own length as the loop below places it: every pointer move (one inserted before
+    // a click the pointer isn't on yet), the rest before a click, and the wait for a push-in to
+    // land — so the narration's slack is shared out against the real length.
     let base = 0;
     let pos: Point = { ...cursor };
-    for (const e of cap.events) {
+    let lastMoveDur = 0;
+    let zoomPending = false;
+    for (const e of events) {
       if (e.type === "move") {
-        base += moveTime(pos, e.to);
+        lastMoveDur = moveTime(pos, e.to);
+        base += lastMoveDur;
         pos = e.to;
-      } else if (e.type === "click") base += T.click + T.afterClick;
+      } else if (e.type === "highlight") {
+        zoomPending = stepZooms && Boolean(zoomOn(e.box));
+      } else if (e.type === "click") {
+        if (pos.x !== e.at.x || pos.y !== e.at.y) {
+          lastMoveDur = moveTime(pos, e.at);
+          base += lastMoveDur;
+          pos = e.at;
+        }
+        base += T.settle + (zoomPending ? Math.max(0, T.camera + 0.1 - lastMoveDur - T.settle) : 0) + T.click + T.afterClick;
+        zoomPending = false;
+      }
       else if (e.type === "frame" && e.transition === "fade") base += T.fade;
       else if (e.type === "typeFrames") base += e.images.length * T.char;
       else if (e.type === "scrollFrames") base += e.images.length * T.scroll;
@@ -456,9 +551,9 @@ export function buildTimeline(
     }
     pushCamera(stepStart, T.camera, target);
     const baseFrame: CameraFrame = { ...target };
-    // Zoom to target (M34): steps framed full screen push in toward what they highlight, then
-    // ease back out once the highlight clears. A step with its own `camera: { focus }` keeps it.
-    const stepZooms = autoZoom && (!camSpec || camSpec === "full");
+    // Zoom to target (M34): steps framed full screen push in toward what they highlight (see
+    // `stepZooms` above), then ease back out once the highlight clears. A step with its own
+    // `camera: { focus }` keeps it.
     let zoomed = false;
     let cleared = false;
     let moveStart: number | undefined;
@@ -481,22 +576,27 @@ export function buildTimeline(
     });
 
     t += T.lead + share(W.lead);
-    cap.events.forEach((e) => {
+    events.forEach((e) => {
       switch (e.type) {
-        case "frame":
+        case "frame": {
           // A new frame after the click (cut or fade): the screen changed under the push-in, so
           // pull back out to show it.
           if (zoomed && cleared) {
-            pushCamera(t, 0.75, baseFrame);
+            pushCamera(t, T.camera, baseFrame);
             zoomed = false;
           }
+          // A menu or dropdown opening/closing in place: cut, never a ghosting crossfade.
+          const change = e.transition === "fade" && shownImage ? opts.frameChange?.(shownImage, e.image) : undefined;
+          const inPlace = !changesRoute && change !== undefined && change < IN_PLACE_CHANGE_MAX;
           if (e.transition === "fade") {
-            tl.frames.push({ t, src: frameSrc(e.image), transition: "fade" });
+            tl.frames.push({ t, src: frameSrc(e.image), transition: inPlace ? "cut" : "fade" });
             t += T.fade;
           } else {
             tl.frames.push({ t, src: frameSrc(e.image), transition: "cut" });
           }
+          shownImage = e.image;
           break;
+        }
         case "move": {
           const dur = moveTime(cursor, e.to);
           moveStart = t;
@@ -505,10 +605,20 @@ export function buildTimeline(
           t += dur;
           break;
         }
-        case "click":
+        case "click": {
+          // The pointer ends exactly on the click point: a click with no move to it first gets
+          // one, then it rests there (and any push-in lands) before it clicks.
+          if (cursor.x !== e.at.x || cursor.y !== e.at.y) {
+            const dur = moveTime(cursor, e.at);
+            tl.moves.push({ t0: t, t1: t + dur, from: { ...cursor }, to: { ...e.at } });
+            cursor = { ...e.at };
+            t += dur;
+          }
+          t = Math.max(t + T.settle, zoomed ? camEnd + 0.1 : 0);
           tl.clicks.push({ t, x: e.at.x, y: e.at.y });
           t += T.click + T.afterClick;
           break;
+        }
         case "highlight": {
           // The ring (and its step badge) comes up as the pointer sets off toward the target, so
           // it's on screen long enough to read, not just for the instant before the click.
@@ -520,7 +630,7 @@ export function buildTimeline(
           // next step's own camera move eases back out (or a page change does, above).
           const z = stepZooms ? zoomOn(e.box) : undefined;
           if (z) {
-            pushCamera(hiStart, 0.9, z);
+            pushCamera(hiStart, T.camera, z);
             zoomed = true;
             cleared = false;
           }
@@ -535,16 +645,18 @@ export function buildTimeline(
           for (const img of e.images) {
             tl.frames.push({ t, src: frameSrc(img), transition: "cut" });
             t += T.char;
+            shownImage = img;
           }
           break;
         case "scrollFrames":
           if (zoomed && cleared) {
-            pushCamera(t, 0.75, baseFrame);
+            pushCamera(t, T.camera, baseFrame);
             zoomed = false;
           }
           for (const img of e.images) {
             tl.frames.push({ t, src: frameSrc(img), transition: "cut" });
             t += T.scroll;
+            shownImage = img;
           }
           break;
         case "hold":

@@ -253,7 +253,8 @@ export interface PathClipEmbed {
   src: string;
   vtt?: string;
   srt?: string;
-  continueAt: { step: number; title?: string; t?: number };
+  /** Absent for a path that runs to its own end. */
+  continueAt?: { step: number; title?: string; t?: number };
   mainVideoAt?: string;
 }
 
@@ -267,7 +268,7 @@ function clock(seconds: number): string {
 export function buildPathClipBlock(path: { id: string; title: string }, clip: PathClipEmbed): GeneratedBlock {
   const attr = (name: string, value: string | undefined) => (value ? ` ${name}={${JSON.stringify(value)}}` : "");
   const lines = [`<VideoEmbed${attr("src", clip.src)}${attr("vtt", clip.vtt)}${attr("srt", clip.srt)}${attr("title", path.title)} />`];
-  if (clip.mainVideoAt) {
+  if (clip.mainVideoAt && clip.continueAt) {
     const at = clip.continueAt.t !== undefined ? ` (${clock(clip.continueAt.t)})` : "";
     lines.push("", `Watch the rest from [step ${clip.continueAt.step} in the main video${at}](${clip.mainVideoAt}).`);
   }

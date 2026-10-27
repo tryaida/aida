@@ -234,7 +234,7 @@ export function fontState(prepared: PdfBrand | undefined): string {
 }
 
 /** Bumped when the print layout changes, so cached PDFs from an older layout re-render. */
-const PRINT_LAYOUT_VERSION = "m33";
+const PRINT_LAYOUT_VERSION = "m36";
 
 /** Finds a card rendering that fits: the image grid on the pages `cardLayout` plans for (one,
  * or two for a long guide) with every word showing (measured — `cardOverflows`), at smaller text

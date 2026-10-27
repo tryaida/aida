@@ -41,7 +41,19 @@ export const FRONTMATTER_KEY = "frontmatter";
  * last time a human touched the frontmatter. Keys not in this set (title, for, and anything a
  * person adds) are treated as human-editable, same as any other block.
  */
-const FRONTMATTER_ENGINE_KEYS = new Set(["walkthrough", "lastChecked", "passed", "video", "srt", "vtt"]);
+const FRONTMATTER_ENGINE_KEYS = new Set(["walkthrough", "steps", "lastChecked", "passed", "video", "srt", "vtt"]);
+
+/**
+ * Frontmatter keys another stage patches in after the page is built (`pdf`/`pdfCard`, written by
+ * pdf/frontmatter.ts once the PDFs exist). Neither the page's to write nor a person's: a rebuild
+ * keeps the line on disk as it is, and it never counts toward the "edited by a person" hash —
+ * otherwise the first PDF build made every page's frontmatter look hand-edited and froze its
+ * human-owned keys (a step count stuck at an old value, M36).
+ */
+const FRONTMATTER_PATCHED_KEYS = new Set(["pdf", "pdfCard"]);
+
+/** Before M36 `steps` was hashed as a human-owned key: a sidecar written then still verifies. */
+const LEGACY_ENGINE_KEYS = new Set(["walkthrough", "lastChecked", "passed", "video", "srt", "vtt"]);
 
 function escapeKey(key: string): string {
   return key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -78,10 +90,10 @@ function frontmatterLineKey(line: string): string | undefined {
 }
 
 /** The lines of a frontmatter block whose key is NOT engine-owned — the part a person can edit. */
-function humanOwnedFrontmatterLines(content: string): string[] {
+function humanOwnedFrontmatterLines(content: string, engineKeys: Set<string> = FRONTMATTER_ENGINE_KEYS): string[] {
   return content.split("\n").filter((line) => {
     const key = frontmatterLineKey(line);
-    return key !== undefined && !FRONTMATTER_ENGINE_KEYS.has(key);
+    return key !== undefined && !engineKeys.has(key) && !FRONTMATTER_PATCHED_KEYS.has(key);
   });
 }
 
@@ -117,6 +129,11 @@ function mergeFrontmatter(oldContent: string, newContent: string, keepHuman: boo
   for (const key of order) {
     if (FRONTMATTER_ENGINE_KEYS.has(key)) {
       const line = newLines.get(key);
+      if (line) lines.push(line);
+      continue;
+    }
+    if (FRONTMATTER_PATCHED_KEYS.has(key) && !newLines.has(key)) {
+      const line = oldLines.get(key);
       if (line) lines.push(line);
       continue;
     }
@@ -200,7 +217,8 @@ export function mergeBlocks(
       const oldFrontmatter = m[0];
       const oldHuman = humanOwnedFrontmatterLines(oldFrontmatter).join("\n");
       const knownHash = sidecarIn[frontmatter.key];
-      const stillOurs = knownHash !== undefined && hashOf(oldHuman) === knownHash;
+      const stillOurs = knownHash !== undefined &&
+        (hashOf(oldHuman) === knownHash || hashOf(humanOwnedFrontmatterLines(oldFrontmatter, LEGACY_ENGINE_KEYS).join("\n")) === knownHash);
       // Engine-owned keys (passed, lastChecked, video, srt, vtt, walkthrough) are always taken
       // fresh below, regardless of `stillOurs` — a block whose *other* fields a person edited
       // must never freeze these and ship a stale `passed: true` for a capture that has since

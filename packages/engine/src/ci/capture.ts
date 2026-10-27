@@ -2,22 +2,20 @@
 // a previous build (CI compares straight to the baseline screenshot, not to "last run"). Mirrors
 // the capture step of commands/capture.ts (db-reset-before-capture, trimmed failure report) but
 // kept separate so `aida ci` never pulls in capture's video/voice build stages.
-import { createHash } from "node:crypto";
+import { sessionKey } from "../capture/session-key.js";
 import { join } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
 import type { ResolvedConfig } from "../config/index.js";
 import { loadWalkthroughFile } from "../walkthrough/index.js";
 import type { Persona, Walkthrough } from "../walkthrough/index.js";
-import { capturePaths, diffPaths, pathsPassed, prunePathDirs, recordPathDiffs, runCapture, runLevelFailure } from "../capture/index.js";
+import { capturePaths, comparePathRuns, pathsPassed, prunePathDirs, recordPathDiffs, runCapture, runLevelFailure } from "../capture/index.js";
 import { assertLocalDatabase } from "../capture/write-guard.js";
 import type { CaptureRunResult } from "../capture/runner.js";
 import type { FailureReport } from "../capture/types.js";
 import { markNotCaptured } from "../capture/not-captured.js";
 
-function storageStateKey(baseUrl: string, walkthrough: Walkthrough): string {
-  const persona = walkthrough.start?.persona ?? null; // normalised at load: always an object
-  const hash = createHash("sha256").update(JSON.stringify({ baseUrl, persona })).digest("hex").slice(0, 16);
-  return hash;
+function storageStateKey(baseUrl: string, walkthrough: Walkthrough, config: Pick<ResolvedConfig, "signIn" | "signInHash">): string {
+  return sessionKey(baseUrl, walkthrough.start?.persona, config); // persona normalised at load: always an object
 }
 
 export interface CiCaptureResult {
@@ -53,7 +51,7 @@ export async function captureWalkthroughForCi(
   mkdirSync(captureDir, { recursive: true });
 
   const baseUrl = appUrl ?? walkthrough.start?.baseUrl ?? config.app.baseUrl;
-  const storageStatePath = join(config.buildDir, ".aida-session", `storageState-ci-${storageStateKey(baseUrl, walkthrough)}.json`);
+  const storageStatePath = join(config.buildDir, ".aida-session", `storageState-ci-${storageStateKey(baseUrl, walkthrough, config)}.json`);
 
   try {
     // Unlike commands/capture.ts (local dev, where reset() can be an expensive full training-dump
@@ -103,7 +101,8 @@ export async function captureWalkthroughForCi(
     writeFileSync(join(captureDir, "validation.json"), `${JSON.stringify(result.validation, null, 2)}\n`);
     let pathFailure: FailureReport | undefined;
     if (pathRun) {
-      recordPathDiffs(captureDir, result.validation.ok ? diffPaths(result.manifest, pathRun.manifests) : []);
+      const compared = comparePathRuns(result, pathRun);
+      recordPathDiffs(captureDir, compared.pathDiffs, compared.pathChecks);
       const failed = pathRun.paths.find((p) => !p.ok && p.skipped === undefined);
       if (failed?.failure) pathFailure = { ...failed.failure, step: `path ${failed.path}: ${failed.failure.step ?? "?"}` };
     }

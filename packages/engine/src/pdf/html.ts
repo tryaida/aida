@@ -341,7 +341,7 @@ const GUIDE_STYLE = `
   .step.stack .step-text { margin-left: 26pt; }
   .step.stack .step-text h4.step-h { margin-left: -26pt; }
   .step.stack .shot { margin: 6pt 0 0 26pt; max-width: calc(100% - 26pt); }
-  .step.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); column-gap: 14pt; align-items: start; }
+  .step.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); column-gap: 14pt; align-items: start; }
   .step.split .step-text { padding-top: 1pt; }
   .step.split .step-text p, .step.split .step-text ul { margin-left: 26pt; }
   .step blockquote { margin-left: 26pt; }
@@ -420,12 +420,15 @@ function wrapSteps(bodyHtml: string, figures: Map<number, PrintFigure>): string 
 // ---- Other ways to do this (decision 34; build-plan.md M33) ------------------------------------
 // The page's "Other ways to do this" section: per walkthrough path, its title, when to use it, the
 // writer's note, its opening steps laid out like the main steps (with the path's own print
-// figures) and the "Then continue from step N" line. Kept apart from the main step wrapping.
+// figures) and the "Then continue from step N" line (none for a path that runs to its own end,
+// decision 37). A path's heading is kept on the same page as its first step. Kept apart from the
+// main step wrapping.
 
 const OTHER_WAYS_STYLE = `
-  h2.other-ways-h { margin-top: 16pt; }
+  h2.other-ways-h { margin-top: 16pt; break-after: avoid; page-break-after: avoid; }
   .path { margin: 0 0 14pt; padding: 0 0 0 12pt; border-left: 3pt solid var(--primary-line); }
-  .path > h3 { margin: 8pt 0 3pt; }
+  .path h3 { margin: 8pt 0 3pt; break-after: avoid; page-break-after: avoid; }
+  .path-start { break-inside: avoid; page-break-inside: avoid; }
   .path-when { margin: 0 0 8pt; color: var(--muted-fg); }
   .path blockquote { margin: 0 0 8pt; }
   .path-join { break-before: avoid; page-break-before: avoid; margin: -4pt 0 0 26pt; font-weight: 600; }
@@ -507,8 +510,11 @@ export function otherWaysHtml(
       return "";
     });
     const head = (last >= 0 ? introNoClip : introNoClip.replace(joinMatch, "")).replace(/^(<h3>[\s\S]*?<\/h3>)\s*<p>([\s\S]*?)<\/p>/, `$1<p class="path-when">$2</p>${qr.replace(/\$/g, "$$$$")}`);
-    const stepHtml = steps.map((part) => pathStepHtml(part, pathFigures)).join("\n");
-    out.push(`<section class="path">${head.trim()}${stepHtml}${join}</section>`);
+    const [first, ...rest] = steps.map((part) => pathStepHtml(part, pathFigures));
+    // The heading, when-sentence, note and first step travel together: never a heading orphaned
+    // at the bottom of a page.
+    const start = `<div class="path-start">${head.trim()}${first ?? ""}</div>`;
+    out.push(`<section class="path">${start}${rest.length > 0 ? `\n${rest.join("\n")}` : ""}${join}</section>`);
   }
   return out.join("\n");
 }

@@ -42,6 +42,150 @@ export interface StepFigurePlan {
   /** First step of the guide, or the route changed since the previous step's screenshot: a
    * screen the reader hasn't seen yet, which print shows in full. */
   newScreen: boolean;
+  /** The ring marks what the step's click brought up (a dialog or menu), not the clicked
+   * element: the target was covered on the after-frame and blur rules out the before-frame. */
+  appeared?: boolean;
+}
+
+/** A frame in grey levels at one pixel per CSS px — enough to tell whether a target is still
+ * on screen after a click, and what appeared over it. */
+export interface GrayFrame {
+  width: number;
+  height: number;
+  lum: Uint8Array;
+}
+
+/** Samples RGBA pixels (pngjs's `data`, at `scale` device pixels per CSS px) down to a
+ * `GrayFrame` of `width`x`height` CSS px. */
+export function grayFrame(rgba: Uint8Array | Buffer, pxWidth: number, pxHeight: number, scale: number): GrayFrame {
+  const s = Math.max(1, scale);
+  const width = Math.max(1, Math.floor(pxWidth / s));
+  const height = Math.max(1, Math.floor(pxHeight / s));
+  const lum = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++) {
+    const sy = Math.min(pxHeight - 1, Math.floor(y * s + s / 2));
+    for (let x = 0; x < width; x++) {
+      const sx = Math.min(pxWidth - 1, Math.floor(x * s + s / 2));
+      const i = (sy * pxWidth + sx) * 4;
+      lum[y * width + x] = Math.round(0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2]);
+    }
+  }
+  return { width, height, lum };
+}
+
+/** Tuning for telling a covered target from one that's still there. */
+export const FRAME_DIFF = {
+  /** Grey-level step that counts as a changed pixel (a hover tint stays under it). */
+  step: 28,
+  /** Share of a target's pixels that must change for it to count as covered (a value typed or
+   * picked into a field changes far fewer). */
+  covered: 0.5,
+  /** Grid cell for finding what appeared, CSS px. */
+  cell: 12,
+  /** Share of a cell's pixels that must be new content. */
+  cellFill: 0.12,
+  /** What appeared must be smaller than this share of the screen to be worth a ring. */
+  maxShare: 0.6,
+  /** ...and hold at least this share of everything that changed. */
+  dominant: 0.75,
+} as const;
+
+/** True when most of `box` changed between `before` and `after`: something now covers the
+ * target (a dialog, a backdrop), so a ring drawn there on `after` would point at the wrong thing. */
+export function targetCovered(before: GrayFrame, after: GrayFrame, box: Box): boolean {
+  if (before.width !== after.width || before.height !== after.height) return false;
+  const x0 = Math.max(0, Math.floor(box.x)), y0 = Math.max(0, Math.floor(box.y));
+  const x1 = Math.min(after.width, Math.ceil(box.x + box.w)), y1 = Math.min(after.height, Math.ceil(box.y + box.h));
+  if (x1 <= x0 || y1 <= y0) return false;
+  let changed = 0;
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const i = y * after.width + x;
+      if (Math.abs(after.lum[i] - before.lum[i]) > FRAME_DIFF.step) changed++;
+    }
+  }
+  return changed / ((x1 - x0) * (y1 - y0)) > FRAME_DIFF.covered;
+}
+
+/**
+ * The box of what a click brought up between `before` and `after` — a dialog or menu — or
+ * undefined when nothing compact appeared (a whole new page). A dimmed backdrop isn't new
+ * content: when most of the changed pixels are the old screen darkened by one factor, those
+ * are left out, so the box is the dialog itself. The largest connected patch of new content wins.
+ */
+export function appearedRegion(before: GrayFrame, after: GrayFrame): Box | undefined {
+  if (before.width !== after.width || before.height !== after.height) return undefined;
+  const D = FRAME_DIFF;
+  const { width: W, height: H } = after;
+  const n = W * H;
+  // A backdrop: the median after/before ratio of changed, not-too-dark pixels well under 1.
+  const ratios: number[] = [];
+  let changedCount = 0;
+  for (let i = 0; i < n; i += 7) {
+    const b = before.lum[i], a = after.lum[i];
+    if (Math.abs(a - b) <= D.step) continue;
+    changedCount++;
+    if (b > 60) ratios.push(a / b);
+  }
+  ratios.sort((p, q) => p - q);
+  const median = ratios.length > 0 ? ratios[Math.floor(ratios.length / 2)] : 1;
+  const dim = changedCount / Math.ceil(n / 7) > 0.3 && median < 0.9 ? median : undefined;
+  const C = D.cell;
+  const gw = Math.ceil(W / C), gh = Math.ceil(H / C);
+  const fresh = new Uint8Array(gw * gh);
+  for (let gy = 0; gy < gh; gy++) {
+    for (let gx = 0; gx < gw; gx++) {
+      let count = 0, total = 0;
+      for (let y = gy * C; y < Math.min(H, gy * C + C); y++) {
+        for (let x = gx * C; x < Math.min(W, gx * C + C); x++) {
+          const i = y * W + x;
+          const b = before.lum[i], a = after.lum[i];
+          total++;
+          // Under a backdrop, whatever isn't the old screen darkened is the dialog — a white
+          // dialog over a white page included, which is unchanged pixel for pixel.
+          const fresh = dim !== undefined && b >= 50 ? Math.abs(a - b * dim) > 18 : Math.abs(a - b) > D.step;
+          if (fresh) count++;
+        }
+      }
+      if (count / total > D.cellFill) fresh[gy * gw + gx] = 1;
+    }
+  }
+  // Largest 8-connected patch of new cells (a dialog's text and borders leave gaps of a cell
+  // or two; neighbouring cells across a gap of one are joined).
+  const seen = new Uint8Array(gw * gh);
+  let best: { x0: number; y0: number; x1: number; y1: number; cells: number } | undefined;
+  for (let start = 0; start < gw * gh; start++) {
+    if (!fresh[start] || seen[start]) continue;
+    const stack = [start];
+    seen[start] = 1;
+    const r = { x0: gw, y0: gh, x1: 0, y1: 0, cells: 0 };
+    while (stack.length > 0) {
+      const c = stack.pop()!;
+      const cx = c % gw, cy = Math.floor(c / gw);
+      r.cells++;
+      r.x0 = Math.min(r.x0, cx); r.y0 = Math.min(r.y0, cy); r.x1 = Math.max(r.x1, cx + 1); r.y1 = Math.max(r.y1, cy + 1);
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          const nx = cx + dx, ny = cy + dy;
+          if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue;
+          const k = ny * gw + nx;
+          if (fresh[k] && !seen[k]) {
+            seen[k] = 1;
+            stack.push(k);
+          }
+        }
+      }
+    }
+    if (!best || r.cells > best.cells) best = r;
+  }
+  if (!best) return undefined;
+  // A dialog or menu is nearly all of what changed; a new page changes all over.
+  let freshCells = 0;
+  for (let k = 0; k < fresh.length; k++) freshCells += fresh[k];
+  if (best.cells < freshCells * D.dominant) return undefined;
+  const box = { x: best.x0 * C, y: best.y0 * C, w: Math.min(W, best.x1 * C) - best.x0 * C, h: Math.min(H, best.y1 * C) - best.y0 * C };
+  if (box.w < 24 || box.h < 16 || box.w * box.h > W * H * D.maxShare) return undefined;
+  return box;
 }
 
 function pathnameOf(url: string | undefined): string | undefined {
@@ -67,17 +211,20 @@ function frameSegments(step: ManifestStep): { frame: string; boxes: Box[]; click
 }
 
 /**
- * Plans every captured step's figure. A step's `doc.image` is the state after its actions, and
- * `doc.highlights` collects every box highlighted on the way there — so when a click moves to
- * another page, those boxes belong to the earlier frame, not the new page (a ring landing on an
- * empty part of the next screen). Then the frame the target was highlighted on is shown instead,
- * unless the step has callouts or any step has blur boxes (resolved on each `doc.image` only), in
- * which case it keeps `doc.image` with no ring. Steps with no image are left out.
+ * Plans every captured step's figure. A step's `doc.image` is the state after its actions, while
+ * its target is highlighted on the frame before the click (the highlight is cleared once it's
+ * clicked). When the target is still on `doc.image` (same page, nothing over it), the ring goes
+ * there. When it isn't — the click opened another page, or a dialog/menu now covers it — the
+ * frame the target was highlighted on is shown instead (where to click), unless the step has
+ * callouts or any step has blur boxes (resolved on each `doc.image` only, decision 36 / M32
+ * privacy rule): then `doc.image` is kept and the ring marks what the click brought up (the
+ * dialog or menu, from `opts.frames`), or nothing when a whole new page came up. Steps with no
+ * image are left out.
  */
 export function planStepFigures(
   wf: Pick<Walkthrough, "start" | "steps">,
   manifest: Pick<CaptureManifest, "steps">,
-  opts: { anyBlur?: boolean } = {},
+  opts: { anyBlur?: boolean; frames?: (frame: string) => GrayFrame | undefined } = {},
 ): StepFigurePlan[] {
   const plans: StepFigurePlan[] = [];
   // Blur boxes are resolved on each step's own `doc.image` only. An earlier frame can still show
@@ -86,9 +233,13 @@ export function planStepFigures(
   // `opts.anyBlur`: the caller knows of blur beyond `wf.steps` (a path run: the main steps and
   // every other path count too).
   const anyBlur = Boolean(opts.anyBlur) || wf.steps.some((s) => (s.blur?.length ?? 0) > 0);
+  const frames = opts.frames;
   let route = pathnameOf(wf.start?.page);
   let lastShownRoute: string | undefined;
   let first = true;
+  // The previous figure showed the screen before a dialog opened over it: the next step's
+  // screen (the dialog) is one the reader hasn't seen yet.
+  let unseenOverlay = false;
   for (let i = 0; i < manifest.steps.length; i++) {
     const m = manifest.steps[i];
     const wfStep = wf.steps[i];
@@ -101,25 +252,50 @@ export function planStepFigures(
     if (!doc) continue;
 
     const segs = frameSegments(m);
-    const docSegs = segs.filter((s) => s.frame === doc);
-    const onDoc = docSegs.flatMap((s) => s.boxes);
+    const onDoc = segs.filter((s) => s.frame === doc).flatMap((s) => s.boxes);
     const hasOverlays = anyBlur || (wfStep?.callouts?.length ?? 0) > 0;
-    let plan: Omit<StepFigurePlan, "step" | "newScreen"> & { route: string | undefined };
-    if (!navigated) {
-      // Same page throughout: every highlight still points at the right thing on `doc.image`.
-      const clicks = onDoc.length === 0 && m.doc.highlights.length === 0 ? segs.flatMap((s) => s.clicks).slice(-1) : [];
-      plan = { frame: doc, targets: m.doc.highlights, points: clicks, docOverlays: true, route: after };
-    } else if (onDoc.length > 0) {
-      plan = { frame: doc, targets: onDoc, points: [], docOverlays: true, route: after };
+    const lastLit = [...segs].reverse().find((s) => s.boxes.length > 0 && s.frame !== doc);
+    let plan: Omit<StepFigurePlan, "step" | "newScreen"> & { route: string | undefined; overlay?: boolean };
+    if (onDoc.length > 0) {
+      // Highlighted while the final screen showed (a check step): the ring is on `doc.image`.
+      plan = { frame: doc, targets: navigated ? onDoc : m.doc.highlights.length > 0 ? m.doc.highlights : onDoc, points: [], docOverlays: true, route: after };
+    } else if (!lastLit) {
+      // No highlight at all (typed into a field): the last click point is a crop hint only.
+      const clicks = !navigated && m.doc.highlights.length === 0 ? segs.flatMap((s) => s.clicks).slice(-1) : [];
+      plan = { frame: doc, targets: !navigated ? m.doc.highlights : [], points: clicks, docOverlays: true, route: after };
     } else {
-      const lastLit = [...segs].reverse().find((s) => s.boxes.length > 0 && s.frame !== doc);
-      plan = lastLit && !hasOverlays
-        ? { frame: lastLit.frame, targets: lastLit.boxes, points: [], docOverlays: false, route: before }
-        : { frame: doc, targets: [], points: [], docOverlays: true, route: after };
+      const beforeFrame = !navigated && frames ? frames(lastLit.frame) : undefined;
+      const afterFrame = beforeFrame ? frames?.(doc) : undefined;
+      // Same page: the target is still where it was unless something now covers it. Without
+      // the pixels to check, assume it is (the pre-M36 behaviour for a same-page step).
+      const covered = navigated || Boolean(beforeFrame && afterFrame && targetCovered(beforeFrame, afterFrame, union(lastLit.boxes)));
+      if (!covered) {
+        plan = { frame: doc, targets: m.doc.highlights.length > 0 ? m.doc.highlights : lastLit.boxes, points: [], docOverlays: true, route: after };
+      } else if (!hasOverlays) {
+        plan = { frame: lastLit.frame, targets: lastLit.boxes, points: [], docOverlays: false, route: before, overlay: !navigated };
+      } else {
+        // Blur somewhere: never an earlier frame. Ring what the click brought up, if it's a
+        // compact dialog or menu (a whole new page gets no ring).
+        const b = frames?.(lastLit.frame);
+        const a = b ? frames?.(doc) : undefined;
+        const appeared = a && b ? appearedRegion(b, a) : undefined;
+        plan = appeared
+          ? { frame: doc, targets: [appeared], points: [], docOverlays: true, route: after, appeared: true }
+          : { frame: doc, targets: [], points: [], docOverlays: true, route: after };
+      }
     }
-    const newScreen = first || plan.route !== lastShownRoute;
-    plans.push({ step: i + 1, frame: plan.frame, targets: plan.targets, points: plan.points, docOverlays: plan.docOverlays, newScreen });
+    const newScreen = first || unseenOverlay || plan.route !== lastShownRoute;
+    plans.push({
+      step: i + 1,
+      frame: plan.frame,
+      targets: plan.targets,
+      points: plan.points,
+      docOverlays: plan.docOverlays,
+      newScreen,
+      ...(plan.appeared ? { appeared: true } : {}),
+    });
     lastShownRoute = plan.route;
+    unseenOverlay = Boolean(plan.overlay);
     first = false;
   }
   return plans;
@@ -370,4 +546,133 @@ export function refineCrop(m: EdgeMap, crop: Box, targets: Box[], points: Point[
   x0 = clamp(x0, 0, vw); x1 = clamp(x1, x0 + 1, vw);
   y0 = clamp(y0, 0, vh); y1 = clamp(y1, y0 + 1, vh);
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+/**
+ * Crop size classes (M36): every focus crop in a guide is one of a few sizes at one aspect, so
+ * crops print at the same size in the layout's grid and zoom by a step or two rather than a
+ * different amount each time. Widths are shares of the viewport; the aspect is shared by all.
+ */
+export const CROP_CLASSES = {
+  /** The smallest is for a lone control in a sparse area (a Save button under an empty form). */
+  shares: [0.3, 0.39, 0.53, 0.69],
+  aspect: 1.6,
+  /** Space kept between the target (with its ring padding) and a class crop's edge. */
+  margin: 24,
+  /** A class crop may sit off the target's centre by this share of its size to land its edges
+   * on clean gutters... */
+  drift: 0.12,
+  /** ...or by up to this much when every position that close still slices through text. */
+  maxDrift: 0.3,
+  /** Edge cost (summed activity along the four edges) under which a crop cuts nothing that reads. */
+  cleanCut: 0.12,
+} as const;
+
+/** Width and height of size class `cls` for a viewport. */
+export function cropClassSize(cls: number, viewport: { width: number; height: number }): { w: number; h: number } {
+  const C = CROP_CLASSES;
+  const w = Math.round(viewport.width * C.shares[Math.min(Math.max(cls, 0), C.shares.length - 1)]);
+  return { w, h: Math.round(Math.min(w / C.aspect, viewport.height)) };
+}
+
+/** The smallest class that holds `crop`'s context (a little tighter is fine) and the whole
+ * target with its margin; undefined when none does (the full screen reads better). */
+export function cropClassFor(crop: Box, targets: Box[], points: Point[], viewport: { width: number; height: number }): number | undefined {
+  const t = targetBox(targets, points);
+  if (!t) return undefined;
+  const m = CROP_CLASSES.margin;
+  for (let cls = 0; cls < CROP_CLASSES.shares.length; cls++) {
+    const { w, h } = cropClassSize(cls, viewport);
+    if (w >= crop.w * 0.9 && h >= Math.min(crop.h * 0.9, viewport.height) && w >= t.w + m * 2 && h >= t.h + m * 2) return cls;
+  }
+  return undefined;
+}
+
+/** Holds a guide's crops to two neighbouring classes at most: when the smallest and largest
+ * used are further apart, the smallest crops step up one. */
+export function normaliseCropClasses(classes: (number | undefined)[]): (number | undefined)[] {
+  const used = classes.filter((c): c is number => c !== undefined);
+  if (used.length === 0) return classes;
+  const lo = Math.min(...used), hi = Math.max(...used);
+  if (hi - lo < 2) return classes;
+  return classes.map((c) => (c === undefined ? c : Math.max(c, hi - 1)));
+}
+
+/**
+ * Places a class-sized crop: centred on the step's own target, kept inside the frame with the
+ * target and its margin inside it, then nudged (within `CROP_CLASSES.drift`) to where its edges
+ * cut through the least UI on the clean screen `m` (when given).
+ */
+export function placeCropClass(
+  m: EdgeMap | undefined,
+  cls: number,
+  targets: Box[],
+  points: Point[],
+  viewport: { width: number; height: number },
+): Box | undefined {
+  const t = targetBox(targets, points);
+  if (!t) return undefined;
+  const { w, h } = cropClassSize(cls, viewport);
+  const vw = viewport.width, vh = viewport.height;
+  const M = CROP_CLASSES.margin;
+  const cx = clamp(t.x + t.w / 2 - w / 2, 0, vw - w);
+  const cy = clamp(t.y + t.h / 2 - h / 2, 0, vh - h);
+  // Positions that keep the target and its margin inside, and the crop inside the frame.
+  const search = (d: number): { x: number; y: number; cost: number } => {
+    const xLo = Math.max(0, t.x + t.w + M - w, cx - w * d);
+    const xHi = Math.min(vw - w, t.x - M, cx + w * d);
+    const yLo = Math.max(0, t.y + t.h + M - h, cy - h * d);
+    const yHi = Math.min(vh - h, t.y - M, cy + h * d);
+    let found = { x: cx, y: cy, cost: Infinity };
+    if (!m || m.width !== vw || m.height !== vh) return found;
+    const smoothCol = (x: number, y0: number, y1: number) =>
+      Math.max(colActivity(m, x - 1, y0, y1), colActivity(m, x, y0, y1), colActivity(m, x + 1, y0, y1));
+    const smoothRow = (y: number, x0: number, x1: number) =>
+      Math.max(rowActivity(m, y - 1, x0, x1), rowActivity(m, y, x0, x1), rowActivity(m, y + 1, x0, x1));
+    const xs = xLo <= xHi ? [xLo, xHi] : [cx, cx];
+    const ys = yLo <= yHi ? [yLo, yHi] : [cy, cy];
+    for (let x = Math.round(xs[0]); x <= Math.round(xs[1]); x += 4) {
+      for (let y = Math.round(ys[0]); y <= Math.round(ys[1]); y += 4) {
+        const x1 = x + w, y1 = y + h;
+        // An edge on the frame's own edge cuts nothing.
+        const cost =
+          (x <= 0 ? 0 : smoothCol(x, y, y1)) + (x1 >= vw ? 0 : smoothCol(x1 - 1, y, y1)) +
+          (y <= 0 ? 0 : smoothRow(y, x, x1)) + (y1 >= vh ? 0 : smoothRow(y1 - 1, x, x1)) +
+          0.02 * (Math.abs(x - cx) / w + Math.abs(y - cy) / h);
+        if (cost < found.cost - 1e-9) found = { x, y, cost };
+      }
+    }
+    return found;
+  };
+  let best = search(CROP_CLASSES.drift);
+  if (best.cost > CROP_CLASSES.cleanCut) {
+    const wider = search(CROP_CLASSES.maxDrift);
+    if (wider.cost < best.cost - 0.04) best = wider;
+  }
+  return { x: Math.round(clamp(best.x, 0, vw - w)), y: Math.round(clamp(best.y, 0, vh - h)), w, h };
+}
+
+/** Below this share of edge pixels, the band a bigger class adds around a smaller one is empty
+ * space (a blank form, an empty panel) — not worth printing. */
+export const SPARSE_BAND = 0.012;
+
+/**
+ * Steps a crop down a class while what the bigger one adds is nearly empty (M36: a Save button
+ * under a blank form came out as mostly blank form). Never below the class that holds the target.
+ */
+export function tightenCropClass(m: EdgeMap, cls: number, targets: Box[], points: Point[], viewport: { width: number; height: number }): number {
+  let c = cls;
+  while (c > 0) {
+    const big = placeCropClass(m, c, targets, points, viewport);
+    const small = placeCropClass(m, c - 1, targets, points, viewport);
+    const t = targetBox(targets, points);
+    if (!big || !small || !t) break;
+    const fits = small.w >= t.w + CROP_CLASSES.margin * 2 && small.h >= t.h + CROP_CLASSES.margin * 2;
+    if (!fits) break;
+    const edges = (b: Box) => density(m, b) * b.w * b.h;
+    const band = (edges(big) - edges(small)) / Math.max(1, big.w * big.h - small.w * small.h);
+    if (band >= SPARSE_BAND) break;
+    c--;
+  }
+  return c;
 }

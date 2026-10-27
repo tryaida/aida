@@ -12,6 +12,8 @@ import path from "node:path";
 import type { Browser, BrowserContext, Page } from "playwright";
 import type { BrandConfig } from "../config/types.js";
 import { applyMasks, clearMasks } from "../capture/mask.js";
+import { NAME_SHIM_SCRIPT } from "../capture/init-scripts.js";
+import { gotoReady } from "../capture/page-ready.js";
 import { formatHsl, parseColor, rgbToHsl } from "./color.js";
 
 /** One page's raw readings (all colours already `#rrggbb` or `#rrggbbaa`). */
@@ -413,6 +415,10 @@ export async function readBrandFromApp(opts: ReadFromAppOptions): Promise<ReadFr
       serviceWorkers: "block",
       ...(reuse ? { storageState: reuse } : {}),
     });
+    // Like capture and inspect: callbacks passed to page.evaluate as functions (capture's masks
+    // among them) get esbuild's `__name(...)` wrapping under tsx, which the page doesn't have.
+    // A plain-string no-op `__name` in every document lets them run (see capture/init-scripts.ts).
+    await context.addInitScript(NAME_SHIM_SCRIPT);
     const gate = { passThrough: false };
     const origin = new URL(base).origin;
     await installReadOnlyGate(context, gate, origin);
@@ -441,10 +447,10 @@ export async function readBrandFromApp(opts: ReadFromAppOptions): Promise<ReadFr
     const assets: ReadFromAppResult["assets"] = {};
     for (const [i, p] of pages.entries()) {
       const url = appPageUrl(base, p);
-      await page.goto(url, { waitUntil: "networkidle", timeout: 60_000 });
+      await gotoReady(page, url, 60_000);
       if (reuse && opts.signIn && opts.isSignInPath?.(page.url())) {
         await signIn();
-        await page.goto(url, { waitUntil: "networkidle", timeout: 60_000 });
+        await gotoReady(page, url, 60_000);
       }
       // Never read a brand off somewhere else, or off the sign-in screen (often a different look).
       if (!sameOrigin(page.url(), origin)) throw new Error(`${p} ended up off the app (${new URL(page.url()).origin}) — not reading it`);

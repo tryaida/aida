@@ -103,7 +103,8 @@ export function buildContextBlock(context: RetrievedContext, citations: ChatCita
         const here = page.currentPathId === path.id ? " (the reader is on this screen now: lead with this way)" : "";
         lines.push(`Other way: ${path.title}, starting on ${path.start.page}${here}. When: ${path.when}`);
         for (const s of path.steps) lines.push(`  ${s.n}. ${s.title}${s.instruction ? ` — ${s.instruction}` : ""}`);
-        lines.push(`  Then continue from step ${path.joinsAt} (${path.joinsTitle}).${path.note ? ` Note: ${path.note}` : ""}`);
+        const then = path.joinsAt !== undefined ? `Then continue from step ${path.joinsAt} (${path.joinsTitle}).` : "That's the whole task this way.";
+        lines.push(`  ${then}${path.note ? ` Note: ${path.note}` : ""}`);
       }
     }
     return lines.join("\n");

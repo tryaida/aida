@@ -25,6 +25,8 @@ import type { NarrationBeat, Timeline } from "../render/types.js";
 import { loadNarrationBeats } from "../render/voice-input.js";
 import { qualityFor } from "../render/video.js";
 import { loadWalkthroughFile, type Walkthrough } from "../walkthrough/index.js";
+import { renderBrandCss } from "../theme/write.js";
+import { SITE_PAGE_WIDTH, sitePageHtml } from "./site-page.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -175,6 +177,65 @@ async function shootHtml(browser: Browser, html: string, file: string, width: nu
   }
 }
 
+/** Screenshots a whole HTML document at `width`, as tall as its content (no clipping). */
+async function shootFullPage(browser: Browser, html: string, file: string, width: number): Promise<void> {
+  const htmlFile = file.replace(/\.png$/, ".src.html");
+  writeFileSync(htmlFile, html);
+  const page = await browser.newPage({ viewport: { width, height: 800 }, deviceScaleFactor: 1 });
+  try {
+    await page.goto(`file://${htmlFile}`, { waitUntil: "load" });
+    await page.evaluate("document.fonts.ready").catch(() => {});
+    await page.screenshot({ path: file, fullPage: true });
+  } finally {
+    await page.close();
+    rmSync(htmlFile, { force: true });
+  }
+}
+
+/** The help app's light-theme brand variables as a `:root` rule: the custom property
+ * declarations (`--name: value;`) of `app/brand.css`'s first rule, nothing else — no selector,
+ * at-rule or `url()` from the file reaches the render. Rendered from config when the file is
+ * missing or has none. */
+export function siteBrandCss(config: Pick<ResolvedConfig, "helpApp" | "brand">): string {
+  const file = config.helpApp ? path.join(config.helpApp, "app", "brand.css") : undefined;
+  let text = "";
+  try {
+    if (file && existsSync(file)) text = readFileSync(file, "utf8");
+  } catch {
+    text = "";
+  }
+  const vars = brandVars(text);
+  return vars.length > 0 ? `:root {\n${vars.map((v) => `  ${v}`).join("\n")}\n}\n` : renderBrandCss(config.brand);
+}
+
+/** `--name: value;` declarations in the first `{…}` rule of a stylesheet, values limited to
+ * colours, lengths, font names and `var()`/`color-mix()`/`hsl()` calls. */
+export function brandVars(css: string): string[] {
+  const body = /\{([^{}]*)\}/.exec(css.replace(/\/\*[\s\S]*?\*\//g, ""))?.[1] ?? "";
+  const out: string[] = [];
+  for (const m of body.matchAll(/(--[A-Za-z0-9-]+)\s*:\s*([^;{}]*);/g)) {
+    const value = m[2].trim();
+    if (!/^[A-Za-z0-9\s#%.,()"'\-+*/]*$/.test(value) || /url\s*\(|expression\s*\(|@/i.test(value)) continue;
+    out.push(`${m[1]}: ${value};`);
+  }
+  return out;
+}
+
+/** Titles of the other guides, for the sidebar. */
+function siblingTitles(config: Pick<ResolvedConfig, "walkthroughsDir">, id: string): string[] {
+  if (!existsSync(config.walkthroughsDir)) return [];
+  const out: string[] = [];
+  for (const f of readdirSync(config.walkthroughsDir).filter((f) => /\.ya?ml$/i.test(f)).sort()) {
+    try {
+      const wf = loadWalkthroughFile(path.join(config.walkthroughsDir, f));
+      if (wf.walkthrough !== id) out.push(wf.title);
+    } catch {
+      // skip unreadable
+    }
+  }
+  return out;
+}
+
 async function siteAnswers(url: string): Promise<boolean> {
   try {
     const res = await fetch(url, { method: "GET", signal: AbortSignal.timeout(3000), redirect: "follow" });
@@ -264,10 +325,23 @@ export async function buildProof(config: ResolvedConfig, opts: ProofOptions = {}
         await page.close();
       }
     } else if (input) {
+      // The built page as the help app lays it out, with the site's own brand CSS (M36): the
+      // whole excerpt, never a window cut off mid-step.
       const prepared = await prepareBrand(browser, brand);
-      const html = buildPageHtml(input, prepared, false, {}).replace("</head>", `<style>body { padding: 40px 64px; }</style></head>`);
-      await shootHtml(browser, html, path.join(dir, "site.png"), 1280, 860, false);
-      panels.push({ id: "site", label: "Help site", file: "site.png", note: guideUrl ? "page layout: the site didn't answer" : "page layout: no site URL (pass --site-url)" });
+      const html = sitePageHtml(input, prepared, {
+        brandCss: siteBrandCss(config),
+        poster: panels.some((p) => p.id === "intro") ? path.join(dir, "intro.png") : undefined,
+        siblings: siblingTitles(config, wf.walkthrough),
+        facts: {
+          steps: wf.steps.length,
+          for: wf.for,
+          lastChecked: input.lastChecked,
+          passed: input.passed,
+          pdf: panels.some((p) => p.id === "page"),
+        },
+      });
+      await shootFullPage(browser, html, path.join(dir, "site.png"), SITE_PAGE_WIDTH);
+      panels.push({ id: "site", label: "Help site", file: "site.png", note: guideUrl ? "built page: the site didn't answer" : "built page: no site URL (pass --site-url)" });
     }
 
     const generatedAt = new Date().toISOString();

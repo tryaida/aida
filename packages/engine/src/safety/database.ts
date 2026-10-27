@@ -694,6 +694,8 @@ function describe(status: AppDatabaseStatus, counted: Checked[], ctx: DescribeCo
       (c) => c.finding.from !== "config" && !c.parsed.injected && (c.finding.status === "remote" || c.finding.status === "unreadable"),
     );
     const envEntries = envRefused.map(ignoreEntryFor).filter((e): e is string => !!e);
+    // True when app.database.url itself isn't refused: only env settings are.
+    const onlyEnvRefused = counted.every((c) => c.finding.from !== "config" || (c.finding.status !== "remote" && c.finding.status !== "unreadable"));
     const binding =
       "Each entry is bound to the database the setting points at now (after # is a fingerprint of its host, so a public aida.config doesn't " +
       'publish the hostname; "<setting>@<host>" also works): pointing it anywhere else, or a new file or variable pointing off this machine, is refused again.';
@@ -703,10 +705,14 @@ function describe(status: AppDatabaseStatus, counted: Checked[], ctx: DescribeCo
           `${list(envRefused.map((c) => c.finding.source))} and uses ${envRefused.length === 1 ? "that database" : "those databases"}.`,
       );
       if (envEntries.length > 0) {
-        suggestions.push(
+        const advice =
           `Only if the server you capture against is started with app.database.url (a demo or test script that overrides these settings), ` +
-            `say so in aida.config: app: { database: { ignoreEnv: ${quoted(envEntries)} } }. ${binding}`,
-        );
+          `say so in aida.config: app: { database: { ignoreEnv: ${quoted(envEntries)} } }. ${binding}`;
+        // app.database.url is the only thing that isn't refused: the capture server is most likely
+        // started with it, so naming the overridden settings is the first thing to try (before a
+        // new branch, and never "throwaway" for a database that may hold real data).
+        if (onlyEnvRefused) suggestions.splice(ctx.optInProblems.length, 0, advice);
+        else suggestions.push(advice);
       }
     } else if (envEntries.length > 0) {
       suggestions.push(
@@ -747,9 +753,17 @@ function describe(status: AppDatabaseStatus, counted: Checked[], ctx: DescribeCo
     }
     const optable = needs.filter((n) => !singleLabel.includes(n));
     if (optable.length > 0) {
-      sentences.push(` If ${optable.length === 1 ? "it is" : "they are"} already a throwaway copy, name ${optable.length === 1 ? "it" : "them"} in aida.config: app.database.throwaway: ${quoted(optable)}.`);
+      const one = optable.length === 1;
+      // With app.database.url set and only env settings refused, the overridden settings are the
+      // likelier story (ignoreEnv, suggested above); the message doesn't push throwaway then. When
+      // app.database.url is itself remote, throwaway is the only opt-in for it: keep the sentence.
+      if (!(ctx.hasConfigUrl && envRefused.length > 0 && envEntries.length > 0 && onlyEnvRefused)) {
+        sentences.push(
+          ` Only if ${one ? "it is" : "they are"} a disposable copy holding no real data, name ${one ? "it" : "them"} in aida.config: app.database.throwaway: ${quoted(optable)}.`,
+        );
+      }
       suggestions.push(
-        `If ${optable.length === 1 ? "this database is" : "these databases are"} already a throwaway copy, mark ${optable.length === 1 ? "it" : "them"} in aida.config: ` +
+        `Only if ${one ? "this database is" : "these databases are"} a disposable copy holding no real data (never a database people use), mark ${one ? "it" : "them"} in aida.config: ` +
           `app: { database: { throwaway: ${quoted(optable)} } } (or set ${THROWAWAY_ENV}=${optable.join(",")}).`,
       );
     }

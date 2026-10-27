@@ -1,0 +1,16 @@
+<!doctype html>
+<html><head><title>Entries</title></head>
+<body><main><h1>Entries</h1>
+<label>Amount <input id="amount" /></label>
+<button type="button" id="record">Record</button>
+<p id="done" hidden>Payment recorded</p>
+</main>
+<script>
+  // A different form: records the payment but never marks the booking paid.
+  const act = (id, body) => fetch(location.pathname, { method: "POST", headers: { "next-action": id }, body });
+  document.getElementById("record").addEventListener("click", async () => {
+    await act("save-allocate", document.getElementById("amount").value);
+    document.getElementById("done").hidden = false;
+  });
+</script>
+</body></html>

@@ -1,5 +1,6 @@
-// The words of each path's short clip (decision 34; M35): a title card naming the way in, each
-// opening step's own `say`, and a closing card pointing back to the main video's step. Shared by
+// The words of each path's short clip (decisions 34, 37; M35): a title card naming the way in,
+// each opening step's own `say`, and a closing card pointing back to the main video's step — or
+// "Done" for a path that runs to its own end. Shared by
 // voice (which narrates them) and render (which shows them), so the two never disagree. Pure.
 import type { Walkthrough, WalkthroughPath } from "../walkthrough/types.js";
 import { displayWalkthrough } from "../walkthrough/display.js";
@@ -20,24 +21,29 @@ export interface PathClipText {
   pathId: string;
   /** Title card: eyebrow, the path's title and `when`. */
   intro: { eyebrow: string; title: string; subtitle: string; say: string };
-  /** Closing card: "Then continue from step N: <title>". */
+  /** Closing card: "Then continue from step N: <title>", or "Done" for a path that runs alone. */
   outro: { title: string; say: string };
-  /** 1-based number and title of the main step the path joins. */
-  continueAt: { step: number; stepId?: string; title?: string };
+  /** 1-based number and title of the main step the path joins; absent when it runs alone. */
+  continueAt?: { step: number; stepId?: string; title?: string };
 }
+
+/** The closing card of a path that runs to its own end (decision 37). */
+export const PATH_DONE_CARD = { title: "Done", say: "Done." } as const;
 
 /** The cards' words for one path (display text: `{{data}}` filled in). */
 export function pathClipText(written: Walkthrough, writtenPath: WalkthroughPath): PathClipText {
   const wf = displayWalkthrough(written);
   const path = wf.paths?.find((p) => p.id === writtenPath.id) ?? writtenPath;
   const join = joinIndex(wf, path);
+  const intro = { eyebrow: "Another way", title: path.title, subtitle: path.when, say: sentence(`Another way: ${path.title}`) };
+  if (join === -1) return { pathId: path.id, intro, outro: { ...PATH_DONE_CARD } };
   const step = wf.steps[join];
   const n = join + 1;
   const title = step?.title?.trim();
   const closing = title ? `Then continue from step ${n}: ${title}` : `Then continue from step ${n}`;
   return {
     pathId: path.id,
-    intro: { eyebrow: "Another way", title: path.title, subtitle: path.when, say: sentence(`Another way: ${path.title}`) },
+    intro,
     outro: { title: closing, say: sentence(closing) },
     continueAt: { step: n, stepId: step?.id, title },
   };

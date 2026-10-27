@@ -41,6 +41,16 @@ describe("resolveAfterTarget", () => {
     expect(t.walkthrough.paths).toBeUndefined();
   });
 
+  it("replays a path that runs to its own end: its own steps only, never a main step (decision 37)", () => {
+    const { joins: _joins, ...alone } = wt.paths![0];
+    const standalone: Walkthrough = { ...wt, paths: [alone] };
+    const t = resolveAfterTarget(standalone, "from-attendee/pick-booking");
+    if ("error" in t) throw new Error(t.error);
+    expect(t.walkthrough.steps.map((s) => s.id)).toEqual(["open-attendee", "pick-booking"]);
+    const main = resolveAfterTarget(standalone, "from-attendee/save");
+    expect("error" in main && main.error).toMatch(/"save" is a main step; path from-attendee runs its own steps to its own end/);
+  });
+
   it("reaches a shared main step through the path", () => {
     const t = resolveAfterTarget(wt, "from-attendee/save");
     if ("error" in t) throw new Error(t.error);
