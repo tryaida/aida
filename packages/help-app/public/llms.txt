@@ -1,0 +1,6 @@
+# Help
+
+`aida build` regenerates this file from your walkthroughs and pages. Until then it just lists
+this placeholder page.
+
+- [Welcome](/): a prescaffolded aida help app.

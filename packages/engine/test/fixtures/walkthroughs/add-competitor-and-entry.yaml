@@ -1,0 +1,505 @@
+walkthrough: add-competitor-and-entry
+version: 1
+title: Add a new competitor and their first entry
+summary: Create a competitor from the Competitors page, then enter them in a
+  class from their profile.
+product: Acme Events
+section: Competitors
+for: Show office staff and secretaries taking entries at the office or over the
+  phone
+verifiedAgainst:
+  app: sample events app (Next.js 16)
+  routes:
+    - /dashboard
+    - /dashboard/competitors
+    - /dashboard/competitors/new
+    - /dashboard/competitors/[id]
+    - /dashboard/entries/new?competitor=<id>&show=<showId>
+    - /dashboard/entries/success/[id]
+  sources:
+    - app/dashboard/competitors/page.tsx
+    - components/competitors/competitors-client.tsx
+    - components/competitors/competitor-form.tsx
+    - app/lib/actions/competitors.ts
+    - app/dashboard/competitors/[id]/page.tsx
+    - app/dashboard/entries/new/page.tsx
+    - components/forms/enhanced-unified-entry-form.tsx
+    - components/ui/optimized-class-dropdown.tsx
+    - app/lib/actions/unified-entry.ts
+    - components/entries/entry-submission-success.tsx
+start:
+  signed_in_as: office_staff
+  page: /dashboard
+  baseUrl: http://127.0.0.1:3100
+  viewport:
+    width: 1440
+    height: 810
+  deviceScaleFactor: 2
+  show: Riverbend Show 2026
+  notes: Runs against the isolated demo database
+    (scripts/demo-env). All names, emails and phone numbers are
+    synthetic.
+  persona:
+    role: office_staff
+    name: Jordan Avery
+    email: office.demo@example.com
+    cognitoSub: demo-office-sub
+data:
+  competitor:
+    firstName: Sophie
+    lastName: Harrington
+    email: sophie.harrington@example.com
+    phone: 0491 570 156
+  entry:
+    classSearch: banana
+    classLabel: CK03 - Banana bread
+    description: Wholemeal, with walnuts
+# voice: inherits aida.config.ts's voice block (kokoro, local/free, no API key needed).
+# A studio-quality pass can override here with a real provider, e.g.:
+#   provider: minimax
+#   model: speech-2.8-hd
+#   voiceId: English_Aussie_Bloke
+#   speed: 1
+#   gapSeconds: 0.45
+intro:
+  eyebrow: Acme Events how-to
+  title: Add a new competitor and their first entry
+  subtitle: From the Competitors page to a submitted entry, ready for payment.
+  say: Here's how to add a new competitor in Acme Events, and then enter them in
+    their first class.
+  caption: Here's how to add a new competitor in Acme Events, and then enter them in
+    their first class.
+outro:
+  title: That's it
+  recap:
+    - Search Competitors first
+    - Add New Competitor
+    - Open their profile, then Add Entry
+    - Choose a class and Submit Entry
+  say: That's it. Search first, add the competitor, then add their entry straight
+    from their profile.
+  caption: That's it. Search first, add the competitor, then add their entry
+    straight from their profile.
+steps:
+  - id: check-show
+    chapter: Add the competitor
+    title: Check the current show
+    say: Start on your dashboard, and check you're working in the right show. It's
+      shown at the bottom of the menu.
+    caption: Start on your dashboard and check you're working in the right show.
+      It's shown at the bottom of the menu.
+    page_text: Sign in and start on the **Dashboard**. Check the **Current show** at
+      the bottom of the left-hand menu is the show you're taking entries for.
+    camera: full
+    actions:
+      - do: expect
+        target:
+          role: heading
+          name: Dashboard
+      - do: point
+        target:
+          text: Riverbend Show 2026
+          within:
+            css: aside
+        highlight:
+          text: Riverbend Show 2026
+          within:
+            css: aside
+          padUnion:
+            text: Current show
+  - id: open-competitors
+    chapter: Add the competitor
+    title: Open Competitors
+    say: Then open Competitors from the menu.
+    caption: Then open Competitors from the menu.
+    page_text: Click **Competitors** in the left-hand menu.
+    camera: full
+    actions:
+      - do: click
+        target:
+          role: link
+          name: Competitors
+        highlight: true
+      - do: waitFor
+        target:
+          text: Competitors for Riverbend Show 2026
+  - id: search-first
+    chapter: Add the competitor
+    title: Search before you add
+    say: Competitors are shared across all your shows, so search first, to make sure
+      they aren't already in Acme Events.
+    caption: Competitors are shared across all your shows, so search first to make
+      sure they aren't already in Acme Events.
+    page_text: Competitors are shared across all your shows. Type the person's name
+      into **Search competitors...** first, so you don't create a duplicate. If
+      they're already listed, skip ahead to [their
+      profile](#8-open-their-profile).
+    camera:
+      focus:
+        css: main
+      zoom: 1.25
+      align: top
+    actions:
+      - do: click
+        target:
+          placeholder: Search competitors...
+      - do: type
+        target:
+          placeholder: Search competitors...
+        text: "{{competitor.lastName}}"
+      - do: expect
+        target:
+          text: No competitors matching your search.
+        highlight: true
+  - id: add-new-competitor
+    chapter: Add the competitor
+    title: Add New Competitor
+    say: No match, so click Add New Competitor.
+    caption: No match, so click Add New Competitor.
+    page_text: No match? Click **Add New Competitor** at the top right.
+    camera:
+      focus:
+        css: main
+      zoom: 1.25
+      align: top
+    actions:
+      - do: click
+        target:
+          role: link
+          name: Add New Competitor
+        highlight: true
+      - do: waitFor
+        target:
+          role: heading
+          name: Add New Competitor
+  - id: enter-name
+    chapter: Add the competitor
+    title: Enter their name
+    say: Enter their first name and last name. Both are required.
+    caption: Enter their first name and last name. Both are required.
+    page_text: Enter the competitor's **First Name** and **Last Name** (both
+      required, at least two characters).
+    camera:
+      focus:
+        css: form
+      zoom: 1.3
+    actions:
+      - do: click
+        target:
+          label: First Name
+      - do: type
+        target:
+          label: First Name
+        text: "{{competitor.firstName}}"
+      - do: click
+        target:
+          label: Last Name
+      - do: type
+        target:
+          label: Last Name
+        text: "{{competitor.lastName}}"
+  - id: enter-contact
+    chapter: Add the competitor
+    title: Add contact details
+    say: Email and phone are optional. With an email address, though, Acme Events can
+      send them an entry confirmation, and you can email them a payment link.
+    caption: Email and phone are optional. With an email address, though, Acme Events
+      can send them an entry confirmation, and you can email them a payment
+      link.
+    page_text: "**Email** and **Phone** are optional. With an email address, Acme Events
+      sends the competitor an entry confirmation and you can email them a
+      payment link later."
+    camera:
+      focus:
+        css: form
+      zoom: 1.3
+    actions:
+      - do: click
+        target:
+          label: Email
+      - do: type
+        target:
+          label: Email
+        text: "{{competitor.email}}"
+      - do: click
+        target:
+          label: Phone
+      - do: type
+        target:
+          label: Phone
+        text: "{{competitor.phone}}"
+  - id: create-competitor
+    chapter: Add the competitor
+    title: Create Competitor
+    say: Click Create Competitor. Acme Events confirms it, and takes you back to the
+      list.
+    caption: Click Create Competitor. Acme Events confirms it and takes you back to the
+      list.
+    page_text: Click **Create Competitor**. A *Competitor created* message appears
+      and you're returned to the competitor list.
+    camera: full
+    actions:
+      - do: click
+        target:
+          role: button
+          name: Create Competitor
+        highlight: true
+      - do: waitFor
+        target:
+          css: "[data-sonner-toast]"
+          hasText: Competitor created
+        snapshot: toast
+        highlight: true
+      - do: waitForUrl
+        pattern: /dashboard/competitors(\?|$)
+      - do: waitFor
+        target:
+          text: Competitors for Riverbend Show 2026
+      - do: expect
+        target:
+          role: row
+          name: "{{competitor.firstName}} {{competitor.lastName}}"
+        highlight: true
+  - id: open-profile
+    chapter: Add the entry
+    title: Open their profile
+    say: Now search for them again, and click View to open their profile.
+    caption: Now search for them again and click View to open their profile.
+    page_text: Search for the competitor again and click **View** on their row to
+      open their profile.
+    camera:
+      focus:
+        css: main
+      zoom: 1.25
+      align: top
+    actions:
+      - do: click
+        target:
+          placeholder: Search competitors...
+      - do: type
+        target:
+          placeholder: Search competitors...
+        text: "{{competitor.lastName}}"
+      - do: expect
+        target:
+          role: row
+          name: "{{competitor.firstName}} {{competitor.lastName}}"
+      - do: click
+        target:
+          role: link
+          name: View
+          within:
+            role: row
+            name: "{{competitor.firstName}} {{competitor.lastName}}"
+        highlight:
+          role: row
+          name: "{{competitor.firstName}} {{competitor.lastName}}"
+      - do: waitFor
+        target:
+          role: heading
+          name: "{{competitor.firstName}} {{competitor.lastName}}"
+  - id: add-entry
+    chapter: Add the entry
+    title: Add Entry
+    say: Their profile has no entries yet. Under Quick Actions, click Add Entry.
+    caption: Their profile has no entries yet. Under Quick Actions, click Add Entry.
+    page_text: The profile shows their details and entries for this show (none yet).
+      Under **Quick Actions**, click **Add Entry**.
+    camera:
+      focus:
+        css: main
+      zoom: 1.25
+      align: top
+    actions:
+      - do: point
+        target:
+          text: No entries found for this competitor.
+        highlight: true
+      - do: click
+        target:
+          role: link
+          name: Add Entry
+          exact: true
+        highlight: true
+      - do: waitFor
+        target:
+          role: heading
+          name: Add New Entry
+  - id: competitor-selected
+    chapter: Add the entry
+    title: Competitor already selected
+    say: The entry form opens with your new competitor already selected.
+    caption: The entry form opens with your new competitor already selected.
+    page_text: The **Add New Entry** form opens with the competitor already selected.
+    camera:
+      focus:
+        css: main
+      zoom: 1.25
+      align: top
+    actions:
+      - do: scrollTo
+        target:
+          text: Complete the form below to submit your entry
+      - do: point
+        target:
+          role: combobox
+          hasText: "{{competitor.firstName}} {{competitor.lastName}}"
+        highlight: true
+  - id: choose-class
+    chapter: Add the entry
+    title: Choose a class
+    say: Click Select a class, and search by class name, code, or section. We'll
+      choose Banana bread.
+    caption: Click Select a class, and search by class name, code or section. We'll
+      choose Banana bread.
+    page_text: Click **Select a class...** and search by class name, code or section
+      — for example `banana` — then click the class (shown as code and name,
+      e.g. *CK03 - Banana bread*).
+    camera:
+      focus:
+        css: main
+      zoom: 1.25
+      align: top
+    actions:
+      - do: click
+        target:
+          role: combobox
+          hasText: Select a class...
+        highlight: true
+      - do: type
+        target:
+          placeholder: Search by class name, code, or section...
+        text: "{{entry.classSearch}}"
+      - do: click
+        target:
+          text: "{{entry.classLabel}}"
+          exact: true
+        highlight: true
+      - do: expect
+        target:
+          role: combobox
+          hasText: "{{entry.classLabel}}"
+  - id: number-and-fee
+    chapter: Add the entry
+    title: Entry number and fee
+    say: This class is numbered automatically, so the entry number is assigned when
+      you submit. The fee is added up in the summary on the right.
+    caption: This class is numbered automatically, so the entry number is assigned
+      when you submit. The fee is added up in the summary on the right.
+    page_text: For automatically numbered classes the form notes *Entry numbers will
+      be assigned automatically when you submit.* The **Entry Summary** on the
+      right adds up the fees. (Classes with hand-entered numbers, such as
+      poultry cage numbers, show an **Entry Number (Optional)** box instead.)
+    camera: full
+    actions:
+      - do: point
+        target:
+          text: Entry numbers will be assigned automatically when you submit.
+        highlight: true
+      - do: point
+        target:
+          text: Entry Summary
+          exact: true
+        highlight:
+          css: div.rounded-lg, div.rounded-xl
+          hasText: Entry Summary
+          innermost: true
+  - id: description
+    chapter: Add the entry
+    title: Optional description
+    say: Add a description if you like. To enter more classes for the same
+      competitor, use Add Another Entry.
+    caption: Add a description if you like. To enter more classes for the same
+      competitor, use Add Another Entry.
+    page_text: Optionally add an **Entry Description**. To enter the same competitor
+      in more classes, click **Add Another Entry** and repeat for each class.
+    camera:
+      focus:
+        label: Entry Description
+      zoom: 1.28
+      align: right
+    actions:
+      - do: click
+        target:
+          label: Entry Description
+      - do: type
+        target:
+          label: Entry Description
+        text: "{{entry.description}}"
+      - do: point
+        target:
+          role: button
+          name: Add Another Entry
+        highlight: true
+  - id: submit
+    chapter: Add the entry
+    title: Submit Entry
+    say: When it all looks right, click Submit Entry.
+    caption: When it all looks right, click Submit Entry.
+    page_text: Check the details and click **Submit Entry**.
+    camera: full
+    actions:
+      - do: click
+        target:
+          role: button
+          name: Submit Entry
+        highlight: true
+      - do: waitForUrl
+        pattern: /dashboard/entries/success/
+      - do: waitFor
+        target:
+          text: Entry Submitted Successfully!
+  - id: done
+    chapter: Add the entry
+    title: Entry submitted
+    say: The entry is saved, with its entry number. From here, you can email them a
+      secure payment link, or record a cash or EFTPOS payment straight away.
+    caption: The entry is saved, with its entry number. From here you can email them
+      a secure payment link, or record a cash or EFTPOS payment straight away.
+    page_text: The entry is saved with its entry number and shows **Payment
+      Pending**. Choose **Send Link** to email a secure payment link, or
+      **Record Payment** for cash or EFTPOS. **Create Another Entry** starts a
+      fresh form.
+    camera: full
+    actions:
+      - do: point
+        target:
+          text: "/^Entry #/"
+        highlight: true
+      - do: point
+        target:
+          text: What would you like to do next?
+        highlight:
+          text: What would you like to do next?
+          padUnion:
+            text: Record cash, EFTPOS, or other payment details
+validate:
+  database:
+    - name: exactly one new competitor
+      sql: select count(*)::int as n from competitors where first_name = $1 and
+        last_name = $2 and email = $3
+      params:
+        - "{{competitor.firstName}}"
+        - "{{competitor.lastName}}"
+        - "{{competitor.email}}"
+      expect:
+        n: 1
+    - name: exactly one entry for the new competitor (no double submit)
+      sql: select count(*)::int as n from entries e join competitors c on c.id =
+        e.competitor_id where c.email = $1
+      params:
+        - "{{competitor.email}}"
+      expect:
+        n: 1
+    - name: entry is in the chosen class, auto-numbered, unpaid
+      sql: select s.section_code || cl.class_number as code, (e.entry_number ~
+        '^[0-9]+$') as numbered, e.payment_status, e.status from entries e join
+        competitors c on c.id = e.competitor_id join classes cl on cl.id =
+        e.class_id join sections s on s.id = cl.section_id where c.email = $1
+      params:
+        - "{{competitor.email}}"
+      expect:
+        code: CK03
+        numbered: true
+        payment_status: unpaid
+        status: approved

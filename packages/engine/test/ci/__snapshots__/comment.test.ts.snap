@@ -1,0 +1,42 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`ci/comment buildCommentMarkdown > matches the expected markdown shape 1`] = `
+"<!-- aida-ci-comment -->
+## aida CI
+4 walkthrough(s) affected · 1 changed · 1 broken · 1 new (no baseline) · 1 unchanged · 1 new route(s) with no walkthrough
+
+### \`broken-one\` — broken (broken)
+
+> step "submit": locator not found
+
+Run locally in Claude Code:
+\`\`\`
+claude -p "load the aida-repair skill and fix 'broken-one'"
+\`\`\`
+
+### \`add-entry\` — changed (cosmetic)
+
+Cosmetic — will refresh on merge, nobody needs to do anything.
+
+| step | before | after | diff | change |
+| --- | --- | --- | --- | --- |
+| step-01.png | ![before](https://raw.githubusercontent.com/acme/app/add-entry/before-step-01.png) | ![after](https://raw.githubusercontent.com/acme/app/add-entry/after-step-01.png) | ![diff](https://raw.githubusercontent.com/acme/app/add-entry/diff-step-01.png) | 4.2% |
+
+### \`new-one\` — new walkthrough — no baseline yet (cosmetic)
+
+Cosmetic — will refresh on merge, nobody needs to do anything.
+
+### \`/dashboard/sponsors\` — new, no walkthrough yet
+
+\`app/dashboard/sponsors/page.tsx\`
+
+Draft a walkthrough locally in Claude Code (labels the PR \`docs:new\`):
+\`\`\`
+claude -p "load the aida-write skill and draft a walkthrough for the new page at /dashboard/sponsors (--config aida.config.ts); label the PR docs:new"
+\`\`\`
+
+**Stale pages** (published, source walkthrough no longer exists): \`deleted-flow\`
+
+---
+_base \`abc1234abc12\` → head \`def5678def56\` · PR #42 · updated on every push, no model used._"
+`;

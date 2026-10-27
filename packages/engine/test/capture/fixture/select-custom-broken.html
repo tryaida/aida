@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Custom select fixture (broken: option click never updates the trigger)</title>
+  </head>
+  <body>
+    <h1>Custom select fixture (broken)</h1>
+    <button
+      id="customer-trigger"
+      type="button"
+      aria-haspopup="listbox"
+      aria-expanded="false"
+      aria-controls="customer-listbox"
+    >
+      Customer: Choose…
+    </button>
+    <ul id="customer-listbox" role="listbox" hidden>
+      <li role="option" tabindex="0">Acme</li>
+      <li role="option" tabindex="0">Globex</li>
+    </ul>
+    <p id="result"></p>
+    <script>
+      const trigger = document.getElementById("customer-trigger");
+      const listbox = document.getElementById("customer-listbox");
+      trigger.addEventListener("click", () => {
+        listbox.hidden = !listbox.hidden;
+      });
+      // Deliberately broken: clicking an option does nothing to the trigger or result — the
+      // "select" action's post-click verification must catch this and fail the step, rather than
+      // reporting ok:true just because a click landed on the right element.
+    </script>
+  </body>
+</html>

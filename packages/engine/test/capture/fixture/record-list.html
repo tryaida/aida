@@ -1,0 +1,20 @@
+<!doctype html>
+<html><head><title>Competitors</title></head>
+<body>
+  <nav aria-label="Main"><a href="/record-list.html">Competitors</a> <a href="/record-form.html">Add competitor</a></nav>
+  <main>
+    <h1>Competitors</h1>
+    <table>
+      <tr aria-label="Riley Park"><td>Riley Park</td><td><button type="button">Edit</button></td></tr>
+      <tr aria-label="Sam Lee"><td>Sam Lee</td><td><button type="button">Edit</button></td></tr>
+    </table>
+    <p id="status"></p>
+    <script>
+      document.querySelectorAll("tr button").forEach(function (b) {
+        b.addEventListener("click", function () {
+          document.getElementById("status").textContent = "Editing " + b.closest("tr").getAttribute("aria-label");
+        });
+      });
+    </script>
+  </main>
+</body></html>

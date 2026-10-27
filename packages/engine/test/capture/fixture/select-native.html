@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Native select fixture</title>
+  </head>
+  <body>
+    <h1>Native select fixture</h1>
+    <form>
+      <label
+        >Customer
+        <select id="customer">
+          <option value="">Choose…</option>
+          <option value="acme">Acme</option>
+          <option value="globex">Globex</option>
+        </select>
+      </label>
+    </form>
+    <p id="result"></p>
+    <script>
+      document.getElementById("customer").addEventListener("change", (e) => {
+        document.getElementById("result").textContent = "Selected: " + e.target.selectedOptions[0].textContent;
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,10 @@
+export { Recorder } from "./session.js";
+export type { RecorderOptions } from "./session.js";
+export { RECORDER_SCRIPT } from "./page-script.js";
+export { resolveTarget, parseSnapshotHead } from "./resolve-target.js";
+export { buildSteps, urlPattern } from "./steps.js";
+export type { DraftStep, DraftSteps } from "./steps.js";
+export { draftYaml } from "./draft.js";
+export type { DraftMeta } from "./draft.js";
+export { safeValue, fictionalPhone } from "./safe-values.js";
+export type { ElementInfo, PageMessage, RecordedAction, ResolvedTarget } from "./types.js";

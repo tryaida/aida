@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Inspect fixture</title>
+  </head>
+  <body>
+    <header><h1>App</h1></header>
+    <nav><a href="/other">Somewhere else</a></nav>
+    <main>
+      <h1>Add new competitor</h1>
+      <p>Contact us at test@example.com or call 0491 570 156 if you need help.</p>
+      <p>Internal contact: leaked@realcompany.com</p>
+      <form>
+        <label for="first-name">First Name</label>
+        <input id="first-name" type="text" required />
+
+        <label for="last-name">Last Name (optional)</label>
+        <input id="last-name" type="text" />
+
+        <label for="class">Class</label>
+        <select id="class" required>
+          <option value="">Select a class...</option>
+          <option value="1">CK01 - Apple pie</option>
+          <option value="2">CK02 - Banana bread</option>
+          <option value="3">CK03 - Carrot cake</option>
+          <option value="4">CK04 - Date loaf</option>
+          <option value="5">CK05 - Eclairs</option>
+          <option value="6">CK06 - Fruit cake</option>
+          <option value="7">CK07 - Gingerbread</option>
+          <option value="8">CK08 - Honey cake</option>
+          <option value="9">CK09 - Iced buns</option>
+          <option value="10">CK10 - Jam tarts</option>
+          <option value="11">CK11 - Key lime pie</option>
+          <option value="12">CK12 - Lemon slice</option>
+          <option value="13">CK13 - Muffins</option>
+          <option value="14">CK14 - Nut loaf</option>
+          <option value="15">CK15 - Orange cake</option>
+          <option value="16">CK16 - Pumpkin scones</option>
+          <option value="17">CK17 - Quiche</option>
+          <option value="18">CK18 - Rhubarb tart</option>
+        </select>
+
+        <button type="submit">Create Competitor</button>
+        <button type="button" disabled>Cancel</button>
+        <a href="/competitors">Back to list</a>
+
+        <button type="button" id="open-menu">Open menu</button>
+        <div id="menu-target"></div>
+
+        <!-- Regression: "Add mob" only opens a dialog — it must not be refused just because its
+             name contains "add" (bug: the old name-based refusal caught it, same as a genuine
+             write-shaped "Add competitor" button would). -->
+        <button type="button" id="add-mob">Add mob</button>
+
+        <!-- Demonstrates the network-level block: clicking this fires a real POST, which must
+             never reach the fixture server (postCount stays 0) regardless of the button's name. -->
+        <button type="button" id="quick-add">Quick add</button>
+
+        <label><input type="checkbox" id="has-mob" /> Has mob</label>
+        <div id="mob-conditional" hidden>
+          <label for="mob-size">Mob size</label>
+          <input id="mob-size" type="number" />
+        </div>
+      </form>
+    </main>
+    <footer>Copyright 2026</footer>
+    <div role="dialog" aria-label="Quick actions" hidden id="dialog">
+      <button type="button">Add Entry</button>
+      <button type="button">Record Payment</button>
+    </div>
+    <div role="dialog" aria-label="Add a mob" hidden id="mob-dialog">
+      <label for="mob-name">Mob name</label>
+      <input id="mob-name" type="text" />
+    </div>
+    <script>
+      document.getElementById("open-menu").addEventListener("click", () => {
+        document.getElementById("dialog").hidden = false;
+      });
+      document.getElementById("add-mob").addEventListener("click", () => {
+        document.getElementById("mob-dialog").hidden = false;
+      });
+      document.getElementById("quick-add").addEventListener("click", () => {
+        fetch("/api/quick-add", { method: "POST" }).catch(() => {});
+      });
+      document.getElementById("has-mob").addEventListener("change", (e) => {
+        document.getElementById("mob-conditional").hidden = !e.target.checked;
+      });
+    </script>
+  </body>
+</html>

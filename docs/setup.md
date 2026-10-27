@@ -1,0 +1,173 @@
+# Setting up AIDA
+
+The full reference behind the [README](../README.md) quick start: what `aida init` does, every
+command, how walkthroughs that change data are ordered, the safety defaults, and the agent skills.
+Keeping docs current from CI has its own page: [ci.md](ci.md).
+
+Until AIDA is on npm, run `aida` from a checkout: `node <aida>/packages/engine/dist/cli.js` after
+`npm run build`, or `npx tsx <aida>/packages/engine/src/cli.ts` without a build. Most commands
+take `--json` for short, machine-readable output.
+
+## Set up an app
+
+```bash
+aida init <app-dir>                        # scaffold <app-dir>/help and install it
+```
+
+`init` copies the help app into `<app-dir>/help`, reads the app's routes and brand, writes
+`help/aida.config.ts`, and then:
+
+- **Installs the help app.** AIDA isn't on npm yet, and the `aida` name there belongs to an
+  unrelated package, so the help app never depends on it by name. `init` builds the engine if
+  needed, packs it into `help/vendor/aida-<version>-<hash>.tgz`, points the help app's `aida`
+  dependency at that file, and runs `npm install` in `help/`. The tarball installs as a real copy,
+  so Turbopack and hosts that only run `npm install && next build` both work. It is the help
+  app's runtime part only: no Playwright, Kokoro, ffmpeg or pdf-lib and no `aida` command, so
+  hosts install about half as much. Run the CLI from AIDA itself and point it at the help app's
+  config (`--config help/aida.config.ts`); the config's `import ... from "aida"` always loads
+  the AIDA you're running, never an `aida` in `node_modules`. Commit `help/vendor/` with the
+  help app (CI installs `help/` from its lockfile and refuses a registry `aida`). Run `init`
+  again after updating AIDA: it replaces the tarball and the dependency and leaves your other
+  edits alone. `--no-install` skips the install (then run `npm install` in `help/` yourself).
+- **Keeps your app's build clean.** It adds `help` to the app's `tsconfig.json` `exclude`, so
+  the app's own `next build` doesn't typecheck the help app. Comments and formatting are kept;
+  a new `exclude` carries over what the app already excluded (its `extends` base's, or
+  TypeScript's defaults).
+- **Signs in for capture (Auth.js).** If the app uses Auth.js (`next-auth` or `@auth/*`), `init`
+  writes `help/adapters/sign-in.mjs` and sets `signIn` in the config. It signs each walkthrough's
+  persona in by minting the session cookie with the app's own installed Auth.js and its
+  secret (v5: `AUTH_SECRET`, then `NEXTAUTH_SECRET`; v4: `NEXTAUTH_SECRET`), read from the
+  capture run's environment or the app's `.env.local` and `.env`, never `.env.production*`. If
+  the secret is only in a production file, set it in the environment of the capture run (the same
+  secret the app server under capture uses). After setting the cookie it checks
+  `/api/auth/session` and fails loudly unless the app sees the persona signed in. It only works
+  with JWT sessions, only signs in to an app on localhost, and its `claims(persona)` function must
+  match the app's own `jwt` callback. The notes at the top of the file explain database sessions
+  and seeded users.
+- **Checks the app's database.** It warns if the app's database setting points at a live
+  database; capture refuses to run against one (see [Safety defaults](#safety-defaults)).
+
+Then:
+
+1. **Check the machine and the app:** `aida doctor --config help/aida.config.ts` checks Node,
+   ffmpeg, Playwright's Chromium and its libraries, disk, the app's address and database, email
+   and payment settings, the dev-server cache and the help app install, and prints the fix for
+   each problem.
+2. **Capture against a production build of the app**, not the dev server: `next build && next
+   start` in the app. The dev server's cache grows to gigabytes over a capture run.
+3. **Open the help site and the Studio:** `npm run dev` in `help/` (add `-- -p 3001` if the app is
+   on 3000), then `/studio`. The dev server listens on 127.0.0.1 only, so other machines on the
+   network can't reach it.
+4. **Through a tunnel or proxy?** Point the tunnel at `http://127.0.0.1:<port>`. The Studio then
+   needs a host you list and its access key. Run `aida init <app-dir> --tunnel-host <host>`
+   (repeatable): it adds the host to `AIDA_STUDIO_ALLOWED_HOSTS` and a random
+   `AIDA_STUDIO_KEY` to `help/.env.local` (git-ignored and owner-only; an existing key is kept),
+   and prints private links, `https://<host>/studio/access#key=<key>` and the same on
+   `http://localhost:<port>`. The key sits after `#`, so it never reaches the dev server or its
+   log. Restart the dev server and open a link once per browser: it sets an httpOnly cookie for
+   the Studio (12 hours), and without it every Studio page or API request gets a plain 403,
+   **on localhost too**: a tunnel reaches the dev server from this machine, so only the key tells
+   the two apart. With no key set, the Studio refuses every host but localhost.
+   **Keep the link private: anyone who has it can edit the help app's files, including code the
+   dev server runs.** To revoke it, delete the `AIDA_STUDIO_KEY` line, re-run init with
+   `--tunnel-host` and restart. A host behind your own sign-in (Cloudflare Access, Tailscale,
+   ngrok with OAuth) is safer still. Opened with the key on a host that isn't listed, the
+   Studio says so and shows the line to add.
+5. **Make the docs:** ask your coding agent ([Agent skills](#agent-skills)), or by hand:
+
+```bash
+aida digest --app-repo <app-dir>           # compact map of routes, roles and labels
+aida outline list --config <cfg>          # the planned walkthroughs, and where the screen differs
+aida inspect /some/page --config <cfg>     # what's on screen: exact names, roles, options
+aida inspect --config <cfg> --walkthrough <id> --after <step>   # the page after a save
+aida record <id> --config <cfg> --page /some/page   # click through once; get a draft walkthrough
+aida validate <walkthroughs-dir> --config <cfg>
+aida order --config <cfg>                  # capture order the walkthroughs' data implies
+aida build --config <cfg> --draft          # capture, voice, render, pages, PDFs, index, checks
+aida publish --to static --dry-run         # see what would deploy
+```
+
+
+## Commands
+
+| Command | Does |
+| --- | --- |
+| `init` | Scaffold and install the help app into `<dir>/help` (engine tarball in `help/vendor/`), with brand colours (light and dark), fonts and logos read from the app; an Auth.js sign-in adapter when the app uses Auth.js; `--tunnel-host` for the Studio, `--no-install` |
+| `theme` | Rewrite the help app's theme from the config's `brand`; `--detect` prints a fresh brand block from the app |
+| `doctor` | Check the machine and the app before capturing; one fix per problem |
+| `digest` | Compact map of an app's routes, roles and on-screen labels (monorepos via `--app`, detail via `--area`) |
+| `outline` | Outline cards in `outline.yaml` (`add`, `import`, `list`, `note`, `check`, `status`); capture records where the screen differs from a card |
+| `inspect` | Open one page signed in and list its interactive elements, read-only (`--click` repeatable); `--walkthrough <id> --after <step>` replays the steps (writes, like capture) and maps the page they leave |
+| `record` | "Show me": open the app in a browser window, signed in (`--as`), with `--needs` states set up, and turn one click-through into a draft walkthrough. A toolbar adds **Point at**, **Check shown**, **Note** (the step's narration), **New step**, **Undo** and **Finish**. Targets use on-screen names and are checked against the page as they're recorded; typed emails, phone numbers and card numbers become safe demo values; passwords are never kept. Same safety checks as capture; the draft is replayed once afterwards (`--no-replay` skips it, since a replay saves the same things again) |
+| `validate`, `import playwright` | Check walkthrough files, their states and caption and chapter line lengths; convert existing Playwright tests into draft walkthroughs |
+| `order` | Print the capture order the walkthroughs' `needs`/`leaves`/`clears` imply, and where the database is reset |
+| `capture` | Replay walkthroughs in a browser against the app, in that order (`--with-deps` pulls in the walkthroughs they need); screenshots, checks, a failure report saying whether it looks like the walkthrough, the app or the setup |
+| `voice`, `render` | Narrate, then render video per scene (only changed scenes re-render) |
+| `pages`, `pdf` | Help pages with numbered screenshots; PDFs and quick reference cards |
+| `qa` | Loudness, black frames, caption timing, personal-data and secret scans |
+| `build` | All of the above in order, skipping unchanged work (`--with-deps` too); `report.json` names each failed check and its files |
+| `affected` | Map a git diff to the walkthroughs it touches; unknown changes mean all |
+| `ci` | PR check: affected walkthroughs and the ones they need, capture, screenshot diff, one PR comment tiered cosmetic/broken/new plus possible app bugs (no model, no API keys); `--publish` republishes on merge |
+| `version freeze`, `version list`, `whats-new` | Freeze a docs version per release; write the What's new page from merged PRs |
+| `edit`, `undo`, `catch-up` | The same edits the Studio makes, with history marked person or agent, and locks |
+| `publish` | Deploy to `vercel`, `netlify`, `amplify`, `cloudflare`, `node` or `static`; first production publish needs a person's OK |
+| `suggest` | Group unanswered chat questions into suggested new walkthroughs |
+| `usage` | Log and report model tokens and cost per stage; budget cap per run |
+| `skills install` | Copy AIDA's skills and subagent definitions into a repo |
+
+## Walkthroughs that change data
+
+Most tasks save something, so walkthroughs depend on each other. Each one says so:
+`needs: [session-full]`, `leaves: [alex-on-waitlist]`, `clears: [alex-in-morning]`, plus
+unrecorded `setup:` steps for data only it uses. Config `states` gives a state `setup`/`check`
+hooks that put starting data in through the app's own API (`ctx.request`), so a walkthrough can be
+captured on its own and twice; `{{run.id}}` names records setup creates. The engine derives the
+capture order, never resets the database inside a chain, and blocks a walkthrough no order works
+for; `aida order` prints the plan.
+
+One persona: `start.signed_in_as` and `start.persona.role` must agree. Config `roles` gives each
+role its reader-facing name (`roles: { admin: "an organiser" }`).
+
+## Safety defaults
+
+- **The app's database.** Capture, build, CI and `inspect --after` refuse to run unless every
+  database setting the app may start with is on this machine: every env file from the app's
+  directory to the git root, the process environment and `app.database.url`, found by name and
+  by value. Use a Neon or Supabase branch or a local Postgres. `app.database.throwaway` names an
+  exact disposable database (`host`, `host/database`, `user@host` on shared hosts such as
+  Supabase poolers, or the `#fingerprint` the refusal prints); `app.database.ignoreEnv` lists
+  `file:VARIABLE#fingerprint` (or `file:VARIABLE@host`) settings a capture server started with
+  `app.database.url` doesn't use, bound to the database each points at now. Neither carries over
+  to another database. Secrets injected at run time (Doppler, Infisical, op://) refuse until
+  acknowledged the same way.
+- **Email, texts and payments.** A real email or SMS sender is a warning until `app.outbound:
+  "dry-run"` confirms the app sends nothing during capture. A live Stripe key refuses unless
+  `app.allowLivePayments` names that exact setting and key (`file:VARIABLE#fingerprint`).
+- **The app's address.** Write steps run only against a local app unless `allowWrites` is set.
+- Personal details are blurred in screenshots before capture, and every output is scanned for
+  personal data and secrets before it publishes.
+- Demo data uses example.com and reserved fictional phone ranges.
+- Agents can't approve the first production publish; a person has to.
+
+## Agent skills
+
+`skills/` holds the Agent Skills that drive AIDA from a coding agent. `aida` is the entry point
+("make help docs for my app"); it hands off to `aida-discover`, `aida-plan`, `aida-write`,
+`aida-repair`, `aida-review` and `aida-demo-data`. Each names a model tier, and Claude Code
+subagent definitions in `skills/agents/` match them: Haiku for discover, Sonnet for write, repair
+and review, Opus for plan. Shared style, safety, token and walkthrough-format references live in
+`skills/references/`.
+
+Install into a target repo with `aida skills install --target <repo>` (copies skills into
+`.claude/skills/` and agents into `.claude/agents/`, never overwriting changed files). Codex and
+other AGENTS.md-reading agents can point at `skills/AGENTS.md`. Validate with
+`node skills/check.mjs`.
+
+## Repo layout
+
+| Path | What |
+| --- | --- |
+| `packages/engine` | The `aida` npm package: CLI and every pipeline stage |
+| `packages/help-app` | The Next.js help app template (site, chat, agent connector, Studio) |
+| `skills/` | Agent skills, subagent definitions and references |
+| `docs/` | Scope, decisions, build plan and history |

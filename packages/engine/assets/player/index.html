@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>aida walkthrough player</title>
+  <link rel="stylesheet" href="player.css">
+</head>
+<body>
+  <div id="frame">
+    <section class="card" id="intro">
+      <div class="brand" id="intro-brand"><img id="brand-logo" alt="" style="display:none"><span id="brand-name"></span></div>
+      <span class="eyebrow-pill" id="intro-eyebrow"></span>
+      <h1 id="intro-title"></h1>
+      <p class="sub" id="intro-sub"></p>
+      <div class="parts" id="intro-parts"></div>
+    </section>
+
+    <div id="stage">
+      <div id="cam">
+        <img id="imgA" alt="">
+        <img id="imgB" alt="">
+        <div id="blurLayer"></div>
+        <div id="spot"></div>
+        <div id="calloutLayer"></div>
+        <svg id="cursor" viewBox="0 0 30 30" aria-hidden="true">
+          <path d="M3 2 L3 24 L9 18.5 L13 27 L17 25.2 L13 17 L21 17 Z" fill="#fff" stroke="#111827" stroke-width="1.8" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div id="calloutLegend"></div>
+    </div>
+
+    <section class="card" id="outro">
+      <div class="brand" id="outro-brand"><img id="outro-logo" alt="" style="display:none"><span id="outro-brand-name"></span></div>
+      <h1 id="outro-title"></h1>
+      <div class="recap" id="outro-recap"></div>
+      <div class="foot" id="outro-foot"><span id="outro-tagline"></span></div>
+    </section>
+
+    <div id="band">
+      <div id="chip"><span class="num"></span><div><div class="eyebrow"></div><div class="title"></div></div></div>
+      <div id="caption"></div>
+    </div>
+  </div>
+  <script src="timeline.js"></script>
+  <script src="player.js"></script>
+</body>
+</html>

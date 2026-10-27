@@ -1,0 +1,114 @@
+:root {
+  /* Brand inputs — player.js overrides these on :root from TIMELINE.brand at load. The defaults
+     are a neutral blue look (render/brand.ts's NEUTRAL_COLORS), not any one product's palette. */
+  --brand-primary: hsl(235 55% 42%);
+  --brand-accent: #0ea5e9;
+  --brand-primary-foreground: #ffffff;
+  --font: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --heading-font: var(--font);
+
+  /* Derived: the dark "night" canvas is a very dark tint of the brand primary, so the video
+     still reads as the app's brand; --hi/--hi-2 are light tints for text/marks on that canvas. */
+  --night: color-mix(in oklab, var(--brand-primary) 20%, hsl(228 40% 5%));
+  --night-2: color-mix(in oklab, var(--brand-primary) 34%, hsl(228 40% 8%));
+  --hi: oklch(from var(--brand-accent) 0.84 min(calc(c * 1.15), 0.16) h);
+  --hi-2: oklch(from var(--brand-primary) 0.76 min(calc(c * 1.1), 0.17) h);
+  --mark: var(--brand-accent);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+body { font-family: var(--font); font-feature-settings: 'cv11', 'ss01'; color: #fff;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+
+#frame { position: absolute; inset: 0; overflow: hidden;
+  background:
+    radial-gradient(900px 700px at 86% 64%, color-mix(in srgb, var(--brand-accent) 24%, transparent), transparent 70%),
+    radial-gradient(800px 600px at 104% 104%, color-mix(in srgb, var(--brand-primary) 34%, transparent), transparent 70%),
+    radial-gradient(1000px 700px at -4% -6%, color-mix(in srgb, var(--brand-primary) 42%, transparent), transparent 70%),
+    linear-gradient(160deg, var(--night-2), var(--night) 60%);
+}
+#frame::after { /* faint diagonal sheen */
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(115deg, transparent 58%, hsl(0 0% 100% / .035) 58.2%, transparent 74%);
+}
+
+/* ---------------- stage: the captured UI */
+#stage { position: absolute; border-radius: 16px; overflow: hidden; background: #fff;
+  box-shadow: 0 0 0 1px hsl(0 0% 100% / .10), 0 30px 80px -20px color-mix(in srgb, var(--night) 85%, black), 0 10px 30px -10px color-mix(in srgb, var(--night) 60%, transparent);
+  transform-origin: 50% 50%; will-change: transform, opacity; }
+#cam { position: absolute; left: 0; top: 0; width: 1440px; height: 810px; transform-origin: 0 0; will-change: transform; }
+#cam img { position: absolute; left: 0; top: 0; width: 1440px; height: 810px; }
+#spot { position: absolute; border-radius: 12px; pointer-events: none;
+  box-shadow: 0 0 0 3px var(--mark), 0 0 0 9px color-mix(in srgb, var(--mark) 24%, transparent),
+    0 0 0 9999px color-mix(in srgb, var(--night) 20%, transparent); }
+.ripple { position: absolute; width: 0; height: 0; border-radius: 50%; border: 3px solid var(--mark); pointer-events: none;
+  transform: translate(-50%, -50%); }
+#cursor { position: absolute; left: 0; top: 0; width: 30px; height: 30px; transform-origin: 0 0; pointer-events: none;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / .35)); }
+
+/* ---------------- callouts + blur (M22) */
+#blurLayer, #calloutLayer { position: absolute; left: 0; top: 0; width: 1440px; height: 810px; pointer-events: none; }
+/* A mosaic'd (irreversible — see player.js's BLUR_MOSAIC_* / pages/annotate.ts's MOSAIC_*)
+   canvas per blur box; the blur() here only softens the box's own edges against the
+   surrounding frame, same as annotate.ts's canvas. */
+.blur-box { position: absolute; border-radius: 3px; filter: blur(2px); }
+.callout-badge { position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%;
+  background: #dc2626; color: #fff; font: 700 13px/26px -apple-system, Helvetica, Arial, sans-serif; text-align: center;
+  box-shadow: 0 1px 4px rgb(0 0 0 / .5); }
+#calloutLegend { position: absolute; left: 24px; bottom: 24px; max-width: 70%; background: color-mix(in srgb, var(--night) 90%, transparent);
+  color: #fff; border-radius: 10px; padding: 8px 14px; font: 500 15px/1.6 -apple-system, Helvetica, Arial, sans-serif; }
+#calloutLegend:empty { display: none; }
+#calloutLegend b { color: #f87171; margin-right: 4px; }
+
+/* ---------------- caption band */
+#band { position: absolute; left: 132px; right: 132px; top: 972px; height: 96px; display: flex; align-items: center; gap: 28px; }
+#chip { flex: none; width: 360px; display: flex; align-items: center; gap: 14px; }
+#chip .num { flex: none; width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center;
+  font-weight: 800; font-size: 22px; color: var(--night);
+  background: linear-gradient(135deg, var(--hi), var(--hi-2)); }
+#chip .eyebrow { font-size: 13px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--hi);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#chip .title { font-size: 21px; font-weight: 700; line-height: 1.15; margin-top: 3px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+#caption { flex: 1; font-size: 27px; line-height: 1.32; font-weight: 500; color: hsl(0 0% 100% / .94);
+  text-wrap: balance; }
+
+/* ---------------- title cards */
+.card { position: absolute; inset: 0; padding: 0 168px; display: flex; flex-direction: column; justify-content: center; }
+.brand { display: flex; align-items: center; gap: 20px; font-family: var(--heading-font); font-size: 40px; font-weight: 800;
+  letter-spacing: -.02em; min-height: 64px; }
+.brand:not(:has(img[src])):has(span:empty) { visibility: hidden; }
+.brand img { height: 64px; width: auto; max-width: 320px; object-fit: contain; }
+.brand img.tile { height: 72px; max-width: 360px; padding: 10px 14px; border-radius: 18px; background: #fff;
+  box-shadow: 0 6px 24px -8px rgb(0 0 0 / .5); }
+.eyebrow-pill { display: inline-block; margin-top: 60px; padding: 10px 22px; border-radius: 999px;
+  border: 1.5px solid color-mix(in srgb, var(--hi) 45%, transparent); background: color-mix(in srgb, var(--brand-accent) 16%, transparent);
+  font-size: 17px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: var(--hi); align-self: flex-start; }
+.eyebrow-pill:empty { display: none; }
+.card h1 { margin-top: 26px; font-family: var(--heading-font); font-size: 92px; line-height: 1.04; font-weight: 800;
+  letter-spacing: -.035em; max-width: 1450px; text-wrap: balance; }
+.card h1.long { font-size: 78px; }
+.card h1.xlong { font-size: 64px; letter-spacing: -.025em; }
+.card h1:empty { display: none; }
+.card h1 .grad { background: linear-gradient(90deg, var(--hi), var(--hi-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.card p.sub { margin-top: 28px; font-size: 32px; line-height: 1.4; color: hsl(0 0% 100% / .78); max-width: 1250px; text-wrap: pretty; }
+.card p.sub:empty { display: none; }
+.parts { margin-top: 56px; display: flex; gap: 18px 22px; flex-wrap: wrap; max-width: 1584px; }
+.parts:empty { display: none; }
+.part { display: flex; align-items: center; gap: 14px; padding: 14px 24px 14px 14px; border-radius: 16px;
+  background: hsl(0 0% 100% / .06); border: 1px solid hsl(0 0% 100% / .12); font-size: 24px; font-weight: 600; }
+.part .n { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; font-weight: 800; color: var(--night);
+  background: linear-gradient(135deg, var(--hi), var(--hi-2)); }
+
+#outro h1 { margin-top: 56px; font-size: 104px; }
+#outro h1.long { font-size: 84px; }
+#outro h1.xlong { font-size: 68px; }
+.recap { margin-top: 48px; display: grid; gap: 20px; }
+.recap .row { display: flex; align-items: center; gap: 20px; font-size: 36px; font-weight: 600; }
+.recap .tick { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; flex: none;
+  background: linear-gradient(135deg, var(--hi), var(--hi-2)); }
+.recap .tick svg { width: 26px; height: 26px; stroke: var(--night); stroke-width: 3.2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.foot:empty, .foot:has(> span:empty) { visibility: hidden; }
+.foot { position: absolute; left: 168px; right: 168px; bottom: 150px; display: flex; justify-content: space-between; align-items: center;
+  font-size: 24px; color: hsl(0 0% 100% / .62); }

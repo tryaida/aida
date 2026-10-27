@@ -1,0 +1,16 @@
+export { detectFramework } from "./detect.js";
+export type { DetectResult, DetectedFramework } from "./detect.js";
+export { extractBrand, rebaseBrandPaths, parseCssBlocks, stripTagline } from "./brand.js";
+export type { CssBlock } from "./brand.js";
+export { copyTemplate, TEMPLATE_DIR } from "./copy-template.js";
+export type { CopyTemplateResult } from "./copy-template.js";
+export { writeAidaConfig, formatBrandBlock } from "./write-config.js";
+export type { WriteConfigOptions, WriteConfigResult } from "./write-config.js";
+export { writeCiWorkflow, writeClaudeRepairWorkflow } from "./ci.js";
+export type { WriteCiWorkflowOptions, WriteCiWorkflowResult, WriteClaudeRepairWorkflowOptions, WriteClaudeRepairWorkflowResult } from "./ci.js";
+export { ensureEngineBuilt, packEngine, pruneOldTarballs, hashStagedPackage, stageRuntimePackage, runtimePackageJson, HELP_APP_RUNTIME_DEPENDENCIES, setAidaDependency, installDependencies, isRegistrySpec, defaultCommandRunner } from "./install.js";
+export type { CommandRunner as InitCommandRunner, CommandResult as InitCommandResult, RunOptions as InitRunOptions, PackResult } from "./install.js";
+export { writeTunnelHosts, normalizeTunnelHost, ensureStudioKey, studioAccessUrl, localStudioAccessUrl, STUDIO_HOSTS_VAR, STUDIO_KEY_VAR } from "./env-local.js";
+export type { WriteTunnelHostsResult, EnsureStudioKeyResult } from "./env-local.js";
+export { writeAuthJsSignIn, isAuthJs, SIGN_IN_ADAPTER_PATH } from "./sign-in-template.js";
+export type { WriteSignInResult } from "./sign-in-template.js";

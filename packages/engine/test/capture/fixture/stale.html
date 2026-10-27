@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Registrations</title>
+  </head>
+  <body>
+    <main>
+      <h1>Registrations</h1>
+      <ul id="list"></ul>
+    </main>
+    <div id="dialog" role="dialog" aria-label="Add registration">
+      <label for="name">Name</label>
+      <input id="name" value="Ada Lovelace" />
+      <button id="save">Save in dialog</button>
+    </div>
+    <script>
+      // The list is drawn once, on load. Saving closes the dialog but never redraws the list:
+      // the bug a reload reveals.
+      fetch("/api/list")
+        .then((r) => r.json())
+        .then((names) => {
+          for (const n of names) {
+            const li = document.createElement("li");
+            li.textContent = n;
+            document.getElementById("list").appendChild(li);
+          }
+        });
+      document.getElementById("save").onclick = async () => {
+        await fetch("/api/list", { method: "POST", body: document.getElementById("name").value });
+        document.getElementById("dialog").hidden = true;
+      };
+    </script>
+  </body>
+</html>

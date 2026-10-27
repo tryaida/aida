@@ -1,0 +1,689 @@
+{
+  "$ref": "#/definitions/Walkthrough",
+  "definitions": {
+    "Walkthrough": {
+      "type": "object",
+      "properties": {
+        "walkthrough": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "version": {
+          "type": "number"
+        },
+        "title": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "product": {
+          "type": "string"
+        },
+        "for": {
+          "type": "string"
+        },
+        "section": {
+          "type": "string"
+        },
+        "verifiedAgainst": {
+          "type": "object",
+          "properties": {
+            "app": {
+              "type": "string"
+            },
+            "routes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "sources": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "start": {
+          "type": "object",
+          "properties": {
+            "signed_in_as": {
+              "type": "string",
+              "minLength": 1
+            },
+            "page": {
+              "type": "string"
+            },
+            "baseUrl": {
+              "type": "string"
+            },
+            "viewport": {
+              "type": "object",
+              "properties": {
+                "width": {
+                  "type": "number"
+                },
+                "height": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "width",
+                "height"
+              ],
+              "additionalProperties": false
+            },
+            "deviceScaleFactor": {
+              "type": "number"
+            },
+            "show": {
+              "type": "string"
+            },
+            "notes": {
+              "type": "string"
+            },
+            "persona": {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "email": {
+                  "type": "string"
+                },
+                "cognitoSub": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": {}
+        },
+        "voice": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "voiceId": {
+              "type": "string"
+            },
+            "speed": {
+              "type": "number"
+            },
+            "gapSeconds": {
+              "type": "number"
+            }
+          },
+          "additionalProperties": false
+        },
+        "intro": {
+          "type": "object",
+          "properties": {
+            "eyebrow": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "subtitle": {
+              "type": "string"
+            },
+            "say": {
+              "type": "string"
+            },
+            "caption": {
+              "type": "string"
+            },
+            "recap": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "outro": {
+          "$ref": "#/definitions/Walkthrough/properties/intro"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "chapter": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "do": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              },
+              "say": {
+                "type": "string"
+              },
+              "caption": {
+                "type": "string"
+              },
+              "page_text": {
+                "type": "string"
+              },
+              "check": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              },
+              "mask": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "camera": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "full"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "focus": {
+                        "type": "object",
+                        "properties": {
+                          "role": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "exact": {
+                            "type": "boolean"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "placeholder": {
+                            "type": "string"
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "css": {
+                            "type": "string"
+                          },
+                          "hasText": {
+                            "type": "string"
+                          },
+                          "within": {
+                            "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                          },
+                          "innermost": {
+                            "type": "boolean"
+                          },
+                          "nth": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "padUnion": {
+                            "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "zoom": {
+                        "type": "number"
+                      },
+                      "align": {
+                        "type": "string",
+                        "enum": [
+                          "top",
+                          "right",
+                          "left"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "focus"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "hold": {
+                "type": "number",
+                "minimum": 0
+              },
+              "callouts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                    },
+                    "box": {
+                      "type": "object",
+                      "properties": {
+                        "x": {
+                          "type": "number"
+                        },
+                        "y": {
+                          "type": "number"
+                        },
+                        "w": {
+                          "type": "number"
+                        },
+                        "h": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y",
+                        "w",
+                        "h"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "label": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "blur": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                    },
+                    "box": {
+                      "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/callouts/items/properties/box"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "do": {
+                          "type": "string",
+                          "const": "click"
+                        },
+                        "target": {
+                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                        },
+                        "highlight": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "do",
+                        "target"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "do": {
+                          "type": "string",
+                          "const": "type"
+                        },
+                        "target": {
+                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "do",
+                        "target",
+                        "text"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "do": {
+                          "type": "string",
+                          "const": "select"
+                        },
+                        "target": {
+                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                        },
+                        "option": {
+                          "type": "string"
+                        },
+                        "highlight": {
+                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/actions/items/anyOf/0/properties/highlight"
+                        }
+                      },
+                      "required": [
+                        "do",
+                        "target",
+                        "option"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "do": {
+                          "type": "string",
+                          "const": "point"
+                        },
+                        "target": {
+                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                        },
+                        "highlight": {
+                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/actions/items/anyOf/0/properties/highlight"
+                        }
+                      },
+                      "required": [
+                        "do",
+                        "target"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "do": {
+                          "type": "string",
+                          "const": "expect"
+                        },
+                        "target": {
+                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                        },
+                        "highlight": {
+                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/actions/items/anyOf/0/properties/highlight"
+                        }
+                      },
+                      "required": [
+                        "do",
+                        "target"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "do": {
+                          "type": "string",
+                          "const": "waitFor"
+                        },
+                        "target": {
+                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                        },
+                        "snapshot": {
+                          "type": [
+                            "boolean",
+                            "string"
+                          ]
+                        },
+                        "highlight": {
+                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/actions/items/anyOf/0/properties/highlight"
+                        }
+                      },
+                      "required": [
+                        "do",
+                        "target"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "do": {
+                          "type": "string",
+                          "const": "waitForUrl"
+                        },
+                        "pattern": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "do",
+                        "pattern"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "do": {
+                          "type": "string",
+                          "const": "scrollTo"
+                        },
+                        "target": {
+                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                        }
+                      },
+                      "required": [
+                        "do",
+                        "target"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "do": {
+                          "type": "string",
+                          "const": "goto"
+                        },
+                        "path": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "do",
+                        "path"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          "minItems": 1
+        },
+        "validate": {
+          "type": "object",
+          "properties": {
+            "database": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "sql": {
+                    "type": "string"
+                  },
+                  "params": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "expect": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "name",
+                  "sql",
+                  "expect"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "needs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          }
+        },
+        "leaves": {
+          "$ref": "#/definitions/Walkthrough/properties/needs"
+        },
+        "clears": {
+          "$ref": "#/definitions/Walkthrough/properties/needs"
+        },
+        "setup": {
+          "type": "object",
+          "properties": {
+            "as": {
+              "type": "string"
+            },
+            "steps": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "do": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  },
+                  "check": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  },
+                  "actions": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/actions/items"
+                    }
+                  },
+                  "chapter": {},
+                  "say": {},
+                  "caption": {},
+                  "page_text": {},
+                  "mask": {},
+                  "camera": {},
+                  "hold": {},
+                  "callouts": {},
+                  "blur": {}
+                },
+                "additionalProperties": false
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "steps"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "walkthrough",
+        "title",
+        "steps"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}

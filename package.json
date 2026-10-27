@@ -1,0 +1,24 @@
+{
+  "name": "aida-monorepo",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w packages/engine && npm run build -w packages/help-app",
+    "test": "vitest run",
+    "test:slow": "AIDA_TEST_SLOW=1 vitest run",
+    "typecheck": "npm run build -w packages/engine && npm run typecheck -w packages/engine && npm run typecheck -w packages/help-app"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "tsx": "^4.19.2",
+    "vitest": "^2.1.8",
+    "@types/node": "^22.10.5",
+    "postgres": "^3.4.9"
+  }
+}

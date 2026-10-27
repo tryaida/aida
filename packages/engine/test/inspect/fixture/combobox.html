@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Combobox fixture</title>
+  </head>
+  <body>
+    <main>
+      <h1>New entry</h1>
+      <!-- A Radix-style custom combobox: role="combobox" trigger + a role="listbox" popup, not
+           a native <select>. -->
+      <span>Competitor</span>
+      <button type="button" id="trigger" role="combobox" aria-haspopup="listbox" aria-expanded="false">
+        Select competitor…
+      </button>
+      <ul role="listbox" id="listbox" hidden style="list-style: none">
+        <li role="option" id="opt-acme">Acme Co</li>
+        <li role="option" id="opt-riverbend">Riverbend Show</li>
+      </ul>
+
+      <!-- Revealed only once "Riverbend Show" is chosen above — the conditional field --select
+           exists to reveal. -->
+      <div id="conditional" hidden>
+        <label for="riverbend-note">Note for Riverbend</label>
+        <input id="riverbend-note" type="text" />
+      </div>
+
+      <label for="native-class">Class</label>
+      <select id="native-class">
+        <option value="">Choose…</option>
+        <option value="a">Class A</option>
+        <option value="b">Class B</option>
+      </select>
+    </main>
+    <script>
+      const trigger = document.getElementById("trigger");
+      const listbox = document.getElementById("listbox");
+      const conditional = document.getElementById("conditional");
+
+      function closeListbox() {
+        listbox.hidden = true;
+        trigger.setAttribute("aria-expanded", "false");
+      }
+
+      trigger.addEventListener("click", () => {
+        const expanded = trigger.getAttribute("aria-expanded") === "true";
+        trigger.setAttribute("aria-expanded", String(!expanded));
+        listbox.hidden = expanded;
+      });
+      trigger.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeListbox();
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeListbox();
+      });
+      listbox.querySelectorAll('[role="option"]').forEach((opt) => {
+        opt.addEventListener("click", () => {
+          trigger.textContent = opt.textContent;
+          closeListbox();
+          if (opt.id === "opt-riverbend") conditional.hidden = false;
+        });
+      });
+    </script>
+  </body>
+</html>

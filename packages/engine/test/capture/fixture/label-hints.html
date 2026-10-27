@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Label hints fixture</title>
+  </head>
+  <body>
+    <h1>Label hints fixture</h1>
+    <form>
+      <label>First Name (Required for this action) <input type="text" id="first-name" /></label>
+      <label>Nickname (Optional) <input type="text" id="nickname" /></label>
+      <label>Phone * <input type="text" id="phone" /></label>
+      <label>Email (Required for this action) <input type="text" id="email" /></label>
+      <label>Email Confirmation (Required for this action) <input type="text" id="email-confirmation" /></label>
+      <label>Plain Label <input type="text" id="plain" /></label>
+      <!-- Genuine ambiguity: two different fields whose label normalizes to the exact same text. -->
+      <label>Duplicate (Required for this action) <input type="text" id="duplicate-a" /></label>
+      <label>Duplicate (Optional) <input type="text" id="duplicate-b" /></label>
+      <!-- Regression: "Name" must never match "Name of club" — extra words, not a hint marker. -->
+      <label>Name of club <input type="text" id="club-name" /></label>
+      <!-- Regression: a decorative role=img icon inside the label must not win over the real input. -->
+      <label>Icon Field <span role="img" aria-label="hint">*</span><input type="text" id="icon-field" /></label>
+      <!-- Real-app shape 1: hint nested in a plain (non-role) <span> — accessible name is
+           "Address Optional", but "Address" is the short name an author actually writes. -->
+      <label>Address <span>Optional</span> <input type="text" id="address" /></label>
+      <!-- Real-app shape 2: same nesting, "Required for this action" hint, multi-word short name. -->
+      <label>What it was <span>Required for this action</span> <input type="text" id="what-it-was" /></label>
+      <!-- A label whose only text lives inside a nested element — direct text is empty, so the
+           short name must fall back to the label's full own text instead of matching nothing. -->
+      <label><span>Email Only</span><input type="text" id="email-only" /></label>
+    </form>
+  </body>
+</html>

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Registration</title>
+  </head>
+  <body>
+    <main>
+      <h1>Registration</h1>
+      <button id="save">Save</button>
+      <button id="panel">Open live panel</button>
+      <p id="saved" hidden>Registration saved</p>
+      <p id="ws-state">connecting</p>
+    </main>
+    <script>
+      // On load: a POST (an analytics "visit" or an autosave), and a WebSocket held open.
+      // "Save" writes for real (POST + a socket message); "Open live panel" only sends a socket
+      // message — the write a read-only scan must never let through.
+      fetch("/api/on-load", { method: "POST", body: "{}" }).catch(() => {});
+      const wsUrl = new URLSearchParams(location.search).get("ws");
+      const ws = wsUrl ? new WebSocket(wsUrl) : null;
+      if (ws) ws.onopen = () => (document.getElementById("ws-state").textContent = "open");
+      document.getElementById("save").onclick = async () => {
+        ws?.send("save registration");
+        await fetch("/api/save", { method: "POST", body: "{}" });
+        document.getElementById("saved").hidden = false;
+      };
+      document.getElementById("panel").onclick = () => {
+        ws?.send("open panel");
+        document.getElementById("ws-state").textContent = "panel sent";
+      };
+    </script>
+  </body>
+</html>

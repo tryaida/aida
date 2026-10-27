@@ -1,0 +1,37 @@
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
+
+# dependencies
+node_modules/
+
+# build output
+dist/
+.build/
+
+# aida caches
+.aida-cache/
+
+.tsx-mask-test-*/
+
+# generated example outputs (rebuild with `aida build`)
+examples/**/videos/
+examples/**/pdf/
+examples/**/public/screenshots/
+examples/**/public/pdf/
+examples/**/public/videos/
+
+# TypeScript incremental build state
+*.tsbuildinfo
+
+# private-app material, kept local only (not in the public repo)
+/reference/
+
+# local demos
+/.demo/
+
+# local secrets — never commit
+.env
+.env.*
+
+# explainer video project: holds unredacted pilot-app captures, never public
+/videos/

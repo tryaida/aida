@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Registration</title>
+  </head>
+  <body>
+    <main>
+      <h1>Registration</h1>
+      <button id="preview">Open preview</button>
+      <button id="live">Go live</button>
+      <p id="ws-state">idle</p>
+    </main>
+    <script>
+      // "Open preview" opens a popup that writes on load; "Go live" sends over a WebSocket.
+      document.getElementById("preview").onclick = () => window.open("/popup-writer.html");
+      document.getElementById("live").onclick = () => {
+        const ws = new WebSocket(new URLSearchParams(location.search).get("ws"));
+        ws.onopen = () => {
+          ws.send("save registration");
+          document.getElementById("ws-state").textContent = "sent";
+        };
+      };
+    </script>
+  </body>
+</html>

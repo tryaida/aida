@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Custom select fixture (decoy text + aria-controls)</title>
+  </head>
+  <body>
+    <h1>Custom select fixture (decoy text + aria-controls)</h1>
+    <!-- A decoy "Acme" earlier in DOM order than the real option — an unscoped page-wide
+         getByText("Acme") would land here first and silently "succeed" at nothing. -->
+    <table>
+      <tr>
+        <td>Competitor</td>
+        <td>Acme</td>
+      </tr>
+    </table>
+    <button
+      id="customer-trigger"
+      type="button"
+      aria-haspopup="listbox"
+      aria-expanded="false"
+      aria-controls="customer-listbox"
+    >
+      Customer: Choose…
+    </button>
+    <ul id="customer-listbox" role="listbox" hidden>
+      <li role="option" tabindex="0">Acme</li>
+      <li role="option" tabindex="0">Globex</li>
+    </ul>
+    <p id="result"></p>
+    <script>
+      const trigger = document.getElementById("customer-trigger");
+      const listbox = document.getElementById("customer-listbox");
+      trigger.addEventListener("click", () => {
+        listbox.hidden = !listbox.hidden;
+      });
+      for (const opt of listbox.querySelectorAll('[role="option"]')) {
+        opt.addEventListener("click", () => {
+          trigger.textContent = "Customer: " + opt.textContent;
+          listbox.hidden = true;
+          document.getElementById("result").textContent = "Selected: " + opt.textContent;
+        });
+      }
+    </script>
+  </body>
+</html>

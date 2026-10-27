@@ -1,0 +1,122 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+
+/*
+ * The app's own brand: colours, radius and fonts, written by the aida engine from
+ * aida.config's `brand` (`aida theme`, and every `aida build`). Edit the config, not that
+ * file. Everything below reads the variables it sets.
+ */
+@import "./brand.css";
+
+/* Paint the theme background on the root too, so no browser shows its own canvas colour at the
+ * page edges (wide screens, overscroll). */
+html {
+  background-color: var(--color-fd-background);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv11", "ss01";
+}
+
+h1,
+h2,
+h3,
+h4,
+.font-heading {
+  font-family: var(--font-heading);
+}
+
+/* ---- Layout: use the full window width, so the sidebar sits against the left edge on wide
+ * screens instead of floating inside a centred 97rem column. Pages keep their own reading width. */
+:root {
+  --fd-layout-width: 100vw;
+}
+
+/* ---- Sidebar: brand-tinted active item, a little more air between groups. */
+#nd-sidebar a[data-active="true"] {
+  background-color: color-mix(in oklab, var(--color-fd-primary) 10%, transparent);
+  color: var(--color-fd-primary);
+  font-weight: 500;
+}
+
+/* ---- Home hero: a soft wash of the brand colours behind the search. */
+.aida-hero {
+  background:
+    radial-gradient(60rem 22rem at 100% 0%, color-mix(in oklab, var(--brand-accent) 16%, transparent), transparent 70%),
+    radial-gradient(50rem 24rem at 0% 100%, color-mix(in oklab, var(--brand-primary) 14%, transparent), transparent 70%),
+    var(--color-fd-card);
+}
+
+/* ---- Guides (walkthrough pages). */
+/* The page header already shows the title; the engine's header block repeats it as an h1. */
+.aida-guide > h1:first-child,
+.aida-guide > h1:first-of-type {
+  display: none;
+}
+/* ...and its intro paragraph repeats the description and audience the page header shows. */
+.aida-guide > h1:first-of-type + p {
+  display: none;
+}
+
+/* "Part 1: Record the payment" */
+.aida-guide h3 {
+  margin-top: 2.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-fd-border);
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+
+/* "1. Open Payments" — numbered step with a brand badge. */
+.aida-step {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 2.25rem !important;
+  font-size: 1.05rem;
+}
+.aida-step-number {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 999px;
+  background: var(--brand-primary);
+  color: var(--brand-primary-foreground);
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-inline-end: 0.75rem;
+  vertical-align: 0.1em;
+}
+.aida-step ~ p {
+  margin-inline-start: 0;
+}
+
+/* Screenshots: framed like a window, zoomable. */
+.aida-screenshot {
+  margin-block: 1rem 0.5rem;
+  border: 1px solid var(--color-fd-border);
+  border-radius: calc(var(--brand-radius) + 2px);
+  box-shadow:
+    0 1px 2px rgb(15 23 42 / 0.06),
+    0 12px 32px -16px rgb(15 23 42 / 0.25);
+  background: var(--color-fd-card);
+}
+
+/* "Steps verified against the real app on …" footer. */
+.aida-guide hr {
+  margin-top: 3rem;
+  border-color: var(--color-fd-border);
+}
+.aida-guide hr + p {
+  font-size: 0.875rem;
+  color: var(--color-fd-muted-foreground);
+}
+
+@import "./print.css";

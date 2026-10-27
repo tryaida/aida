@@ -1,0 +1,253 @@
+/*
+ * Studio-only styles (dev-only /studio route). Everything here is scoped under .studio-root and
+ * built on the help app's brand variables (app/brand.css, Contract 2) and fumadocs' --color-fd-*
+ * tokens, so the Studio follows the app's brand and light/dark theme with no colours of its own.
+ */
+.studio-root {
+  /* Two surfaces derived from the brand's own background: the canvas panes sit on, and a raised
+   * surface for cards, bars and inputs (lighter in light mode, a touch lighter in dark mode). */
+  --studio-canvas: var(--color-fd-background);
+  --studio-surface: color-mix(in oklab, var(--color-fd-background) 15%, white);
+  --studio-skeleton: color-mix(in oklab, var(--color-fd-foreground) 7%, transparent);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+.dark .studio-root,
+.studio-root:where(.dark *) {
+  --studio-surface: color-mix(in oklab, var(--color-fd-background) 94%, white);
+  --studio-skeleton: color-mix(in oklab, var(--color-fd-foreground) 9%, transparent);
+}
+.studio-canvas {
+  background-color: var(--studio-canvas);
+}
+.studio-surface {
+  background-color: var(--studio-surface);
+}
+
+.studio-root :where(h1, h2, h3, .studio-heading) {
+  font-family: var(--font-heading, var(--font-sans));
+}
+
+/* Focus ring in the brand colour, keyboard-only. */
+.studio-root :where(button, a, input, textarea, select, [role="option"]):focus-visible,
+.studio-focus:focus-visible {
+  outline: 2px solid var(--color-fd-ring, var(--brand-primary));
+  outline-offset: 2px;
+}
+
+.studio-input {
+  border: 1px solid var(--color-fd-border);
+  border-radius: calc(var(--brand-radius, 0.625rem) * 0.8);
+  background: var(--studio-surface);
+  color: var(--color-fd-foreground);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.studio-input::placeholder {
+  color: var(--color-fd-muted-foreground);
+  opacity: 0.8;
+}
+.studio-input:hover {
+  border-color: color-mix(in oklab, var(--color-fd-primary) 30%, var(--color-fd-border));
+}
+.studio-input:focus,
+.studio-input:focus-visible {
+  outline: none;
+  border-color: var(--color-fd-primary);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-fd-primary) 18%, transparent);
+}
+.studio-autogrow {
+  field-sizing: content;
+  max-height: 16rem;
+}
+
+.studio-card {
+  border-radius: calc(var(--brand-radius, 0.625rem) * 1.25);
+}
+
+.studio-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 1.75rem;
+  padding: 0 0.625rem;
+  border: 1px solid var(--color-fd-border);
+  border-radius: calc(var(--brand-radius, 0.625rem) * 0.8);
+  background: var(--studio-surface);
+  color: var(--color-fd-foreground);
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.studio-btn:hover:not(:disabled) {
+  background: var(--color-fd-muted);
+  border-color: color-mix(in oklab, var(--color-fd-primary) 35%, var(--color-fd-border));
+}
+.studio-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.studio-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.3rem;
+  background: var(--color-fd-muted);
+  color: var(--color-fd-foreground);
+  white-space: nowrap;
+}
+
+.studio-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.3rem;
+  border: 1px solid var(--color-fd-border);
+  border-bottom-width: 2px;
+  border-radius: 0.3rem;
+  background: var(--color-fd-background);
+  color: var(--color-fd-foreground);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+.studio-step-num {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--color-fd-primary) 14%, transparent);
+  color: var(--color-fd-primary);
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.studio-skeleton {
+  border-radius: 0.375rem;
+  background: linear-gradient(90deg, var(--studio-skeleton) 0%, transparent 50%, var(--studio-skeleton) 100%);
+  background-color: var(--studio-skeleton);
+  background-size: 200% 100%;
+  animation: studio-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes studio-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+.studio-fade-in {
+  animation: studio-fade-in 160ms ease-out;
+}
+@keyframes studio-fade-in {
+  from { opacity: 0; transform: translateY(1px); }
+  to { opacity: 1; transform: none; }
+}
+.studio-toast-in {
+  animation: studio-toast-in 200ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+@keyframes studio-toast-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Quiet scrollbars that still show where you are. */
+.studio-scroll,
+.studio-scroll-x {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--color-fd-muted-foreground) 35%, transparent) transparent;
+}
+.studio-scroll-x {
+  scroll-padding-inline: 1.25rem;
+}
+
+/* The preview reuses the help site's own prose styles; these only tighten it for a side pane
+ * and let a selected step's highlight wrap its heading and screenshot cleanly. */
+.studio-prose {
+  font-size: 0.875rem;
+  line-height: 1.65;
+}
+.studio-prose > :first-child,
+.studio-preview-step > :first-child {
+  margin-top: 0.75rem;
+}
+.studio-prose :where(h1) {
+  font-size: 1.6em;
+  letter-spacing: -0.01em;
+}
+.studio-prose :where(img) {
+  margin: 0;
+}
+.studio-prose kbd.studio-kbd {
+  font-size: 0.75em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-root *,
+  .studio-root *::before,
+  .studio-root *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Host not allowed (app/studio/page.tsx renders this instead of the Studio), and the notice
+ * shown when the Studio's scripts never start — revealed by CSS alone after 8 s, hidden as soon
+ * as StudioApp mounts and sets data-studio-ready on <html>. */
+.studio-host-blocked {
+  max-width: 42rem;
+  margin: 4rem auto;
+  padding: 0 1.5rem;
+  line-height: 1.6;
+}
+.studio-host-blocked h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+.studio-host-blocked p {
+  margin: 0.75rem 0;
+}
+.studio-host-blocked pre,
+.studio-stalled code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  background: var(--studio-skeleton);
+  border-radius: 0.375rem;
+}
+.studio-host-blocked pre {
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  user-select: all;
+}
+.studio-stalled code {
+  padding: 0.1rem 0.3rem;
+}
+.studio-stalled {
+  position: fixed;
+  left: 50%;
+  bottom: 1.5rem;
+  transform: translateX(-50%);
+  z-index: 100;
+  max-width: min(40rem, calc(100vw - 2rem));
+  padding: 0.875rem 1.125rem;
+  border: 1px solid var(--color-fd-border);
+  border-radius: 0.5rem;
+  background: var(--color-fd-background);
+  color: var(--color-fd-foreground);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.15);
+  line-height: 1.5;
+  visibility: hidden;
+  animation: studio-stalled-show 0s linear 8s forwards;
+}
+html[data-studio-ready] .studio-stalled {
+  display: none;
+}
+@keyframes studio-stalled-show {
+  to { visibility: visible; }
+}

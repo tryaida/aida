@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Registration</title>
+  </head>
+  <body>
+    <main>
+      <h1>New registration</h1>
+      <label for="name">Name</label>
+      <input id="name" type="text" required />
+      <button id="save">Save</button>
+      <h2 id="saved" hidden>Registration saved</h2>
+      <button id="more" aria-haspopup="menu">More actions</button>
+      <div id="menu" role="menu" hidden>
+        <div role="menuitem" id="edit" tabindex="-1">Edit registration</div>
+      </div>
+      <form onsubmit="return false">
+        <button type="submit">Submit registration</button>
+      </form>
+    </main>
+    <div id="dialog" role="dialog" aria-label="Edit registration" hidden>
+      <label for="notes">Notes</label>
+      <textarea id="notes"></textarea>
+    </div>
+    <script>
+      // "Save" really POSTs (inspect --after replays real actions); then the screen changes.
+      document.getElementById("save").onclick = async () => {
+        await fetch("/api/registrations", { method: "POST", body: "{}" });
+        document.getElementById("saved").hidden = false;
+      };
+      document.getElementById("more").onclick = () => {
+        document.getElementById("menu").hidden = false;
+      };
+      document.getElementById("edit").onclick = () => {
+        document.getElementById("dialog").hidden = false;
+      };
+    </script>
+  </body>
+</html>

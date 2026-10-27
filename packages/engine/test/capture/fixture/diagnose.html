@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Registrations</title>
+  </head>
+  <body>
+    <main>
+      <h1>New registration</h1>
+      <p id="status">Fill in the form and save.</p>
+      <button id="save-ok">Save registration</button>
+      <button id="save-done">Save and show</button>
+      <button id="save-500">Save broken</button>
+      <button id="save-422">Save invalid</button>
+      <button id="wipe">Wipe page</button>
+      <button id="crash">Crash</button>
+    </main>
+    <script>
+      // Each button stands in for one way a real save can go: the API is the test's handler.
+      const post = (path) => fetch(path + "?token=secret-value", { method: "POST", body: "{}" });
+      document.getElementById("save-ok").onclick = () => post("/api/registrations");
+      document.getElementById("save-done").onclick = async () => {
+        await post("/api/registrations");
+        document.getElementById("status").textContent = "Registration saved";
+      };
+      document.getElementById("save-500").onclick = () => post("/api/broken");
+      document.getElementById("save-422").onclick = () => post("/api/invalid");
+      document.getElementById("wipe").onclick = () => {
+        document.body.innerHTML = "";
+      };
+      document.getElementById("crash").onclick = () => {
+        setTimeout(() => {
+          throw new Error("Cannot read properties of undefined (reading 'id')");
+        }, 0);
+      };
+    </script>
+  </body>
+</html>

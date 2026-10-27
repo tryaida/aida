@@ -1,0 +1,70 @@
+/*
+ * Print styles (the Print button and the browser's own "Print to PDF"): the guide itself with
+ * large screenshots and numbered steps; no navigation, search, chat, video or buttons. The
+ * engine's pdf stage makes the designed PDF guides; this keeps a printed page clean too.
+ */
+@media print {
+  @page {
+    margin: 16mm 14mm;
+  }
+
+  nav,
+  aside,
+  header nav,
+  #nd-sidebar,
+  #nd-toc,
+  [data-search],
+  [data-aida-widget],
+  .aida-video,
+  .fd-sidebar,
+  .fd-toc {
+    display: none !important;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  main,
+  article,
+  #nd-page {
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .aida-screenshot,
+  img {
+    max-width: 100% !important;
+    width: 100% !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+  }
+
+  /* Keep each step's heading with its text and screenshot. */
+  .aida-step,
+  h2,
+  h3,
+  h4 {
+    break-after: avoid;
+  }
+
+  .aida-step-number {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .aida-last-checked {
+    display: inline-flex !important;
+    border-color: #999 !important;
+    color: #000 !important;
+    background: none !important;
+  }
+}

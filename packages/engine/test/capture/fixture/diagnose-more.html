@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Registrations</title>
+  </head>
+  <body>
+    <main>
+      <h1>New registration</h1>
+      <h2>Contact details</h2>
+      <p id="status">Fill in the form and save.</p>
+      <p id="later" hidden>Shown later</p>
+      <button id="track">Track only</button>
+      <button id="widget">Load widget</button>
+      <button id="widget-crash">Widget crash</button>
+      <button id="api">Save to API</button>
+      <button id="slow">Save slowly</button>
+      <button id="skeleton">Load slowly</button>
+      <button id="show">Show hidden</button>
+      <button id="save">Save registration</button>
+    </main>
+    <script>
+      // Third parties live on "localhost", the app on "127.0.0.1": same server, other origin.
+      const other = "http://localhost:" + location.port;
+      const addScript = (src) => {
+        const s = document.createElement("script");
+        s.src = src;
+        document.head.appendChild(s);
+      };
+      document.getElementById("track").onclick = () => {
+        navigator.sendBeacon("/collect", "{}");
+        navigator.sendBeacon(other + "/g/collect", "{}");
+        fetch(other + "/g/collect", { method: "POST", body: "{}", mode: "no-cors" });
+      };
+      document.getElementById("widget").onclick = () => {
+        addScript(other + "/segment.js");
+        fetch(other + "/v1/projects", { mode: "no-cors" }).catch(() => {});
+      };
+      document.getElementById("widget-crash").onclick = () => addScript(other + "/widget.js");
+      document.getElementById("api").onclick = () => fetch(other + "/api/registrations", { method: "POST", body: "{}" });
+      document.getElementById("slow").onclick = () => fetch("/api/slow", { method: "POST", body: "{}" });
+      document.getElementById("skeleton").onclick = () => {
+        document.querySelector("main").innerHTML = '<div class="skeleton" aria-busy="true" style="height:40px"></div>';
+      };
+      document.getElementById("show").onclick = () => {
+        document.getElementById("later").hidden = false;
+      };
+      document.getElementById("save").onclick = () => fetch("/api/registrations", { method: "POST", body: "{}" });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Custom select fixture</title>
+  </head>
+  <body>
+    <h1>Custom select fixture</h1>
+    <button id="customer-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">Customer: Choose…</button>
+    <ul id="customer-listbox" role="listbox" hidden>
+      <li role="option" tabindex="0">Acme</li>
+      <li role="option" tabindex="0">Globex</li>
+    </ul>
+    <p id="result"></p>
+    <script>
+      const trigger = document.getElementById("customer-trigger");
+      const listbox = document.getElementById("customer-listbox");
+      trigger.addEventListener("click", () => {
+        listbox.hidden = !listbox.hidden;
+      });
+      for (const opt of listbox.querySelectorAll('[role="option"]')) {
+        opt.addEventListener("click", () => {
+          trigger.textContent = "Customer: " + opt.textContent;
+          listbox.hidden = true;
+          document.getElementById("result").textContent = "Selected: " + opt.textContent;
+        });
+      }
+    </script>
+  </body>
+</html>

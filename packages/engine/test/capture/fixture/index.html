@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Capture fixture</title>
+  </head>
+  <body>
+    <h1>Capture fixture</h1>
+    <form id="f">
+      <label>First name <input type="text" id="name" /></label>
+      <label>Email <input type="text" id="email" /></label>
+      <button type="button" id="submit">Add thing</button>
+    </form>
+    <div id="result" style="display: none">
+      Added: <span id="added-name"></span>, <span id="added-email"></span>
+    </div>
+    <a href="/success.html" id="go-success">Go to success</a>
+    <script>
+      document.getElementById("submit").addEventListener("click", () => {
+        document.getElementById("added-name").textContent = document.getElementById("name").value;
+        document.getElementById("added-email").textContent = document.getElementById("email").value;
+        document.getElementById("result").style.display = "block";
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Registration</title>
+  </head>
+  <body>
+    <main>
+      <h1>New registration</h1>
+      <button id="save">Save</button>
+      <p id="saved" hidden>Registration saved</p>
+    </main>
+    <script>
+      // A slow save, then a follow-up write once it answers, then the screen changes.
+      document.getElementById("save").onclick = async () => {
+        await fetch("/api/registrations", { method: "POST", body: "{}" });
+        await fetch("/api/audit", { method: "POST", body: "{}" });
+        document.getElementById("saved").hidden = false;
+      };
+    </script>
+  </body>
+</html>

@@ -1,0 +1,131 @@
+# Composite GitHub Action wrapping `aida ci` (build-plan.md M18; decisions #22-25). No model,
+# no API key: installs aida from this action's own checkout ($GITHUB_ACTION_PATH — never the
+# consumer repo, which may be on a completely different stack), then runs the deterministic
+# affected -> capture -> screenshot-diff -> PR-comment pipeline against the consumer's app and
+# aida config. `aida init --ci` writes the workflow that calls this action with `uses:
+# <owner>/<repo>@<ref>` configurable (default "tryaida/aida@main" — never hardcoded beyond
+# that one default, per decisions #25).
+name: "aida ci"
+description: "Deterministic PR check for aida: affected walkthroughs -> capture -> screenshot diff -> one PR comment. No model, no API key."
+author: "aida"
+
+inputs:
+  config:
+    description: "Path to aida.config.ts/.mjs in the consumer repo, relative to its root."
+    required: true
+  app-url:
+    description: "URL the app is already running at (the workflow starts it before calling this action)."
+    required: true
+  base:
+    description: "Git ref/sha to diff against. Usually `github.event.pull_request.base.sha`."
+    required: true
+  head:
+    description: "Git ref/sha to diff. Usually `github.sha`. Default HEAD."
+    required: false
+    default: "HEAD"
+  github-token:
+    description: "Token used to push preview images to the aida-previews branch and post/update the PR comment. Usually secrets.GITHUB_TOKEN — no other key is needed."
+    required: true
+  pr-number:
+    description: "Pull request number, for the PR comment. Not used with publish."
+    required: false
+    default: ""
+  is-fork:
+    description: "\"true\" when the PR's head repo isn't this repo. GitHub always gives a fork PR a read-only token, so this skips the push-to-aida-previews/post-comment step and uploads the diff as an Actions artifact instead. Default false."
+    required: false
+    default: "false"
+  publish:
+    description: "\"true\" on a push to main: re-capture what --base..--head touched and write refreshed screenshots and pages into the help app (no PR comment). The calling workflow commits the docs folder afterwards."
+    required: false
+    default: "false"
+
+outputs:
+  ok:
+    description: "\"true\" when no affected walkthrough broke."
+    value: ${{ steps.run.outputs.ok }}
+  artifact-uploaded:
+    description: "\"true\" when the diff was uploaded as an artifact instead of posted as a PR comment (fork PR, or a push/comment call failed)."
+    value: ${{ steps.run.outputs.artifact == 'true' }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+
+    - name: Cache Playwright browsers
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-chromium-${{ runner.os }}-${{ hashFiles(format('{0}/package-lock.json', github.action_path)) }}
+
+    - name: Install aida (from this action's own checkout)
+      shell: bash
+      run: |
+        cd "${{ github.action_path }}"
+        npm ci
+        npm run build --workspace packages/engine
+        npx playwright install --with-deps chromium
+
+    # The help app's own packages (adapters and state hooks may import them), from its lockfile.
+    # Refuses a help app whose aida dependency would come from the npm registry. The config's
+    # `import ... from "aida"` always loads the aida installed above, never node_modules.
+    - name: Install the help app's packages
+      shell: bash
+      env:
+        AIDA_ACTION_PATH: ${{ github.action_path }}
+        AIDA_CONFIG: ${{ inputs.config }}
+      working-directory: ${{ github.workspace }}
+      run: node "$AIDA_ACTION_PATH/packages/engine/dist/init/help-install.js" "$AIDA_CONFIG"
+
+    - name: Run aida ci
+      id: run
+      shell: bash
+      env:
+        # Only set for a same-repo PR (is-fork: false) — a fork PR's token can't push/comment
+        # anyway, so --fork-pr below skips straight to the artifact fallback without trying.
+        GITHUB_TOKEN: ${{ inputs.is-fork == 'true' && '' || inputs.github-token }}
+        # Inputs go through env, never straight into the script, so no value can inject shell.
+        AIDA_ACTION_PATH: ${{ github.action_path }}
+        AIDA_CONFIG: ${{ inputs.config }}
+        AIDA_BASE: ${{ inputs.base }}
+        AIDA_HEAD: ${{ inputs.head }}
+        AIDA_APP_URL: ${{ inputs.app-url }}
+        AIDA_PR: ${{ inputs.pr-number }}
+        AIDA_IS_FORK: ${{ inputs.is-fork }}
+        AIDA_PUBLISH: ${{ inputs.publish }}
+      working-directory: ${{ github.workspace }}
+      run: |
+        cli="$AIDA_ACTION_PATH/packages/engine/dist/cli.js"
+        result="$RUNNER_TEMP/aida-ci-result.json"
+        if [ "$AIDA_PUBLISH" = "true" ]; then
+          node "$cli" ci --publish \
+            --config "$AIDA_CONFIG" \
+            --base "$AIDA_BASE" \
+            --head "$AIDA_HEAD" \
+            --app-url "$AIDA_APP_URL" \
+            --json | tee "$result"
+          node -e "const r=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log('ok='+Boolean(r.ok));console.log('artifact=false')" "$result" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        fork_flag=()
+        if [ "$AIDA_IS_FORK" = "true" ]; then fork_flag=(--fork-pr); fi
+        node "$cli" ci \
+          --config "$AIDA_CONFIG" \
+          --base "$AIDA_BASE" \
+          --head "$AIDA_HEAD" \
+          --app-url "$AIDA_APP_URL" \
+          --pr "$AIDA_PR" \
+          "${fork_flag[@]}" \
+          --json | tee "$result"
+        node -e "const r=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log('ok='+Boolean(r.ok));console.log('artifact='+(r.commentAction==='artifact'));console.log('artifact-dir='+(r.artifactDir||''))" "$result" >> "$GITHUB_OUTPUT"
+
+    - name: Upload diff as an artifact (fork PR, or the comment/push step failed)
+      if: steps.run.outputs.artifact == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: aida-ci-diff
+        path: ${{ steps.run.outputs.artifact-dir }}
+        retention-days: 14

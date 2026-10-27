@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>States fixture</title>
+  </head>
+  <body>
+    <h1>Things</h1>
+    <p id="count">Loading</p>
+    <button type="button" id="add">Add thing</button>
+    <script>
+      async function refresh() {
+        const res = await fetch("/api/things");
+        const body = await res.json();
+        document.getElementById("count").textContent = "Things: " + body.count;
+      }
+      document.getElementById("add").addEventListener("click", async () => {
+        await fetch("/api/things" + location.search, { method: "POST" });
+        await refresh();
+      });
+      refresh();
+    </script>
+  </body>
+</html>
