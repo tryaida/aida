@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AppDatabaseCheck } from "../safety/database.js";
 import type { OutboundCheck } from "../safety/outbound.js";
+import { AIDA_PACKAGE } from "../package-name.js";
 
 export type DoctorStatus = "ok" | "warn" | "fail" | "skip";
 
@@ -33,7 +34,7 @@ const ENGINE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 /**
  * How to run this aida from anywhere: its own CLI by path. Never `npx aida`: the help app's
  * lean engine tarball has no `bin`, so npx would fetch the unrelated npm package called "aida"
- * (decisions #29). `fromSource` is true under tsx (dist may be missing), false from dist.
+ * (decisions #29); the engine's own package, `aida-docs`, isn't published yet. `fromSource` is true under tsx (dist may be missing), false from dist.
  */
 export function aidaCommand(engineDir: string = ENGINE_DIR, fromSource: boolean = import.meta.url.endsWith(".ts")): string {
   const quote = (p: string) => (/[\s"'$`]/.test(p) ? JSON.stringify(p) : p);
@@ -276,9 +277,9 @@ export function checkOutboundSenders(check: OutboundCheck): DoctorCheck {
 export interface HelpAppInfo {
   dir: string;
   hasNodeModules: boolean;
-  /** Where `aida/package.json` resolved from, via real Node resolution starting at `dir`
+  /** Where `aida-docs/package.json` resolved from, via real Node resolution starting at `dir`
    * (createRequire, which walks up through hoisted/workspace `node_modules` the same way the
-   * help app's own imports would) — not just `<dir>/node_modules/aida`. */
+   * help app's own imports would) — not just `<dir>/node_modules/aida-docs`. */
   aidaPackagePath?: string;
   /** `aidaRuntime` marks the lean help-app build `aida init` packs (no `bin`: the CLI runs from
    * the aida checkout or package, not from the help app). */
@@ -287,10 +288,10 @@ export interface HelpAppInfo {
   aidaMainExists?: boolean;
 }
 
-/** The help app has its dependencies, and `aida` inside it is this engine (decisions #29: a
- * bare registry name once resolved to an unrelated package called "aida"), resolved the way
- * Node would actually resolve it (hoisted/workspace `node_modules` included), not just a direct
- * `<dir>/node_modules/aida` path. */
+/** The help app has its dependencies, and `aida-docs` inside it is this engine (decisions #29: a
+ * bare registry name once resolved to an unrelated package called "aida", the engine's old name),
+ * resolved the way Node would actually resolve it (hoisted/workspace `node_modules` included), not
+ * just a direct `<dir>/node_modules/aida-docs` path. */
 export function checkHelpApp(info: HelpAppInfo | undefined, aida: string = aidaCommand()): DoctorCheck {
   const label = "Help app";
   if (!info) return { id: "help-app", label, status: "skip", detail: "skipped: no helpApp in aida.config" };
@@ -299,21 +300,21 @@ export function checkHelpApp(info: HelpAppInfo | undefined, aida: string = aidaC
     return { id: "help-app", label, status: "fail", detail: `${info.dir} has no node_modules`, fix: install };
   }
   const pkg = info.aidaPackage;
-  if (!pkg) return { id: "help-app", label, status: "fail", detail: "aida isn't installed in the help app", fix: install };
-  const ours = pkg.name === "aida" && (Boolean(pkg.bin) || pkg.aidaRuntime === true) && (pkg.description ?? "").startsWith("aida engine");
+  if (!pkg) return { id: "help-app", label, status: "fail", detail: `${AIDA_PACKAGE} isn't installed in the help app`, fix: install };
+  const ours = pkg.name === AIDA_PACKAGE && (Boolean(pkg.bin) || pkg.aidaRuntime === true) && /^aida engine\b/i.test(pkg.description ?? "");
   if (!ours) {
     return {
       id: "help-app",
       label,
       status: "fail",
-      detail: `the aida package installed in the help app isn't aida's engine; run aida init again${info.aidaPackagePath ? ` (resolved ${info.aidaPackagePath})` : ""}`,
+      detail: `the ${AIDA_PACKAGE} package installed in the help app isn't aida's engine; run aida init again${info.aidaPackagePath ? ` (resolved ${info.aidaPackagePath})` : ""}`,
       fix: `${aida} init <app-dir>`,
     };
   }
   if (info.aidaMainExists === false) {
-    return { id: "help-app", label, status: "fail", detail: "aida in the help app isn't built (its dist/ is missing)", fix: install };
+    return { id: "help-app", label, status: "fail", detail: `${AIDA_PACKAGE} in the help app isn't built (its dist/ is missing)`, fix: install };
   }
   const kind = pkg.aidaRuntime === true ? "lean runtime build" : "workspace engine";
   const from = info.aidaPackagePath ? ` from ${info.aidaPackagePath}` : "";
-  return { id: "help-app", label, status: "ok", detail: `${info.dir}: aida resolves${from} (${kind})` };
+  return { id: "help-app", label, status: "ok", detail: `${info.dir}: ${AIDA_PACKAGE} resolves${from} (${kind})` };
 }

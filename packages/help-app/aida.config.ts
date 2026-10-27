@@ -1,7 +1,7 @@
 // Written by `aida init`; safe to edit by hand afterwards. See
 // packages/engine/src/config/types.ts for every field, and docs/scope.md
 // ("The help app", "Swappable providers") for what each one does.
-import { defineConfig } from "aida";
+import { defineConfig } from "aida-docs";
 
 export default defineConfig({
   app: {

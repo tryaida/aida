@@ -1,5 +1,5 @@
 // The full engine API: every module's runtime exports. For code that runs alongside the CLI (in the
-// aida checkout or package), as "aida/dist/engine.js". It loads Playwright, Kokoro, ffmpeg and
+// aida checkout or package), as "aida-docs/dist/engine.js". It loads Playwright, Kokoro, ffmpeg and
 // pdf-lib, which the help app's lean install doesn't have; the help app imports the deep modules
 // it needs instead. Add a module here and, as types only, to index.ts.
 export * from "./walkthrough/index.js";

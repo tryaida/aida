@@ -4,7 +4,8 @@ The full reference behind the [README](../README.md) quick start: what `aida ini
 command, how walkthroughs that change data are ordered, the safety defaults, and the agent skills.
 Keeping docs current from CI has its own page: [ci.md](ci.md).
 
-Until AIDA is on npm, run `aida` from a checkout: `node <aida>/packages/engine/dist/cli.js` after
+Until AIDA is on npm (it will be published as `aida-docs`; the `aida` name there is an unrelated
+package), run `aida` from a checkout: `node <aida>/packages/engine/dist/cli.js` after
 `npm run build`, or `npx tsx <aida>/packages/engine/src/cli.ts` without a build. Most commands
 take `--json` for short, machine-readable output.
 
@@ -17,16 +18,18 @@ aida init <app-dir>                        # scaffold <app-dir>/help and install
 `init` copies the help app into `<app-dir>/help`, reads the app's routes and brand, writes
 `help/aida.config.ts`, and then:
 
-- **Installs the help app.** AIDA isn't on npm yet, and the `aida` name there belongs to an
-  unrelated package, so the help app never depends on it by name. `init` builds the engine if
-  needed, packs it into `help/vendor/aida-<version>-<hash>.tgz`, points the help app's `aida`
-  dependency at that file, and runs `npm install` in `help/`. The tarball installs as a real copy,
+- **Installs the help app.** The engine's package, `aida-docs`, isn't on npm yet (and the `aida`
+  name there belongs to an unrelated package), so the help app never depends on it by name.
+  `init` builds the engine if needed, packs it into `help/vendor/aida-docs-<version>-<hash>.tgz`,
+  points the help app's `aida-docs` dependency at that file (dropping an `aida` dependency left
+  from before the rename), and runs `npm install` in `help/`. The tarball installs as a real copy,
   so Turbopack and hosts that only run `npm install && next build` both work. It is the help
   app's runtime part only: no Playwright, Kokoro, ffmpeg or pdf-lib and no `aida` command, so
   hosts install about half as much. Run the CLI from AIDA itself and point it at the help app's
-  config (`--config help/aida.config.ts`); the config's `import ... from "aida"` always loads
-  the AIDA you're running, never an `aida` in `node_modules`. Commit `help/vendor/` with the
-  help app (CI installs `help/` from its lockfile and refuses a registry `aida`). Run `init`
+  config (`--config help/aida.config.ts`); the config's `import ... from "aida-docs"` always
+  loads the AIDA you're running, never an `aida-docs` in `node_modules` (an import of the old
+  name `aida` is refused). Commit `help/vendor/` with the help app (CI installs `help/` from its
+  lockfile and refuses a registry `aida-docs` or `aida`). Run `init`
   again after updating AIDA: it replaces the tarball and the dependency and leaves your other
   edits alone. `--no-install` skips the install (then run `npm install` in `help/` yourself).
 - **Keeps your app's build clean.** It adds `help` to the app's `tsconfig.json` `exclude`, so
@@ -167,7 +170,7 @@ other AGENTS.md-reading agents can point at `skills/AGENTS.md`. Validate with
 
 | Path | What |
 | --- | --- |
-| `packages/engine` | The `aida` npm package: CLI and every pipeline stage |
+| `packages/engine` | The `aida-docs` npm package (not published yet; its command is `aida`): CLI and every pipeline stage |
 | `packages/help-app` | The Next.js help app template (site, chat, agent connector, Studio) |
 | `skills/` | Agent skills, subagent definitions and references |
 | `docs/` | Scope, decisions, build plan and history |

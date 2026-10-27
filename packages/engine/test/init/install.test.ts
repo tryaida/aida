@@ -21,31 +21,45 @@ describe("isRegistrySpec", () => {
     for (const spec of ["*", "^1.0.0", "latest", "", "npm:other@1", "1.2.3"]) expect(isRegistrySpec(spec)).toBe(true);
   });
   it("treats files, links, git and URLs as local or pinned", () => {
-    for (const spec of ["file:vendor/aida-0.0.1.tgz", "file:../engine", "link:../engine", "workspace:*", "./vendor/x.tgz", "git+https://example.com/x.git", "https://example.com/x.tgz", "owner/repo"]) {
+    for (const spec of ["file:vendor/aida-docs-0.0.1.tgz", "file:../engine", "link:../engine", "workspace:*", "./vendor/x.tgz", "git+https://example.com/x.git", "https://example.com/x.tgz", "owner/repo"]) {
       expect(isRegistrySpec(spec)).toBe(false);
     }
   });
 });
 
 describe("setAidaDependency", () => {
-  it("points aida at the tarball and leaves everything else alone", () => {
+  it("points aida-docs at the tarball and leaves everything else alone", () => {
     const dir = tmpDir();
     const pkg = {
       name: "help",
       scripts: { dev: "next dev", mine: "echo mine" },
-      dependencies: { aida: "*", next: "16.4.2", "left-pad": "1.0.0" },
-      devDependencies: { aida: "^0.0.1", typescript: "^5" },
+      dependencies: { "aida-docs": "*", next: "16.4.2", "left-pad": "1.0.0" },
+      devDependencies: { "aida-docs": "^0.0.1", typescript: "^5" },
     };
     writeFileSync(join(dir, "package.json"), JSON.stringify(pkg, null, 4) + "\n");
 
-    expect(setAidaDependency(dir, "file:vendor/aida-0.0.2.tgz")).toBe(true);
+    expect(setAidaDependency(dir, "file:vendor/aida-docs-0.0.2.tgz")).toBe(true);
     const raw = readFileSync(join(dir, "package.json"), "utf8");
     const out = JSON.parse(raw);
-    expect(out.dependencies).toEqual({ aida: "file:vendor/aida-0.0.2.tgz", next: "16.4.2", "left-pad": "1.0.0" });
+    expect(out.dependencies).toEqual({ "aida-docs": "file:vendor/aida-docs-0.0.2.tgz", next: "16.4.2", "left-pad": "1.0.0" });
     expect(out.devDependencies).toEqual({ typescript: "^5" });
     expect(out.scripts.mine).toBe("echo mine");
     expect(raw).toContain('\n    "name"'); // indentation kept
-    expect(setAidaDependency(dir, "file:vendor/aida-0.0.2.tgz")).toBe(false);
+    expect(setAidaDependency(dir, "file:vendor/aida-docs-0.0.2.tgz")).toBe(false);
+  });
+
+  it("drops the old package name aida from every dependency field, tarball or registry", () => {
+    const dir = tmpDir();
+    const pkg = {
+      name: "help",
+      dependencies: { aida: "file:vendor/aida-0.0.1-0123456789.tgz", next: "16.4.2" },
+      devDependencies: { aida: "*", typescript: "^5" },
+    };
+    writeFileSync(join(dir, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
+    expect(setAidaDependency(dir, "file:vendor/aida-docs-0.0.2.tgz")).toBe(true);
+    const out = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+    expect(out.dependencies).toEqual({ next: "16.4.2", "aida-docs": "file:vendor/aida-docs-0.0.2.tgz" });
+    expect(out.devDependencies).toEqual({ typescript: "^5" });
   });
 });
 
@@ -53,22 +67,24 @@ describe("packEngine", () => {
   it("packs into vendor/ and returns a file: spec, leaving older tarballs for pruneOldTarballs", () => {
     const help = tmpDir();
     mkdirSync(join(help, "vendor"));
+    // One tarball from before the rename (aida-*), one older aida-docs build.
     writeFileSync(join(help, "vendor", "aida-0.0.1.tgz"), "old");
+    writeFileSync(join(help, "vendor", "aida-docs-0.0.1-0123456789.tgz"), "old");
     writeFileSync(join(help, "vendor", "other.tgz"), "keep");
     const f = fakeRunner(tmpDir(), { version: "0.0.2" });
 
     const result = packEngine(help, f.run, f.engineDir);
     const name = result.spec.slice("file:vendor/".length);
-    expect(result.spec).toMatch(/^file:vendor\/aida-0\.0\.2-[0-9a-f]{10}\.tgz$/);
+    expect(result.spec).toMatch(/^file:vendor\/aida-docs-0\.0\.2-[0-9a-f]{10}\.tgz$/);
     expect(result.file).toBe(join(help, "vendor", name));
-    expect(readdirSync(join(help, "vendor")).sort()).toEqual(["aida-0.0.1.tgz", name, "other.tgz"]);
+    expect(readdirSync(join(help, "vendor")).sort()).toEqual(["aida-0.0.1.tgz", "aida-docs-0.0.1-0123456789.tgz", name, "other.tgz"]);
     // npm packs into a temporary folder, never straight into vendor/.
     const dest = f.calls[0].args[f.calls[0].args.indexOf("--pack-destination") + 1];
     expect(f.calls[0]).toMatchObject({ command: "npm", args: ["pack", "--json", "--pack-destination", dest] });
     expect(dest.startsWith(help)).toBe(false);
     expect(existsSync(dest)).toBe(false);
 
-    expect(pruneOldTarballs(help, result.spec)).toEqual(["aida-0.0.1.tgz"]);
+    expect(pruneOldTarballs(help, result.spec).sort()).toEqual(["aida-0.0.1.tgz", "aida-docs-0.0.1-0123456789.tgz"]);
     expect(readdirSync(join(help, "vendor")).sort()).toEqual([name, "other.tgz"]);
   });
 
@@ -78,8 +94,8 @@ describe("packEngine", () => {
     const cwd = f.calls[0].opts.cwd;
     expect(cwd).not.toBe(f.engineDir);
     expect(existsSync(cwd)).toBe(false);
-    expect(f.packed).toMatchObject({ name: "aida", version: "0.0.1", main: "dist/index.js", aidaRuntime: true });
-    expect(f.packed?.description).toMatch(/^aida engine/);
+    expect(f.packed).toMatchObject({ name: "aida-docs", version: "0.0.1", main: "dist/index.js", aidaRuntime: true });
+    expect(f.packed?.description).toMatch(/^AIDA engine/);
     expect(f.packed?.dependencies).toEqual({ yaml: "^2.6.1", zod: "^3.24.1" });
     // peerDependencies (typescript, optional — only the Playwright importer needs it) must not
     // reach the help app's install: npm would otherwise try to resolve it there too.
@@ -92,10 +108,10 @@ describe("packEngine", () => {
     for (const opts of [{ failOn: "pack" }, { badTarball: true }]) {
       const help = tmpDir();
       mkdirSync(join(help, "vendor"));
-      writeFileSync(join(help, "vendor", "aida-0.0.1-0123456789.tgz"), "current");
+      writeFileSync(join(help, "vendor", "aida-docs-0.0.1-0123456789.tgz"), "current");
       const f = fakeRunner(tmpDir(), opts);
       expect(() => packEngine(help, f.run, f.engineDir)).toThrow(opts.failOn ? /npm pack.*npm pack broke/s : /isn't a gzip tarball/);
-      expect(readdirSync(join(help, "vendor"))).toEqual(["aida-0.0.1-0123456789.tgz"]);
+      expect(readdirSync(join(help, "vendor"))).toEqual(["aida-docs-0.0.1-0123456789.tgz"]);
       const dest = f.calls[0].args[f.calls[0].args.indexOf("--pack-destination") + 1];
       expect(existsSync(dest)).toBe(false);
     }
@@ -106,9 +122,9 @@ describe("pruneOldTarballs", () => {
   it("refuses to prune when the tarball to keep isn't there", () => {
     const help = tmpDir();
     mkdirSync(join(help, "vendor"));
-    writeFileSync(join(help, "vendor", "aida-0.0.1.tgz"), "old");
-    expect(() => pruneOldTarballs(help, "file:vendor/aida-0.0.2-abc.tgz")).toThrow(/isn't there/);
-    expect(readdirSync(join(help, "vendor"))).toEqual(["aida-0.0.1.tgz"]);
+    writeFileSync(join(help, "vendor", "aida-docs-0.0.1.tgz"), "old");
+    expect(() => pruneOldTarballs(help, "file:vendor/aida-docs-0.0.2-abc.tgz")).toThrow(/isn't there/);
+    expect(readdirSync(join(help, "vendor"))).toEqual(["aida-docs-0.0.1.tgz"]);
   });
 });
 
@@ -122,7 +138,7 @@ describe("stageRuntimePackage", () => {
     stageRuntimePackage(f.engineDir, stage);
     expect(readdirSync(stage).sort()).toEqual(["dist", "package.json", "schema"]);
     expect(readdirSync(join(stage, "dist"))).toEqual(["index.js"]);
-    expect(Object.keys(runtimePackageJson({ name: "aida", version: "1.0.0", dependencies: { "@anthropic-ai/sdk": "^1", ffmpeg: "^5" } }).dependencies as object)).toEqual(["@anthropic-ai/sdk"]);
+    expect(Object.keys(runtimePackageJson({ name: "aida-docs", version: "1.0.0", dependencies: { "@anthropic-ai/sdk": "^1", ffmpeg: "^5" } }).dependencies as object)).toEqual(["@anthropic-ai/sdk"]);
   });
 
   it("names the tarball by the staged files, not the tarball's bytes: same engine, same name; changed engine, new name", () => {

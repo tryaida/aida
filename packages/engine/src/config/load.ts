@@ -13,6 +13,7 @@ import type {
 import { resolveCaptureSettings } from "./types.js";
 import { resolveStates } from "../states/hooks.js";
 import { pinAidaToRunningEngine, runningEngineFile } from "./pin-aida.js";
+import { AIDA_PACKAGE } from "../package-name.js";
 
 let tsxRegistered = false;
 
@@ -51,13 +52,13 @@ export async function ensureTsxForFile(file: string): Promise<void> {
 }
 
 /**
- * Makes `aida` in a config, adapter or state hook resolve to this running engine, never to a
- * `node_modules/aida` next to the config (see pin-aida.ts). From source that's
+ * Makes `aida-docs` in a config, adapter or state hook resolve to this running engine, never to a
+ * `node_modules/aida-docs` next to the config (see pin-aida.ts). From source that's
  * `src/index.ts`, so tsx is registered too when this process isn't already running under it.
  */
 async function pinConfigImports(): Promise<void> {
   pinAidaToRunningEngine();
-  await ensureTsxForFile(runningEngineFile("aida")!);
+  await ensureTsxForFile(runningEngineFile(AIDA_PACKAGE)!);
 }
 
 /**

@@ -18,8 +18,8 @@ import {
   updateCallout,
   type OverlayPatch,
   type StepField,
-} from "aida/dist/edit/index.js";
-import type { BlurBox, Callout } from "aida/dist/walkthrough/index.js";
+} from "aida-docs/dist/edit/index.js";
+import type { BlurBox, Callout } from "aida-docs/dist/walkthrough/index.js";
 import { devOnlyGuard } from "../../_lib/dev-only";
 import { assertSlug, pagesDir, pageFileFor, resolveWalkthroughFile } from "../../_lib/server";
 import { assertStudioRequest } from "../../_lib/security";

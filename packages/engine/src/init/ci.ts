@@ -20,8 +20,8 @@
 //   - Every `uses:` is pinned to a major version tag (`@v4`), never a branch or `@master`.
 //   - Nothing is fetched by bare package name at run time: the app wait is an inline Node fetch
 //     loop (not `npx --yes wait-on`), and the help app's packages install from its own lockfile
-//     via init/help-install.ts, which refuses a registry `aida` (decisions #29). The config's
-//     own `import ... from "aida"` always loads the aida being run (config/pin-aida.ts).
+//     via init/help-install.ts, which refuses a registry `aida-docs` or `aida` (decisions #29). The config's
+//     own `import ... from "aida-docs"` always loads the aida being run (config/pin-aida.ts).
 //   - No secrets beyond the workflow's own automatic `GITHUB_TOKEN` — nothing to add in repo
 //     settings.
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -145,8 +145,8 @@ export function writeCiWorkflow(opts: WriteCiWorkflowOptions): WriteCiWorkflowRe
 # read-only token automatically, so the push/comment step is skipped for them (is-fork input) and
 # the diff is uploaded as an artifact instead; permissions are minimal and scoped per job; every
 # action is pinned to a major version; no packages fetched by bare name at run time (the wait
-# loop is inline Node, and the help app's packages install from its lockfile with aida as a
-# vendored tarball); no secrets beyond the automatic GITHUB_TOKEN${opts.docsRepo ? ", plus secrets.AIDA_DOCS_TOKEN to check out the separate docs repo (docs/ci.md)" : ""}.
+# loop is inline Node, and the help app's packages install from its lockfile with aida-docs as
+# a vendored tarball); no secrets beyond the automatic GITHUB_TOKEN${opts.docsRepo ? ", plus secrets.AIDA_DOCS_TOKEN to check out the separate docs repo (docs/ci.md)" : ""}.
 name: aida
 
 on:

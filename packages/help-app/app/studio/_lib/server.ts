@@ -1,16 +1,16 @@
 // Server-only helpers shared by the Studio's route handlers. Thin by design (AGENTS.md: "keep
 // the app thin, put logic in the engine package") — this just resolves file paths for the
 // conventional `aida init` layout (aida.config.ts at the help app root, walkthroughsDir:
-// "./walkthroughs", outDir: ".") and calls straight into the "aida" engine package for
+// "./walkthroughs", outDir: ".") and calls straight into the "aida-docs" engine package for
 // everything else.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { extname, isAbsolute, join, relative, resolve } from "node:path";
-// Deep imports (not the "aida" package barrel): the barrel's index.ts re-exports the capture/
+// Deep imports (not the "aida-docs" package barrel): the barrel's index.ts re-exports the capture/
 // voice/config modules too, and config/load.ts does a non-literal dynamic `import()` that
 // Turbopack/webpack can't trace statically, which breaks bundling route handlers that pull in
 // the barrel. Importing the specific submodules this file needs avoids that entirely.
-import { loadWalkthroughFile, type Walkthrough } from "aida/dist/walkthrough/index.js";
-import type { CaptureManifest, ValidationResult } from "aida/dist/capture/types.js";
+import { loadWalkthroughFile, type Walkthrough } from "aida-docs/dist/walkthrough/index.js";
+import type { CaptureManifest, ValidationResult } from "aida-docs/dist/capture/types.js";
 
 /** The help app root — route handlers run with cwd at the help app root in both `next dev` and
  * `next start`. */

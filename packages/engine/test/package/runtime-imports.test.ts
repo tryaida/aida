@@ -1,6 +1,6 @@
 // The help app installs a lean runtime build of the engine (init/install.ts): the same dist/, but
 // only HELP_APP_RUNTIME_DEPENDENCIES installed. This walks the import graph from every import of
-// "aida" in the help app template, and from the main entry, through the engine's sources and
+// "aida-docs" in the help app template, and from the main entry, through the engine's sources and
 // fails, with the import chain, when anything reaches an npm package outside that list. Type-only
 // imports are skipped (they're erased); dynamic `import("x")` with a literal counts, because
 // Next.js bundles the help app and resolves those at build time.
@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { HELP_APP_RUNTIME_DEPENDENCIES } from "../../src/init/install.js";
+import { AIDA_PACKAGE } from "../../src/package-name.js";
 
 const ENGINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SRC = join(ENGINE, "src");
@@ -77,7 +78,7 @@ function reachedPackages(entries: Array<{ label: string; file: string }>): Map<s
   return found;
 }
 
-/** The help app template's runtime imports of "aida", as engine source entry points. */
+/** The help app template's runtime imports of "aida-docs", as engine source entry points. */
 function helpAppEntries(): Array<{ label: string; file: string }> {
   const entries: Array<{ label: string; file: string }> = [];
   const visit = (dir: string): void => {
@@ -87,8 +88,8 @@ function helpAppEntries(): Array<{ label: string; file: string }> {
       if (statSync(path).isDirectory()) visit(path);
       else if (/\.(ts|tsx|mjs|js)$/.test(name) && !name.endsWith(".d.ts")) {
         for (const spec of runtimeImports(path)) {
-          if (spec !== "aida" && !spec.startsWith("aida/")) continue;
-          const file = spec === "aida" ? join(SRC, "index.ts") : sourceFile(join(SRC, spec.replace(/^aida\/dist\//, "")));
+          if (spec !== AIDA_PACKAGE && !spec.startsWith(`${AIDA_PACKAGE}/`)) continue;
+          const file = spec === AIDA_PACKAGE ? join(SRC, "index.ts") : sourceFile(join(SRC, spec.slice(`${AIDA_PACKAGE}/`.length).replace(/^dist\//, "")));
           entries.push({ label: `help-app/${relative(HELP_APP, path)} imports ${spec}`, file });
         }
       }
@@ -103,10 +104,10 @@ function describeChains(found: Map<string, string[]>, allowed: readonly string[]
 }
 
 describe("help app runtime imports", () => {
-  it("finds the help app's imports of aida", () => {
+  it("finds the help app's imports of aida-docs", () => {
     const entries = helpAppEntries();
     expect(entries.length).toBeGreaterThan(5);
-    expect(entries.some((e) => e.label.includes("aida.config.ts imports aida"))).toBe(true);
+    expect(entries.some((e) => e.label.endsWith("aida.config.ts imports aida-docs"))).toBe(true);
   });
 
   it("only reach the engine dependencies the lean help-app install keeps", () => {
@@ -115,7 +116,7 @@ describe("help app runtime imports", () => {
   });
 
   it("the main entry loads no npm package (configs import defineConfig from it; every CLI command loads the config)", () => {
-    const found = reachedPackages([{ label: "aida", file: join(SRC, "index.ts") }]);
+    const found = reachedPackages([{ label: AIDA_PACKAGE, file: join(SRC, "index.ts") }]);
     expect(describeChains(found, [])).toEqual([]);
   });
 

@@ -1,7 +1,9 @@
-// A config's `import ... from "aida"` must load the running engine, never a `node_modules/aida`
-// next to the config: the registry name belongs to an unrelated package (decisions #29), and CI
-// loads the config with GITHUB_TOKEN set. Each fixture puts an impostor there that throws and sets
-// a global, then loads the config in vitest, under `tsx` from source, and from the built dist.
+// A config's `import ... from "aida-docs"` must load the running engine, never a
+// `node_modules/aida-docs` next to the config: the engine isn't on the registry yet, the old name
+// `aida` there belongs to an unrelated package (decisions #29), and CI loads the config with
+// GITHUB_TOKEN set. Each fixture puts impostors under both names that throw and set a global, then
+// loads the config in vitest, under `tsx` from source, and from the built dist. An import of the
+// old name `aida` is refused outright.
 import { execFileSync, execSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -22,26 +24,30 @@ afterEach(() => {
   while (createdDirs.length > 0) rmSync(createdDirs.pop()!, { recursive: true, force: true });
 });
 
-/** A folder with an impostor `node_modules/aida` (CJS and ESM entries both throw), a config that
- * imports `defineConfig` and an `aida/...` subpath, and a sign-in adapter that imports aida too. */
-function fixture(ext: "mjs" | "ts", opts: { typeModule?: boolean } = {}): string {
+/** A folder with impostor `node_modules/aida-docs` and `node_modules/aida` packages (CJS and ESM
+ * entries all throw), a config that imports `defineConfig` and a subpath, and a sign-in adapter
+ * that imports the engine too. `pkg` is the name they import (the old `aida` must be refused). */
+function fixture(ext: "mjs" | "ts", opts: { typeModule?: boolean; pkg?: string } = {}): string {
   const dir = tmpDir();
-  const impostor = join(dir, "node_modules", "aida");
-  mkdirSync(join(impostor, "dist"), { recursive: true });
+  const pkg = opts.pkg ?? "aida-docs";
   const boom = `globalThis.__aidaImpostor = true; throw new Error("impostor aida loaded");\n`;
-  writeFileSync(join(impostor, "package.json"), JSON.stringify({ name: "aida", version: "9.9.9", main: "index.js" }));
-  writeFileSync(join(impostor, "index.js"), boom);
-  writeFileSync(join(impostor, "dist", "index.js"), boom);
-  writeFileSync(join(impostor, "dist", "engine.js"), boom);
+  for (const name of ["aida-docs", "aida"]) {
+    const impostor = join(dir, "node_modules", name);
+    mkdirSync(join(impostor, "dist"), { recursive: true });
+    writeFileSync(join(impostor, "package.json"), JSON.stringify({ name, version: "9.9.9", main: "index.js" }));
+    writeFileSync(join(impostor, "index.js"), boom);
+    writeFileSync(join(impostor, "dist", "index.js"), boom);
+    writeFileSync(join(impostor, "dist", "engine.js"), boom);
+  }
   if (opts.typeModule) writeFileSync(join(dir, "package.json"), JSON.stringify({ type: "module" }));
   writeFileSync(
     join(dir, `sign-in.${ext}`),
-    `import { defineConfig } from "aida";\nexport default async function signIn() { globalThis.__pinnedAdapter = typeof defineConfig; }\n`,
+    `import { defineConfig } from "${pkg}";\nexport default async function signIn() { globalThis.__pinnedAdapter = typeof defineConfig; }\n`,
   );
   writeFileSync(
     join(dir, `aida.config.${ext}`),
-    `import { defineConfig, DEFAULT_CAPTURE_SETTINGS } from "aida";
-import * as defineModule from "aida/dist/config/define.js";
+    `import { defineConfig, DEFAULT_CAPTURE_SETTINGS } from "${pkg}";
+import * as defineModule from "${pkg}/dist/config/define.js";
 export default defineConfig({
   app: { baseUrl: "http://127.0.0.1:3100", name: String(typeof DEFAULT_CAPTURE_SETTINGS) + "/" + String(typeof defineModule.defineConfig) },
   walkthroughsDir: "./walkthroughs",
@@ -66,18 +72,25 @@ const { VITEST: _vitest, ...childEnv } = process.env;
 const EXPECTED = { name: "object/function", adapter: "function", impostor: false };
 
 describe("runningEngineFile", () => {
-  it("maps aida and aida/... to the running engine, from source or dist", () => {
-    expect(runningEngineFile("aida", "/e", false)).toBe("/e/dist/index.js");
-    expect(runningEngineFile("aida", "/e", true)).toBe("/e/src/index.ts");
-    expect(runningEngineFile("aida/dist/engine.js", "/e", false)).toBe("/e/dist/engine.js");
-    expect(runningEngineFile("aida/dist/engine.js", engineRoot, true)).toBe(join(engineRoot, "src", "engine.ts"));
+  it("maps aida-docs and aida-docs/... to the running engine, from source or dist", () => {
+    expect(runningEngineFile("aida-docs", "/e", false)).toBe("/e/dist/index.js");
+    expect(runningEngineFile("aida-docs", "/e", true)).toBe("/e/src/index.ts");
+    expect(runningEngineFile("aida-docs/dist/engine.js", "/e", false)).toBe("/e/dist/engine.js");
+    expect(runningEngineFile("aida-docs/dist/engine.js", engineRoot, true)).toBe(join(engineRoot, "src", "engine.ts"));
     expect(runningEngineFile("aida-other", "/e", false)).toBeUndefined();
+    expect(runningEngineFile("aida-docs-other", "/e", false)).toBeUndefined();
     expect(runningEngineFile("@scope/aida", "/e", false)).toBeUndefined();
-    expect(() => runningEngineFile("aida/../../etc/passwd", "/e", false)).toThrow(/outside/);
+    expect(runningEngineFile("@scope/aida-docs", "/e", false)).toBeUndefined();
+    expect(() => runningEngineFile("aida-docs/../../etc/passwd", "/e", false)).toThrow(/outside/);
+  });
+
+  it("refuses the old package name aida, naming the import to use instead", () => {
+    expect(() => runningEngineFile("aida", "/e", false)).toThrow(/old package name.*"aida-docs"/);
+    expect(() => runningEngineFile("aida/dist/engine.js", "/e", false)).toThrow(/old package name.*"aida-docs\/dist\/engine\.js"/);
   });
 });
 
-describe("loadConfig never loads a node_modules/aida impostor", () => {
+describe("loadConfig never loads a node_modules/aida-docs or node_modules/aida impostor", () => {
   const distLoad = join(engineRoot, "dist", "config", "load.js");
   beforeAll(() => {
     if (!existsSync(join(engineRoot, "dist", "config", "pin-aida.js"))) execSync("npm run build", { cwd: engineRoot, stdio: "pipe" });
@@ -88,6 +101,11 @@ describe("loadConfig never loads a node_modules/aida impostor", () => {
     await config.signIn?.({ page: {} as never, context: {} as never, baseUrl: "x", env: {} });
     const g = globalThis as { __aidaImpostor?: boolean; __pinnedAdapter?: string };
     expect({ name: config.app.name, adapter: g.__pinnedAdapter, impostor: g.__aidaImpostor ?? false }).toEqual(EXPECTED);
+  });
+
+  it("refuses a config that imports the old package name aida", async () => {
+    await expect(loadConfig(fixture("mjs", { pkg: "aida" }))).rejects.toThrow(/old package name/);
+    expect((globalThis as { __aidaImpostor?: boolean }).__aidaImpostor ?? false).toBe(false);
   });
 
   const cases: Array<{ name: string; ext: "mjs" | "ts"; typeModule?: boolean }> = [

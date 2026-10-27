@@ -70,8 +70,9 @@ runs:
         npx playwright install --with-deps chromium
 
     # The help app's own packages (adapters and state hooks may import them), from its lockfile.
-    # Refuses a help app whose aida dependency would come from the npm registry. The config's
-    # `import ... from "aida"` always loads the aida installed above, never node_modules.
+    # Refuses a help app whose engine dependency (`aida-docs`, or the old name `aida`) would come
+    # from the npm registry. The config's `import ... from "aida-docs"` always loads the aida
+    # installed above, never node_modules.
     - name: Install the help app's packages
       shell: bash
       env:

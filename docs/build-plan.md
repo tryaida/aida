@@ -22,7 +22,7 @@ receipt, not file dumps. The orchestrator runs `npm test` itself before marking 
 ## Layout
 
 ```
-packages/engine/     npm package "aida": CLI, schema, capture, voice, render, pages, qa
+packages/engine/     npm package "aida-docs" (command `aida`): CLI, schema, capture, voice, render, pages, qa
 packages/help-app/   Next.js help app template (Phase 1)
 skills/              SKILL.md files + agents/ (subagent definitions with model tiers)
 ```
@@ -112,6 +112,7 @@ Newest last. One line per loop turn: date, milestone, result, anything blocked.
 - 2026-10-26 · Second security pass found 4 high (Studio reachable as "local" through a spoofed X-Forwarded-For or raw TCP tunnel; inspect writes during page load; `init --ci` workflow and `npx aida` advice could run the unrelated npm `aida`) and 6 medium/low (passwords in snapshots, name-only opt-ins, redaction gaps, key in dev log, malformed-URL fragments, unrecognised settings); all fixed: Studio dev binds 127.0.0.1 and needs the key cookie on every request once a key is set (key passed in the URL fragment), inspect blocks writes from context creation, configs always load the running engine (`config/pin-aida.ts`), opt-ins bound to value fingerprints. Orchestrator verified: typecheck clean, 1623 pass / 11 skipped, skills 67/67; real pilot run from the built CLI: doctor clean, capture 29/29 steps, `inspect --after` replays to the named step; pilot repo unchanged; demo env stopped.
 - 2026-10-26 · Renamed to AIDA (Agent-driven Instruction and Documentation Automation): CLI/package `aida`, `aida.config.ts`, `AIDA_*`, `aida-*` skills; clean break, no shims for old names. Pilot-app example folders, the legacy import command and the origin doc removed; docs no longer name the pilot apps (decision 31).
 - 2026-10-27 · M30 `aida record` ("Show me" recorder) built ahead of Phase 4 (decision 32): headed capture runner, in-page toolbar, targets checked with `locate()`, draft + one replay. Record tests pass; typecheck clean.
+- 2026-10-27 · Engine npm package renamed `aida` -> `aida-docs` (the `aida` name on npm is an unrelated package; not published yet). CLI command stays `aida`. Imports, help-app dependency, vendor tarball (`aida-docs-<version>-<hash>.tgz`), config pin, doctor and CI guards follow; a config importing the old `aida` is refused, and `init` drops an old `aida` dependency. Package metadata made publish-ready (repository, homepage, bugs, keywords, engines; `files` adds `assets` and the sign-in template). Verified: typecheck clean, 1629 pass / 3 skipped, skills 67/67; smoke `init` + `next build` + doctor on a scratch Next.js app.
 
 ## Follow-ups
 

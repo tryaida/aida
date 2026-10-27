@@ -1,7 +1,7 @@
 // GET /studio/api/history — the Studio's history list (person/agent marks).
 // POST /studio/api/history {"undo": true, "by"?: "agent"|"person"} — Undo button.
 import { NextResponse } from "next/server";
-import { readHistory, undo, type EditBy } from "aida/dist/edit/index.js";
+import { readHistory, undo, type EditBy } from "aida-docs/dist/edit/index.js";
 import { devOnlyGuard } from "../../_lib/dev-only";
 import { assertStudioRequest } from "../../_lib/security";
 import { helpRoot } from "../../_lib/server";

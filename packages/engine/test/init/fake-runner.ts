@@ -23,9 +23,9 @@ export function fakeRunner(root: string, opts: { version?: string; content?: str
   writeFileSync(
     join(engineDir, "package.json"),
     JSON.stringify({
-      name: "aida",
+      name: "aida-docs",
       version,
-      description: "aida engine",
+      description: "AIDA engine",
       bin: { aida: "dist/cli.js" },
       scripts: { build: "tsc -b" },
       dependencies: { yaml: "^2.6.1", zod: "^3.24.1", playwright: "^1.49.1", "kokoro-js": "^1.2.0" },
@@ -49,9 +49,9 @@ export function fakeRunner(root: string, opts: { version?: string; content?: str
     if (args[0] === "pack" && (opts.failOn === "pack" || opts.badTarball)) {
       // A failed or interrupted pack can leave a partial file in its destination.
       const dest = args[args.indexOf("--pack-destination") + 1];
-      writeFileSync(join(dest, `aida-${version}.tgz`), "partial");
+      writeFileSync(join(dest, `aida-docs-${version}.tgz`), "partial");
       if (opts.failOn) return { status: 1, stdout: "", stderr: "npm pack broke" };
-      return { status: 0, stdout: JSON.stringify([{ filename: `aida-${version}.tgz` }]), stderr: "" };
+      return { status: 0, stdout: JSON.stringify([{ filename: `aida-docs-${version}.tgz` }]), stderr: "" };
     }
     if (opts.failOn && args[0] === opts.failOn) return { status: 1, stdout: "", stderr: `npm ${args[0]} broke` };
     // `npm run build` in the engine: a clean build writes dist/ again (unless emptyBuild).
@@ -59,7 +59,7 @@ export function fakeRunner(root: string, opts: { version?: string; content?: str
     if (args[0] === "pack") {
       fake.packed = JSON.parse(readFileSync(join(runOpts.cwd, "package.json"), "utf8")) as Record<string, unknown>;
       const dest = args[args.indexOf("--pack-destination") + 1];
-      const filename = `aida-${version}.tgz`;
+      const filename = `aida-docs-${version}.tgz`;
       writeFileSync(join(dest, filename), gzipSync(opts.content ?? "fake tarball"));
       return { status: 0, stdout: JSON.stringify([{ filename }]), stderr: "" };
     }

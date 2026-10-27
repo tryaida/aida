@@ -33,25 +33,27 @@ function helpPackage(dir: string): { dependencies: Record<string, string>; devDe
 }
 
 describe("aida init: engine tarball", () => {
-  it("never leaves a registry spec for aida in the scaffolded package.json", () => {
+  it("never leaves a registry spec for aida-docs (or the old name aida) in the scaffolded package.json", () => {
     const dir = tmpDir();
     fakeApp(dir);
     const f = fakeRunner(dir);
     const result = runInitCommand({ dir, runner: f.run, engineDir: f.engineDir });
 
     const pkg = helpPackage(dir);
-    expect(pkg.dependencies.aida).toMatch(/^file:vendor\/aida-0\.0\.1-[0-9a-f]{10}\.tgz$/);
+    expect(pkg.dependencies["aida-docs"]).toMatch(/^file:vendor\/aida-docs-0\.0\.1-[0-9a-f]{10}\.tgz$/);
     for (const field of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"] as const) {
-      const spec = (pkg as Record<string, Record<string, string> | undefined>)[field]?.aida;
-      if (spec !== undefined) expect(isRegistrySpec(spec)).toBe(false);
+      const deps = (pkg as Record<string, Record<string, string> | undefined>)[field];
+      if (deps?.["aida-docs"] !== undefined) expect(isRegistrySpec(deps["aida-docs"])).toBe(false);
+      expect(deps?.aida).toBeUndefined();
     }
-    expect(existsSync(join(dir, "help", pkg.dependencies.aida.slice("file:".length)))).toBe(true);
-    expect(result.engine).toMatchObject({ spec: pkg.dependencies.aida, built: true, packageJsonUpdated: true });
+    expect(existsSync(join(dir, "help", pkg.dependencies["aida-docs"].slice("file:".length)))).toBe(true);
+    expect(result.engine).toMatchObject({ spec: pkg.dependencies["aida-docs"], built: true, packageJsonUpdated: true });
   });
 
-  it("the template itself doesn't use a registry spec for aida", () => {
+  it("the template itself doesn't use a registry spec for aida-docs", () => {
     const template = JSON.parse(readFileSync(join(__dirname, "..", "..", "..", "help-app", "package.json"), "utf8"));
-    expect(isRegistrySpec(template.dependencies.aida)).toBe(false);
+    expect(isRegistrySpec(template.dependencies["aida-docs"])).toBe(false);
+    expect(template.dependencies.aida).toBeUndefined();
   });
 
   it("builds, packs, then installs in the help app, in that order", () => {
@@ -95,7 +97,7 @@ describe("aida init: engine tarball", () => {
     const second = fakeRunner(dir, { version: "0.0.2" });
     const result = runInitCommand({ dir, runner: second.run, engineDir: second.engineDir, install: false });
     const pkg = helpPackage(dir);
-    expect(pkg.dependencies.aida).toMatch(/^file:vendor\/aida-0\.0\.2-[0-9a-f]{10}\.tgz$/);
+    expect(pkg.dependencies["aida-docs"]).toMatch(/^file:vendor\/aida-docs-0\.0\.2-[0-9a-f]{10}\.tgz$/);
     expect(pkg.dependencies["left-pad"]).toBe("1.3.0");
     expect(pkg.scripts.mine).toBe("echo mine");
     expect(readFileSync(join(dir, "help", "app", "page.tsx"), "utf8")).toBe("// my page\n");
@@ -117,7 +119,7 @@ describe("aida init: engine tarball", () => {
     const firstResult = runInitCommand({ dir, runner: first.run, engineDir: first.engineDir, install: false });
     const broken = fakeRunner(dir, { version: "0.0.2", badTarball: true });
     expect(() => runInitCommand({ dir, runner: broken.run, engineDir: broken.engineDir, install: false })).toThrow(/gzip/);
-    expect(helpPackage(dir).dependencies.aida).toBe(firstResult.engine.spec);
+    expect(helpPackage(dir).dependencies["aida-docs"]).toBe(firstResult.engine.spec);
     expect(readdirSync(join(dir, "help", "vendor"))).toEqual([firstResult.engine.spec.slice("file:vendor/".length)]);
   });
 });

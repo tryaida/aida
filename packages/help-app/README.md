@@ -1,7 +1,8 @@
 # help-app
 
-Prescaffolded Next.js help app, copied by `aida init`. Content comes from the AIDA engine
-(`packages/engine`); keep this app thin — logic belongs in the engine, routes here just call it.
+Prescaffolded Next.js help app, copied by `aida init`. Content comes from the AIDA engine (the
+`aida-docs` package, `packages/engine`); keep this app thin — logic belongs in the engine, routes
+here just call it.
 
 ## Help chat widget
 

@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 
 // Skills live at the monorepo root (`skills/`), a sibling of `packages/`, not inside this
 // package — there's nothing to publish yet (see init/copy-template.ts's TODO(publish) for the
-// same situation with the help-app template). Once aida ships as a standalone package, add a
+// same situation with the help-app template). Once aida ships as the package `aida-docs`, add a
 // bundled `<package root>/skills` candidate ahead of the monorepo one below.
 const here = dirname(fileURLToPath(import.meta.url));
 

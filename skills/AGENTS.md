@@ -7,9 +7,10 @@ payments page update".
 
 Install once, from the AIDA checkout: `node <aida>/packages/engine/dist/cli.js skills install
 --target <repo>` (or `npx tsx <aida>/packages/engine/src/cli.ts ...` without a build; never
-`npx aida`, which fetches an unrelated npm package) copies this `skills/` directory into
-`.claude/skills/` and `skills/agents/` into `.claude/agents/` (Claude Code), or leaves it here for
-Codex and other agents that read `AGENTS.md`/`SKILL.md` directly.
+`npx aida`, which fetches an unrelated npm package; the engine will be published as `aida-docs`,
+but isn't yet) copies this `skills/` directory into `.claude/skills/` and `skills/agents/` into
+`.claude/agents/` (Claude Code), or leaves it here for Codex and other agents that read
+`AGENTS.md`/`SKILL.md` directly.
 
 Read `skills/aida/SKILL.md` first — it's the entry point and routes to the rest
 (`aida-discover`, `aida-plan`, `aida-write`, `aida-repair`, `aida-review`,

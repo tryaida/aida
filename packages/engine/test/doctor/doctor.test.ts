@@ -120,31 +120,33 @@ describe("doctor checks", () => {
     expect(checkOutboundSenders(checkOutbound({ env: {} })).status).toBe("ok");
   });
 
-  it("help app: node_modules, aida installed, and it's the aida engine", () => {
+  it("help app: node_modules, aida-docs installed, and it's the aida engine", () => {
     expect(checkHelpApp(undefined).status).toBe("skip");
     expect(checkHelpApp({ dir: "/h", hasNodeModules: false })).toMatchObject({ status: "fail", fix: "cd /h && npm install" });
     expect(checkHelpApp({ dir: "/h", hasNodeModules: true }).status).toBe("fail");
     const impostor = checkHelpApp({
       dir: "/h",
       hasNodeModules: true,
-      aidaPackage: { name: "aida", description: "Generate docs from comments" },
-      aidaPackagePath: "/root/node_modules/aida/package.json",
+      aidaPackage: { name: "aida-docs", description: "Generate docs from comments" },
+      aidaPackagePath: "/root/node_modules/aida-docs/package.json",
     });
     expect(impostor.status).toBe("fail");
-    expect(impostor.detail).toMatch(/isn't aida's engine; run aida init again/);
-    expect(impostor.detail).toContain("/root/node_modules/aida/package.json");
+    expect(impostor.detail).toMatch(/aida-docs package installed in the help app isn't aida's engine; run aida init again/);
+    expect(impostor.detail).toContain("/root/node_modules/aida-docs/package.json");
     // Never `npx aida`: that runs the unrelated npm package this check just caught.
     expect(impostor.fix).toBe(`${aidaCommand()} init <app-dir>`);
     expect(impostor.fix).not.toMatch(/npx aida/);
-    const ours = { name: "aida", description: "aida engine: capture, voice...", bin: { aida: "dist/cli.js" }, main: "dist/index.js" };
-    const ok = checkHelpApp({ dir: "/h", hasNodeModules: true, aidaPackage: ours, aidaPackagePath: "/root/node_modules/aida/package.json", aidaMainExists: true });
+    const ours = { name: "aida-docs", description: "AIDA engine: turns walkthrough files...", bin: { aida: "dist/cli.js" }, main: "dist/index.js" };
+    // The engine under its old package name doesn't count: the help app imports "aida-docs".
+    expect(checkHelpApp({ dir: "/h", hasNodeModules: true, aidaPackage: { ...ours, name: "aida" }, aidaMainExists: true }).status).toBe("fail");
+    const ok = checkHelpApp({ dir: "/h", hasNodeModules: true, aidaPackage: ours, aidaPackagePath: "/root/node_modules/aida-docs/package.json", aidaMainExists: true });
     expect(ok.status).toBe("ok");
-    expect(ok.detail).toMatch(/workspace engine/);
-    expect(ok.detail).toContain("/root/node_modules/aida/package.json");
+    expect(ok.detail).toMatch(/aida-docs resolves.*workspace engine/);
+    expect(ok.detail).toContain("/root/node_modules/aida-docs/package.json");
     expect(checkHelpApp({ dir: "/h", hasNodeModules: true, aidaPackage: ours, aidaMainExists: false }).status).toBe("fail");
     // The lean runtime build `aida init` packs has no bin, only the marker.
-    const runtime = { name: "aida", description: "aida engine (help app runtime)", aidaRuntime: true, main: "dist/index.js" };
-    const okRuntime = checkHelpApp({ dir: "/h", hasNodeModules: true, aidaPackage: runtime, aidaPackagePath: "/h/node_modules/aida/package.json", aidaMainExists: true });
+    const runtime = { name: "aida-docs", description: "AIDA engine, help app runtime", aidaRuntime: true, main: "dist/index.js" };
+    const okRuntime = checkHelpApp({ dir: "/h", hasNodeModules: true, aidaPackage: runtime, aidaPackagePath: "/h/node_modules/aida-docs/package.json", aidaMainExists: true });
     expect(okRuntime.status).toBe("ok");
     expect(okRuntime.detail).toMatch(/lean runtime build/);
   });
@@ -161,7 +163,7 @@ function fakeProbes(over: Partial<DoctorProbes> = {}): DoctorProbes {
     freeBytes: () => 40 * GB,
     dirSize: async () => undefined,
     fetchStatus: async () => ({ status: 200 }),
-    helpApp: (dir) => ({ dir, hasNodeModules: true, aidaPackage: { name: "aida", description: "aida engine", bin: {}, main: "dist/index.js" }, aidaMainExists: true }),
+    helpApp: (dir) => ({ dir, hasNodeModules: true, aidaPackage: { name: "aida-docs", description: "AIDA engine", bin: {}, main: "dist/index.js" }, aidaMainExists: true }),
     ...over,
   };
 }

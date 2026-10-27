@@ -1,7 +1,7 @@
 // realProbes exercised against real local servers and a real filesystem (no network beyond
 // 127.0.0.1): the pure checks in checks.test.ts cover the decision logic, this covers the probes
 // that feed them — the first-request timeout (docs: a `next dev` server compiles on request, 4.7
-// s observed), a fast failure when nothing is listening, and the help-app `aida` resolution
+// s observed), a fast failure when nothing is listening, and the help-app `aida-docs` resolution
 // through hoisted/workspace `node_modules`.
 import { createServer } from "node:http";
 import type { Server } from "node:http";
@@ -72,18 +72,18 @@ describe("realProbes.fetchStatus", () => {
 });
 
 describe("realProbes.helpApp", () => {
-  it("resolves aida through a hoisted/workspace node_modules above the help app dir, not just <dir>/node_modules", () => {
+  it("resolves aida-docs through a hoisted/workspace node_modules above the help app dir, not just <dir>/node_modules", () => {
     const root = mkdtempSync(join(tmpdir(), "aida-helpapp-"));
     dirs.push(root);
     const helpDir = join(root, "examples", "acme", "site", "help");
     mkdirSync(helpDir, { recursive: true });
-    mkdirSync(join(helpDir, "node_modules"), { recursive: true }); // present, but no aida in it
+    mkdirSync(join(helpDir, "node_modules"), { recursive: true }); // present, but no aida-docs in it
 
-    const aidaDir = join(root, "node_modules", "aida");
+    const aidaDir = join(root, "node_modules", "aida-docs");
     mkdirSync(join(aidaDir, "dist"), { recursive: true });
     writeFileSync(
       join(aidaDir, "package.json"),
-      JSON.stringify({ name: "aida", description: "aida engine: capture, voice...", main: "dist/index.js", aidaRuntime: true }),
+      JSON.stringify({ name: "aida-docs", description: "AIDA engine, help app runtime", main: "dist/index.js", aidaRuntime: true }),
     );
     writeFileSync(join(aidaDir, "dist", "index.js"), "export default {};");
 
@@ -94,29 +94,30 @@ describe("realProbes.helpApp", () => {
     expect(info.aidaMainExists).toBe(true);
   });
 
-  it("reports unresolved when aida isn't installed anywhere Node would look", () => {
+  it("reports unresolved when aida-docs isn't installed anywhere Node would look, even with an old aida there", () => {
     const root = mkdtempSync(join(tmpdir(), "aida-helpapp-"));
     dirs.push(root);
     const helpDir = join(root, "help");
-    mkdirSync(helpDir, { recursive: true });
+    mkdirSync(join(helpDir, "node_modules", "aida"), { recursive: true });
+    writeFileSync(join(helpDir, "node_modules", "aida", "package.json"), JSON.stringify({ name: "aida", main: "index.js" }));
 
     const info = realProbes.helpApp(helpDir);
     expect(info.aidaPackagePath).toBeUndefined();
     expect(info.aidaPackage).toBeUndefined();
   });
 
-  it("flags an unrelated npm package that happens to be named aida", () => {
+  it("reads an unrelated npm package that happens to be installed as aida-docs, for checkHelpApp to flag", () => {
     const root = mkdtempSync(join(tmpdir(), "aida-helpapp-"));
     dirs.push(root);
     const helpDir = join(root, "help");
-    mkdirSync(join(helpDir, "node_modules", "aida"), { recursive: true });
+    mkdirSync(join(helpDir, "node_modules", "aida-docs"), { recursive: true });
     writeFileSync(
-      join(helpDir, "node_modules", "aida", "package.json"),
-      JSON.stringify({ name: "aida", description: "Generate docs from source comments", main: "index.js" }),
+      join(helpDir, "node_modules", "aida-docs", "package.json"),
+      JSON.stringify({ name: "aida-docs", description: "Generate docs from source comments", main: "index.js" }),
     );
 
     const info = realProbes.helpApp(helpDir);
-    expect(info.aidaPackagePath).toBe(join(helpDir, "node_modules", "aida", "package.json"));
+    expect(info.aidaPackagePath).toBe(join(helpDir, "node_modules", "aida-docs", "package.json"));
     expect(info.aidaPackage?.description).toMatch(/Generate docs/);
   });
 });

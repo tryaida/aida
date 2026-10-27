@@ -1,7 +1,8 @@
-// Installing a scaffolded help app (build-plan.md M25, decisions #29). Until aida is published
-// under its final name, the help app never depends on a bare registry name — `"aida": "*"`
-// once resolved to an unrelated npm package that owns the name. Instead `aida init` packs this
-// engine into `<help>/vendor/aida-<version>-<hash>.tgz` and points the dependency at that file.
+// Installing a scaffolded help app (build-plan.md M25, decisions #29). Until the engine is
+// published to npm as `aida-docs`, the help app never depends on a bare registry name:
+// `"aida": "*"` once resolved to an unrelated npm package that owns that name. Instead
+// `aida init` packs this engine into `<help>/vendor/aida-docs-<version>-<hash>.tgz` and points
+// the help app's `aida-docs` dependency at that file.
 // A tarball installs as a real copy (not a symlink, which Turbopack rejects), and a host that only
 // runs `npm install && next build` installs it the same way.
 //
@@ -28,6 +29,7 @@ import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { AIDA_PACKAGE, LEGACY_AIDA_PACKAGE } from "../package-name.js";
 
 export interface CommandResult {
   status: number;
@@ -92,7 +94,7 @@ export function ensureEngineBuilt(
   return true;
 }
 
-/** The engine's npm dependencies that the help app's imports of aida (and the `aida` main
+/** The engine's npm dependencies that the help app's imports of `aida-docs` (and the main
  * entry its config imports) actually load. Everything else in the engine's `dependencies` is
  * CLI-only and left out of the help app's install. */
 export const HELP_APP_RUNTIME_DEPENDENCIES: readonly string[] = ["@anthropic-ai/sdk", "@modelcontextprotocol/sdk", "yaml", "zod"];
@@ -110,7 +112,7 @@ interface EnginePackageJson {
 
 /** The package.json of the help app's runtime build: the engine's, minus `bin`, scripts, dev
  * dependencies and every dependency the help app never loads. `aidaRuntime` lets `aida doctor`
- * tell it from an unrelated `aida` package. */
+ * tell it from an unrelated package of the same name. */
 export function runtimePackageJson(engine: EnginePackageJson): Record<string, unknown> {
   const dependencies: Record<string, string> = {};
   for (const name of HELP_APP_RUNTIME_DEPENDENCIES) {
@@ -120,7 +122,7 @@ export function runtimePackageJson(engine: EnginePackageJson): Record<string, un
   return {
     name: engine.name,
     version: engine.version,
-    description: "aida engine, help app runtime: the modules the help app loads. The CLI runs from aida itself.",
+    description: "AIDA engine, help app runtime: the modules the help app loads. The CLI runs from aida itself.",
     ...(engine.license ? { license: engine.license } : {}),
     type: engine.type ?? "module",
     main: engine.main ?? "dist/index.js",
@@ -149,7 +151,7 @@ export function stageRuntimePackage(engineDir: string, stageDir: string): void {
 export interface PackResult {
   /** Absolute path to the tarball. */
   file: string;
-  /** The help app's dependency spec, e.g. "file:vendor/aida-0.0.1-1a2b3c4d.tgz". */
+  /** The help app's dependency spec, e.g. "file:vendor/aida-docs-0.0.1-1a2b3c4d.tgz". */
   spec: string;
 }
 
@@ -177,9 +179,9 @@ export function hashStagedPackage(dir: string): string {
 }
 
 /** `npm pack`s the engine's help-app runtime build (see `stageRuntimePackage`) into
- * `<helpDir>/vendor/aida-<version>-<hash>.tgz`. npm packs into a temporary folder; the tarball
- * is checked there and only then copied into vendor/ (via a temporary name and a rename), so a
- * failed pack never leaves a partial tarball behind. Older tarballs stay until
+ * `<helpDir>/vendor/<name>-<version>-<hash>.tgz` (e.g. `aida-docs-0.0.1-<hash>.tgz`). npm packs
+ * into a temporary folder; the tarball is checked there and only then copied into vendor/ (via a
+ * temporary name and a rename), so a failed pack never leaves a partial tarball behind. Older tarballs stay until
  * `pruneOldTarballs`, which runs after package.json points at the new one. */
 export function packEngine(helpDir: string, runner: CommandRunner = defaultCommandRunner, engineDir: string = ENGINE_DIR): PackResult {
   const vendor = join(helpDir, "vendor");
@@ -210,8 +212,8 @@ export function packEngine(helpDir: string, runner: CommandRunner = defaultComma
       throw new Error(`npm pack wrote ${packedName}, which isn't a gzip tarball`);
     }
 
-    const version = (JSON.parse(readFileSync(join(stage, "package.json"), "utf8")) as { version: string }).version;
-    const filename = `aida-${version}-${hash}.tgz`;
+    const { name, version } = JSON.parse(readFileSync(join(stage, "package.json"), "utf8")) as { name: string; version: string };
+    const filename = `${name}-${version}-${hash}.tgz`;
     mkdirSync(vendor, { recursive: true });
     const file = join(vendor, filename);
     const partial = join(vendor, `.${filename}.partial`);
@@ -227,8 +229,9 @@ export function packEngine(helpDir: string, runner: CommandRunner = defaultComma
   }
 }
 
-/** Removes every `aida-*.tgz` in `<helpDir>/vendor` except `keep` (a file name or `file:` spec).
- * Run only once the help app's package.json points at `keep`. Returns the removed names. */
+/** Removes every `aida-*.tgz` in `<helpDir>/vendor` except `keep` (a file name or `file:` spec):
+ * older `aida-docs-*.tgz` builds and the `aida-*.tgz` ones packed before the rename. Run only once
+ * the help app's package.json points at `keep`. Returns the removed names. */
 export function pruneOldTarballs(helpDir: string, keep: string): string[] {
   const vendor = join(helpDir, "vendor");
   const keepName = keep.replace(/^file:vendor\//, "");
@@ -255,9 +258,11 @@ export function isRegistrySpec(spec: string): boolean {
 
 const DEP_FIELDS = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"] as const;
 
-/** Points `<helpDir>/package.json`'s `aida` dependency at `spec`, leaving every other field
- * (and the file's indentation) as it was. A `aida` entry with a registry spec in any other
- * dependency field is removed. Returns true when the file changed. */
+/** Points `<helpDir>/package.json`'s `aida-docs` dependency at `spec`, leaving every other field
+ * (and the file's indentation) as it was. An `aida-docs` entry with a registry spec in any other
+ * dependency field is removed, and so is an `aida` entry in any field: that is the engine's name
+ * before the rename (its old tarball is pruned with the rest) or the unrelated registry package.
+ * Returns true when the file changed. */
 export function setAidaDependency(helpDir: string, spec: string): boolean {
   const file = join(helpDir, "package.json");
   const raw = readFileSync(file, "utf8");
@@ -265,12 +270,13 @@ export function setAidaDependency(helpDir: string, spec: string): boolean {
   const indent = raw.match(/^[ \t]+(?=")/m)?.[0] ?? "  ";
 
   for (const field of DEP_FIELDS) {
-    if (field === "dependencies") continue;
     const deps = pkg[field] as Record<string, string> | undefined;
-    if (deps && typeof deps.aida === "string" && isRegistrySpec(deps.aida)) delete deps.aida;
+    if (!deps) continue;
+    delete deps[LEGACY_AIDA_PACKAGE];
+    if (field !== "dependencies" && typeof deps[AIDA_PACKAGE] === "string" && isRegistrySpec(deps[AIDA_PACKAGE])) delete deps[AIDA_PACKAGE];
   }
   const deps = (pkg.dependencies ??= {}) as Record<string, string>;
-  deps.aida = spec;
+  deps[AIDA_PACKAGE] = spec;
 
   const next = JSON.stringify(pkg, null, indent) + "\n";
   if (next === raw) return false;

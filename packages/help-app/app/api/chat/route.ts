@@ -5,7 +5,7 @@
 // event stream to a `Response`, and applies CORS for the in-app widget (build-plan.md M15 steps
 // 4 and 6).
 //
-// Deep imports (not the "aida" package barrel): the barrel's index.ts re-exports the capture/
+// Deep imports (not the "aida-docs" package barrel): the barrel's index.ts re-exports the capture/
 // voice/config modules too, and config/load.ts does a non-literal dynamic `import()` (via tsx,
 // to read an arbitrary aida.config.ts) that Turbopack/webpack can't trace statically, which
 // breaks bundling this route — same fix Studio's app/studio/_lib/server.ts already applies.
@@ -24,8 +24,8 @@ import {
   type ChatRequest,
   type ChatStreamEvent,
   type ResolvedChatConfig,
-} from "aida/dist/chat/index.js";
-import { isUnknownVersionError, resolveVersionSource } from "aida/dist/versions/index.js";
+} from "aida-docs/dist/chat/index.js";
+import { isUnknownVersionError, resolveVersionSource } from "aida-docs/dist/versions/index.js";
 import { brand } from "@/lib/brand";
 
 // Node runtime (not edge): reads public/*.json off disk, and the Anthropic SDK's streaming

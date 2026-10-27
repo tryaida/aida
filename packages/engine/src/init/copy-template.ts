@@ -6,8 +6,8 @@ import { existsSync, mkdirSync, readdirSync, copyFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// TODO(publish): once `aida` ships as a published package, bundle the
-// template into dist (e.g. `files: ["dist", "template"]`) instead of reaching
+// TODO(publish): once the engine ships as the published package `aida-docs`, bundle
+// the template into it (e.g. `files: [..., "template"]`) instead of reaching
 // across the monorepo like this.
 const here = dirname(fileURLToPath(import.meta.url));
 export const TEMPLATE_DIR = join(here, "..", "..", "..", "help-app");

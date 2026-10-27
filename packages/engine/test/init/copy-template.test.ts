@@ -63,7 +63,7 @@ describe("copyTemplate", () => {
     mkdirSync(join(template, "test"), { recursive: true });
     writeFileSync(join(template, "test", "a.test.ts"), "");
     mkdirSync(join(template, "vendor"), { recursive: true });
-    writeFileSync(join(template, "vendor", "aida-0.0.1.tgz"), "");
+    writeFileSync(join(template, "vendor", "aida-docs-0.0.1.tgz"), "");
     const dest = tmpDir();
 
     const result = copyTemplate(dest, template);

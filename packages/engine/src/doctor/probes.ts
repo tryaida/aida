@@ -5,6 +5,7 @@ import { existsSync, lstatSync, readdirSync, readFileSync, statfsSync } from "no
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import type { FetchResult, HelpAppInfo, LaunchResult, PlaywrightInfo } from "./checks.js";
+import { AIDA_PACKAGE } from "../package-name.js";
 
 export interface DoctorProbes {
   nodeVersion(): string;
@@ -148,12 +149,12 @@ export const realProbes: DoctorProbes = {
   },
   helpApp(dir) {
     // Real Node resolution from the help app's own directory, not a direct
-    // `<dir>/node_modules/aida` path: a monorepo workspace link (or any hoisting npm/pnpm/yarn
-    // does) puts `aida` in an ancestor's `node_modules`, which this walks up to find exactly
-    // like the help app's own `import "aida"` would.
+    // `<dir>/node_modules/aida-docs` path: a monorepo workspace link (or any hoisting
+    // npm/pnpm/yarn does) puts `aida-docs` in an ancestor's `node_modules`, which this walks up
+    // to find exactly like the help app's own `import "aida-docs"` would.
     let pkgPath: string | undefined;
     try {
-      pkgPath = createRequire(join(dir, "package.json")).resolve("aida/package.json");
+      pkgPath = createRequire(join(dir, "package.json")).resolve(`${AIDA_PACKAGE}/package.json`);
     } catch {
       pkgPath = undefined;
     }

@@ -1,5 +1,5 @@
 // Pure display helpers for the Studio (no React) — unit-tested in test/studio/format.test.ts.
-import { wrapCaption } from "aida/dist/render/captions.js";
+import { wrapCaption } from "aida-docs/dist/render/captions.js";
 import type { CaptureStatus, HistoryEntry, WalkthroughSummary } from "./types";
 
 /** "just now", "5 min ago", "3 hours ago", "yesterday", "4 days ago", else a short date. */

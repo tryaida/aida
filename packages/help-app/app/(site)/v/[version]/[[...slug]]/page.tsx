@@ -14,8 +14,8 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { notFound } from "next/navigation";
-import { getPageFromLlmsTxt } from "aida/dist/mcp/index.js";
-import type { Procedure } from "aida/dist/procedures/index.js";
+import { getPageFromLlmsTxt } from "aida-docs/dist/mcp/index.js";
+import type { Procedure } from "aida-docs/dist/procedures/index.js";
 
 // A version can be frozen any time after `next build` runs (`aida version freeze` is a
 // separate step) — static params generated at build time would go stale the moment a new

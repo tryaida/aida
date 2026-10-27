@@ -42,7 +42,7 @@ describe("writeAidaConfig", () => {
     expect(content).toContain("primaryColor");
     expect(content).toContain("235 55% 42%");
     expect(content).toContain("/dashboard, /login");
-    expect(content).toContain("import { defineConfig } from \"aida\"");
+    expect(content).toContain("import { defineConfig } from \"aida-docs\"");
   });
 
   it("sets helpApp so the generated config points the index stage at its own help site (bug: fresh help site never showed built pages)", () => {

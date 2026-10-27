@@ -2,11 +2,11 @@
 // versioned with it"; "Safety and trust": "The MCP server is read-only"). The tool
 // implementations live in the engine (`aida`'s `mcp/` module) — this route only mounts them
 // over the official MCP SDK's Streamable HTTP transport (build-plan.md M15 step 3).
-// Deep import (not the "aida" package barrel) — see app/api/chat/route.ts for why: the
+// Deep import (not the "aida-docs" package barrel) — see app/api/chat/route.ts for why: the
 // barrel's index.ts reaches config/load.ts's non-literal dynamic `import()`, which breaks
 // bundling a route handler that pulls it in, even transitively.
-import { createAidaMcpServer, getPageFromLlmsTxt, type AidaMcpSource } from "aida/dist/mcp/index.js";
-import { isUnknownVersionError, resolveVersionSource } from "aida/dist/versions/index.js";
+import { createAidaMcpServer, getPageFromLlmsTxt, type AidaMcpSource } from "aida-docs/dist/mcp/index.js";
+import { isUnknownVersionError, resolveVersionSource } from "aida-docs/dist/versions/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { join } from "node:path";
 
@@ -17,7 +17,7 @@ export const runtime = "nodejs";
 // whatever Next would otherwise do with a dynamic route in a static build.
 const STATIC_EXPORT = process.env.AIDA_STATIC_EXPORT === "1";
 
-function buildSource(searchIndexEntries: import("aida/dist/index-search/index.js").SearchIndexEntry[], procedures: import("aida/dist/procedures/index.js").Procedure[], llmsTxt: string | undefined): AidaMcpSource {
+function buildSource(searchIndexEntries: import("aida-docs/dist/index-search/index.js").SearchIndexEntry[], procedures: import("aida-docs/dist/procedures/index.js").Procedure[], llmsTxt: string | undefined): AidaMcpSource {
   return {
     searchIndexEntries,
     procedures,

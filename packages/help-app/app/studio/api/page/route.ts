@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { devOnlyGuard } from "../../_lib/dev-only";
 import { assertStudioRequest } from "../../_lib/security";
 import { isSlug, mtimeOf, readPageText, resolveWalkthroughFile } from "../../_lib/server";
-import { stripMarkers } from "aida/dist/pages/markers.js";
+import { stripMarkers } from "aida-docs/dist/pages/markers.js";
 
 export async function GET(request: Request) {
   const guard = devOnlyGuard();

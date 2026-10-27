@@ -5,8 +5,8 @@
 // public/brand/) from that brand. Never overwrites a file that's already there — except the
 // generated theme files, and only when the config was freshly written.
 //
-// M25 (decisions #29): packs this engine into `help/vendor/aida-<version>.tgz` and points the
-// help app's `aida` dependency at it (re-runs refresh both), then runs `npm install` there
+// M25 (decisions #29): packs this engine into `help/vendor/aida-docs-<version>-<hash>.tgz` and
+// points the help app's `aida-docs` dependency at it (re-runs refresh both), then runs `npm install` there
 // unless `--no-install`. `--tunnel-host` adds hosts and a Studio access key to help/.env.local
 // and prints the private access link, and an Auth.js app gets a starter sign-in adapter
 // (help/adapters/sign-in.mjs).
@@ -276,7 +276,7 @@ function nextSteps(o: {
     steps.push(`Open the help site and the Studio: cd ${help} && npm run dev (it listens on 127.0.0.1 only), then http://localhost:3000/studio (${port})`);
     steps.push(`Opening the Studio through a tunnel? Re-run init with --tunnel-host <host> (adds it to ${STUDIO_HOSTS_VAR} in ${help}/.env.local and prints a private access link, which localhost then needs too)`);
   }
-  steps.push(`Commit ${help}/vendor/ along with the help app: hosts install aida from that tarball`);
+  steps.push(`Commit ${help}/vendor/ along with the help app: hosts install the engine (aida-docs) from that tarball`);
   steps.push(`Make the docs: ask your coding agent (aida skills install --target ${app}), or write walkthroughs and run aida build`);
   return steps;
 }
@@ -337,7 +337,7 @@ export async function runInit(options: InitOptions, json: boolean): Promise<numb
   if (result.claudeRepair) {
     console.log(result.claudeRepair.written ? `  wrote ${result.claudeRepair.file}` : `  left existing ${result.claudeRepair.file} untouched`);
   }
-  console.log(`  aida dependency: ${result.engine.spec}${result.engine.built ? " (engine built first)" : ""}`);
+  console.log(`  aida-docs dependency: ${result.engine.spec}${result.engine.built ? " (engine built first)" : ""}`);
   if (result.engine.removed.length > 0) console.log(`  removed older tarball(s): ${result.engine.removed.join(", ")}`);
   console.log(result.installed ? "  installed dependencies (npm install)" : "  skipped npm install (--no-install)");
   if (result.tunnelHosts) {

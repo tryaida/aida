@@ -4,7 +4,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { NextResponse } from "next/server";
-import { aidaDir } from "aida/dist/edit/index.js";
+import { aidaDir } from "aida-docs/dist/edit/index.js";
 import { devOnlyGuard } from "../../_lib/dev-only";
 import { assertStudioRequest } from "../../_lib/security";
 import { helpRoot } from "../../_lib/server";

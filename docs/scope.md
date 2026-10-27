@@ -77,7 +77,7 @@ People start AIDA from the tool they already use; they never have to adopt a new
 | Door | Best for | How it starts | Phase |
 | --- | --- | --- | --- |
 | Agent skill | Vibe coders and engineers in Claude Code, Codex, Cursor and similar tools | One install line, then "make help docs for my app" | 1 |
-| CLI (`npx aida`) | Engineers, scripts | `npx aida init` in the repo | 1 |
+| CLI (`npx aida-docs`, command `aida`) | Engineers, scripts | `npx aida-docs init` in the repo | 1 |
 | GitHub Action | Teams with CI | Added by `init` or by the agent, in one PR | 2 |
 | Deploy hook | People on Vercel, Netlify or Amplify with no CI | Docs refresh against each preview deploy | 2 |
 | GitHub App | Lovable, Bolt, v0 and Replit users whose project syncs to GitHub | Install on the repo, then merge a "Set up help docs" PR | 4 |
@@ -108,7 +108,7 @@ Target: a published help site in under 30 minutes.
 
 ### First run: engineer
 
-1. Runs `npx aida init`. It detects the framework, routes, sign-in method and existing Playwright tests.
+1. Runs `npx aida-docs init`. It detects the framework, routes, sign-in method and existing Playwright tests.
 2. Commits the scaffolded `help/` app and a GitHub Action in one PR.
 3. Every app PR now gets a docs check comment, and every merge publishes.
 
@@ -137,7 +137,7 @@ Whichever door starts a run, the same engine replays the walkthrough files, and 
 
 ### The help app
 
-`npx aida init` scaffolds a Next.js app into a `help/` folder in the user's repo, or into its own repo. Everything readers see, and the Studio, lives in it.
+`npx aida-docs init` scaffolds a Next.js app into a `help/` folder in the user's repo, or into its own repo. Everything readers see, and the Studio, lives in it.
 
 ```
 help/                      prescaffolded Next.js app

@@ -173,7 +173,8 @@ users yet. Expect rough edges and breaking changes.
 
 **Planned**
 
-- An npm release, so you can run `npx` without cloning
+- An npm release as `aida-docs` (the `aida` name on npm is an unrelated package), so you can run
+  `npx aida-docs` without cloning
 - Sign-in helpers for Clerk, Supabase Auth and Firebase
 - A setup path for no-code builders (Lovable, Bolt) that doesn't require opening GitHub
 - Longer-term evidence that docs stay current over weeks of real app changes
