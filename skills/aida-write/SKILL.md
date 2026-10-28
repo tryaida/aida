@@ -15,7 +15,9 @@ and validate YAML concurrently: capture must never run from two at once (see ste
 0. Run `aida catch-up --since last` before anything else — it lists edits a person made in the
    Studio since this skill last looked, so a rewrite never clobbers a change made since. Then
    load `aida brief show --config <cfg> --section "Words it uses" --section "Rules that matter"`
-   (and "Several ways to do one thing" when the card has `paths:`), not the whole brief.
+   (and "Several ways to do one thing" when the card has `paths:`, "Where people get stuck" if
+   present), not the whole brief. Pitch steps to the reader's `comfort` (`new`: every click and
+   what follows; `confident`: short); a phone card sets `start.viewport: {width: 390, height: 844}`.
 1. Start from the approved outline card (title, reader, one-line purpose) and the relevant slice
    of the discover summary (routes/labels for that task only) — or, from `aida ci`'s "new" tier
    comment, from the route path and file it named (no card). Either way, label the PR `docs:new`
@@ -84,8 +86,7 @@ and validate YAML concurrently: capture must never run from two at once (see ste
    `needs`/`leaves`/`clears` with kebab-case state names, and unrecorded `setup:` steps for data
    only it uses (`references/walkthrough-cheatsheet.md` → "Data this walkthrough needs and
    changes"). `{{run.id}}` goes in `setup` data only, never in typed text, `say`, `caption` or
-   `page_text`. Starting data shared across walkthroughs is a config state hook: hand off to
-   `aida-demo-data`.
+   `page_text`. Starting data shared across walkthroughs is a config state hook (`aida-demo-data`).
 5. Validate: `aida validate <file> --config <cfg>` (the config's `states` are checked against
    `needs`/`leaves`/`clears`; caption and chapter line lengths too). Fix what it reports yourself.
 6. Capture: `aida capture <walkthrough-id>` (add `--with-deps` when it needs a state another
@@ -106,9 +107,8 @@ and validate YAML concurrently: capture must never run from two at once (see ste
 
 ## Writing rules
 
-- Plain words, on-screen names, per `references/style.md`. No invented buttons or results — only
-  what the capture actually showed (write a first draft from the card, then correct it against
-  the capture result once it runs).
+- Plain words, on-screen names, per `references/style.md`. No invented buttons or results: only
+  what the capture showed (draft from the card, then correct it against the capture result).
 - Use the brief's words exactly, never their "not to be confused with" twins. In `page_text`,
   say when and why as well as which button: the rule that applies, the state a save moves
   things to, which of several ways to start suits the reader (from the brief, never invented).

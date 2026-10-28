@@ -19,7 +19,11 @@ export const BRIEF_SECTIONS = [
   "Open questions",
 ] as const;
 
-export type BriefSectionName = (typeof BRIEF_SECTIONS)[number];
+/** Sections a brief may add, usually from an interview with the builder (`aida interview`,
+ * decision 38): checked and published when present, never required. */
+export const BRIEF_OPTIONAL_SECTIONS = ["Workflows", "Where people get stuck"] as const;
+
+export type BriefSectionName = (typeof BRIEF_SECTIONS)[number] | (typeof BRIEF_OPTIONAL_SECTIONS)[number];
 
 /** The prompt `aida brief init` writes under each section, as an HTML comment. One left as
  * written means the section was never looked at (`checkBrief` flags it). */
@@ -37,6 +41,10 @@ export const BRIEF_PROMPTS: Record<BriefSectionName, string> = {
   Rhythm: "The daily, weekly or seasonal flow: what happens first, what happens in the busy period, what happens at the end.",
   "Several ways to do one thing":
     "Tasks that can be started from more than one screen. One bullet per task: the task, then each starting screen and when you'd use it, e.g. \"Record a payment: from the booking (one booking), from the attendee (all their bookings at once), from Payments (when the money arrives first)\". Write \"None found.\" if there are none.",
+  Workflows:
+    "Whole jobs from start to finish, across several tasks and anything done outside the app (an email, a bank transfer, a phone call). One bullet or short paragraph per job: who does it, the tasks in order, and the hand-offs between people.",
+  "Where people get stuck":
+    "The mistakes people make and the questions they ask most, one bullet each: what goes wrong, then how to put it right or avoid it.",
   "Open questions":
     "What you couldn't work out from the repo, for the person to answer before planning. Move each answer into the section it belongs in and delete the question; this section is never published.",
 };
@@ -45,7 +53,22 @@ export interface BriefReader {
   role: string;
   name: string;
   job: string;
+  /** Optional profile, usually from an interview: the devices they use the app on. */
+  devices?: BriefDevice[];
+  /** How at home they are with apps like this one: pitches how much each page explains. */
+  comfort?: BriefComfort;
+  /** How often they use it, in plain words ("every day in season", "once a year"). */
+  frequency?: string;
+  /** Where they are and what's going on when they open it ("at the venue, between races"). */
+  context?: string;
 }
+
+export const BRIEF_DEVICES = ["phone", "tablet", "desktop"] as const;
+export type BriefDevice = (typeof BRIEF_DEVICES)[number];
+/** `new`: first app of its kind, explain every step; `some`: has used similar apps; `confident`:
+ * wants the short version. */
+export const BRIEF_COMFORT = ["new", "some", "confident"] as const;
+export type BriefComfort = (typeof BRIEF_COMFORT)[number];
 
 export interface BriefFrontmatter {
   app?: unknown;
@@ -140,14 +163,25 @@ export function findSection(brief: ParsedBrief, query: string): BriefSection | u
   );
 }
 
-/** The frontmatter's readers that have all three fields as strings. */
+/** The frontmatter's readers that have all three fields as strings, with only the profile fields
+ * that are well formed (`checkBrief` warns about the rest). */
 export function briefReaders(brief: ParsedBrief): BriefReader[] {
   const list = brief.frontmatter?.readers;
   if (!Array.isArray(list)) return [];
-  return list.filter(
-    (r): r is BriefReader =>
-      Boolean(r) && typeof r === "object" && typeof (r as BriefReader).role === "string" && typeof (r as BriefReader).name === "string" && typeof (r as BriefReader).job === "string",
-  );
+  return list
+    .filter(
+      (r): r is BriefReader =>
+        Boolean(r) && typeof r === "object" && typeof (r as BriefReader).role === "string" && typeof (r as BriefReader).name === "string" && typeof (r as BriefReader).job === "string",
+    )
+    .map((r) => {
+      const reader: BriefReader = { role: r.role, name: r.name, job: r.job };
+      const devices = Array.isArray(r.devices) ? r.devices.filter((d): d is BriefDevice => (BRIEF_DEVICES as readonly unknown[]).includes(d)) : [];
+      if (devices.length > 0) reader.devices = devices;
+      if ((BRIEF_COMFORT as readonly unknown[]).includes(r.comfort)) reader.comfort = r.comfort;
+      if (typeof r.frequency === "string" && r.frequency.trim()) reader.frequency = r.frequency.trim();
+      if (typeof r.context === "string" && r.context.trim()) reader.context = r.context.trim();
+      return reader;
+    });
 }
 
 /** The app's name from the frontmatter, when it's a non-empty string. */

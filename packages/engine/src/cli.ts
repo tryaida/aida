@@ -20,6 +20,7 @@ import { runVoiceCommand } from "./commands/voice.js";
 import { runDigest } from "./commands/digest.js";
 import { runDomain } from "./commands/domain.js";
 import { runBriefCheck, runBriefInit, runBriefShow, runBriefSources } from "./commands/brief.js";
+import { runInterviewAnswer, runInterviewApplied, runInterviewAsk, runInterviewNext, runInterviewNotes, runInterviewSkip, runInterviewStart, runInterviewStatus } from "./commands/interview.js";
 import { runAffected } from "./commands/affected.js";
 import { runCiCli, runCiPublishCli } from "./commands/ci.js";
 import { runVersionFreeze, runVersionList } from "./commands/version.js";
@@ -53,6 +54,7 @@ program.version(pkg.version);
 //   M4  render
 //   M6  build, digest
 //   M31 domain, brief
+//   M40 interview
 
 program
   .command("validate <target>")
@@ -457,6 +459,109 @@ briefCmd
   .option("--json", "print a single JSON object instead of a summary")
   .action(async (opts: { config?: string; brief?: string; section?: string[]; json?: boolean }) => {
     process.exitCode = await runBriefShow({ configPath: opts.config, brief: opts.brief, sections: opts.section, json: Boolean(opts.json) });
+  });
+
+const interviewCmd = program
+  .command("interview")
+  .description("the builder interview (app-interview.yaml beside the brief): the questions worth asking about readers, workflows and pitfalls, the answers, and which answers are in the brief");
+
+interviewCmd
+  .command("start")
+  .description("write the interview's questions from the brief, the config's roles, the domain model and the outline, or add new ones to an existing interview (answers are kept)")
+  .option("--depth <depth>", "quick (about 10 minutes), standard (about 25) or deep (45 or more: every thing and outline card); default: the file's, else standard")
+  .option("--repo <dir>", "app repo to read the schema from (default: from --config)")
+  .option("--config <path>", "aida.config.ts/.mjs (the interview sits beside the brief)")
+  .option("--file <path>", "interview file (default: app-interview.yaml beside the brief)")
+  .option("--json", "print a single JSON object instead of a summary")
+  .action(async (opts: { config?: string; file?: string; depth?: string; repo?: string; json?: boolean }) => {
+    process.exitCode = await runInterviewStart({ configPath: opts.config, file: opts.file, depth: opts.depth, repo: opts.repo, json: Boolean(opts.json) });
+  });
+
+interviewCmd
+  .command("next")
+  .description("the next open questions to ask: the essentials across every topic first, then the detail")
+  .option("--count <n>", "how many (default 3)", (v) => Number.parseInt(v, 10))
+  .option("--topic <topic>", "only this topic: purpose, readers, workflows, open, things, rules, trouble, words, rhythm, scope, tasks")
+  .option("--config <path>", "aida.config.ts/.mjs (the interview sits beside the brief)")
+  .option("--file <path>", "interview file (default: app-interview.yaml beside the brief)")
+  .option("--json", "print a single JSON object instead of a summary")
+  .action(async (opts: { config?: string; file?: string; count?: number; topic?: string; json?: boolean }) => {
+    process.exitCode = await runInterviewNext({ configPath: opts.config, file: opts.file, count: opts.count, topic: opts.topic, json: Boolean(opts.json) });
+  });
+
+interviewCmd
+  .command("answer <id>")
+  .description("record the builder's answer to a question, in their words")
+  .option("--text <answer>", "the answer (in single quotes: double quotes let the shell change $ and backticks)")
+  .option("--text-file <path>", "read the answer from a file, or - for stdin (a quoted heredoc keeps the builder's words exactly)")
+  .option("--append", "add to an earlier answer instead of replacing it")
+  .option("--config <path>", "aida.config.ts/.mjs (the interview sits beside the brief)")
+  .option("--file <path>", "interview file (default: app-interview.yaml beside the brief)")
+  .option("--json", "print a single JSON object instead of a summary")
+  .action(async (id: string, opts: { text?: string; textFile?: string; append?: boolean; config?: string; file?: string; json?: boolean }) => {
+    process.exitCode = await runInterviewAnswer({ configPath: opts.config, file: opts.file, id, text: opts.text, textFile: opts.textFile, append: opts.append, json: Boolean(opts.json) });
+  });
+
+interviewCmd
+  .command("skip <id>")
+  .description("skip a question the builder can't or won't answer")
+  .option("--reason <text>", "why, e.g. \"doesn't apply\"")
+  .option("--config <path>", "aida.config.ts/.mjs (the interview sits beside the brief)")
+  .option("--file <path>", "interview file (default: app-interview.yaml beside the brief)")
+  .option("--json", "print a single JSON object instead of a summary")
+  .action(async (id: string, opts: { reason?: string; config?: string; file?: string; json?: boolean }) => {
+    process.exitCode = await runInterviewSkip({ configPath: opts.config, file: opts.file, id, reason: opts.reason, json: Boolean(opts.json) });
+  });
+
+interviewCmd
+  .command("ask")
+  .description("add a follow-up question an answer raised")
+  .requiredOption("--topic <topic>", "purpose, readers, workflows, open, things, rules, trouble, words, rhythm, scope or tasks")
+  .requiredOption("--text <question>", "the question")
+  .option("--after <id>", "the question it follows up (its reader, destination and priority carry over)")
+  .option("--about <name>", "the reader role, thing or card it's about")
+  .option("--goes-to <where>", "a brief section, readers.<field>, or plan (default: the --after question's, else brief)")
+  .option("--why <text>", "what the answer changes in the help")
+  .option("--priority <n>", "1 essential, 2 detail, 3 nice to have (default: the --after question's, else 1)", (v) => Number.parseInt(v, 10))
+  .option("--config <path>", "aida.config.ts/.mjs (the interview sits beside the brief)")
+  .option("--file <path>", "interview file (default: app-interview.yaml beside the brief)")
+  .option("--json", "print a single JSON object instead of a summary")
+  .action(async (opts: { topic: string; text: string; after?: string; about?: string; goesTo?: string; why?: string; priority?: number; config?: string; file?: string; json?: boolean }) => {
+    process.exitCode = await runInterviewAsk({ configPath: opts.config, file: opts.file, topic: opts.topic, text: opts.text, after: opts.after, about: opts.about, goesTo: opts.goesTo, why: opts.why, priority: opts.priority, json: Boolean(opts.json) });
+  });
+
+interviewCmd
+  .command("notes")
+  .description("the answers as compact notes, grouped by where each goes (a brief section, readers, plan)")
+  .option("--topic <topic>", "only this topic")
+  .option("--goes-to <where>", "only answers for this brief section, readers, or plan")
+  .option("--unapplied", "only answers not yet moved")
+  .option("--config <path>", "aida.config.ts/.mjs (the interview sits beside the brief)")
+  .option("--file <path>", "interview file (default: app-interview.yaml beside the brief)")
+  .option("--json", "print a single JSON object instead of a summary")
+  .action(async (opts: { topic?: string; goesTo?: string; unapplied?: boolean; config?: string; file?: string; json?: boolean }) => {
+    process.exitCode = await runInterviewNotes({ configPath: opts.config, file: opts.file, topic: opts.topic, goesTo: opts.goesTo, unapplied: opts.unapplied, json: Boolean(opts.json) });
+  });
+
+interviewCmd
+  .command("applied [ids...]")
+  .description("mark answers as moved into the brief (or the plan)")
+  .option("--all", "every answered question for the brief")
+  .option("--config <path>", "aida.config.ts/.mjs (the interview sits beside the brief)")
+  .option("--file <path>", "interview file (default: app-interview.yaml beside the brief)")
+  .option("--json", "print a single JSON object instead of a summary")
+  .action(async (ids: string[], opts: { all?: boolean; config?: string; file?: string; json?: boolean }) => {
+    process.exitCode = await runInterviewApplied({ configPath: opts.config, file: opts.file, ids: ids ?? [], all: opts.all, json: Boolean(opts.json) });
+  });
+
+interviewCmd
+  .command("status")
+  .description("how far the interview has got: each topic, essentials still open, answers not yet in the brief, personal data in answers")
+  .option("--config <path>", "aida.config.ts/.mjs (the interview sits beside the brief)")
+  .option("--file <path>", "interview file (default: app-interview.yaml beside the brief)")
+  .option("--json", "print a single JSON object instead of a summary")
+  .action(async (opts: { config?: string; file?: string; json?: boolean }) => {
+    process.exitCode = await runInterviewStatus({ configPath: opts.config, file: opts.file, json: Boolean(opts.json) });
   });
 
 program

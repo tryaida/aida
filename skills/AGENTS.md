@@ -13,7 +13,7 @@ but isn't yet) copies this `skills/` directory into `.claude/skills/` and `skill
 `AGENTS.md`/`SKILL.md` directly.
 
 Read `skills/aida/SKILL.md` first — it's the entry point and routes to the rest
-(`aida-discover`, `aida-understand`, `aida-plan`, `aida-write`, `aida-repair`, `aida-review`,
+(`aida-discover`, `aida-understand`, `aida-interview`, `aida-plan`, `aida-write`, `aida-repair`, `aida-review`,
 `aida-demo-data`). Don't read every skill up front; each one is short on purpose and loads its
 own reference files only when needed.
 

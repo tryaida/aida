@@ -13,7 +13,9 @@ walkthrough (see that skill).
 
 The merged summary from `aida-discover` (routes, roles, labels, likely tasks per area) and the app
 brief (`aida brief show --config <cfg>`, written by `aida-understand`) — not the app's source
-code, and not the full discover transcript.
+code, and not the full discover transcript. After an interview (`aida-interview`), also `aida
+interview notes --config <cfg> --goes-to plan`: what to leave out and the tasks that matter
+most. Follow them, then `aida interview applied <ids> --config <cfg>`.
 
 ## What it produces
 
@@ -74,6 +76,12 @@ than deleting it.
   in every card and reader name — these are the first thing a person reads.
 - Rank tasks by the brief's rhythm and rules: what readers do every week, and the mistakes its
   rules warn about, come before rare admin.
+- When the brief has **Workflows**, order each job's cards the way the job runs (its first task in
+  `Getting started`, the rest first in their sections) and say in each `purpose` what comes next.
+  One card per task, never one walkthrough for a whole job; steps outside the app aren't captured.
+  A pitfall in **Where people get stuck** that a task can show belongs on its card as a note.
+- A reader whose `devices` lists only `phone` (or puts it first) gets their cards captured at
+  phone size: note `phone` on the card so the writer sets `start.viewport`.
 - Keep the outline small enough to review in one sitting. If discover turned up more tasks than
   make a sane first site, cut to the top ones and say what you cut and why.
 

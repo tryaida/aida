@@ -284,3 +284,21 @@ from the schema (decision 33, M31); walkthrough `paths` with `aida paths` findin
 that call the same captured action (decision 34, M33); brand read from the running app, style
 presets and a proof sheet (decision 35, M34); and a designed-manual standard for print, which the
 user asked for explicitly (decision 36, M32). Order: M31 and M32 first, in parallel.
+
+## 2026-10-28 · Interviewing the builder
+
+The user asked for an interactive version in which the agent interviews the builder in depth
+about workflows, readers and the nuances of how the app is used, so the help is relevant to the
+people who actually use it. The Understand step already wrote a brief from the repo and asked three
+to five open questions, but a repo can't say who opens the app on a phone at a busy venue, how
+confident they are, what happens outside the app between two tasks, or what people ask the builder
+for help with. Agreed: keep the quick path, and offer an in-depth interview beside it (decision 38,
+M40). The engine decides what's worth asking, the same way every time (from the brief, the config's
+roles, the domain model's states and the outline), and keeps the answers in `app-interview.yaml`
+so nothing is asked twice; the skill does the conversation in the main session, since a subagent
+can't talk to the person: a topic at a time, stories rather than opinions, follow-ups, a playback
+every topic, and stopping whenever the person wants. Readers are described by their needs
+(devices, confidence, reading level, accessibility, connection, time pressure), never by age,
+gender or health. Answers land in the brief as a reader profile and two optional sections,
+Workflows and Where people get stuck, which planning, writing, the agent connector and a new
+Common problems page (so the help chat finds them too) use.

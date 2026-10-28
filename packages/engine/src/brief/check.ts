@@ -1,7 +1,7 @@
 // `aida brief check`: the brief has its frontmatter and every section filled, a glossary table,
 // and no real-looking emails or phone numbers (the same scan QA runs on pages, src/qa/pii.ts).
 import { scanEmails, scanPhones } from "../qa/pii.js";
-import { BRIEF_PROMPTS, BRIEF_SECTIONS, normalizeHeading, parseBrief, sectionText, stripHtmlComments, type ParsedBrief } from "./format.js";
+import { BRIEF_COMFORT, BRIEF_DEVICES, BRIEF_OPTIONAL_SECTIONS, BRIEF_PROMPTS, BRIEF_SECTIONS, normalizeHeading, parseBrief, sectionText, stripHtmlComments, type ParsedBrief } from "./format.js";
 
 export interface BriefIssue {
   /** The section it's about, when there is one. */
@@ -40,7 +40,7 @@ export function checkBrief(text: string): BriefCheckResult {
   const errors: BriefIssue[] = [];
   const warnings: BriefIssue[] = [];
 
-  checkFrontmatter(brief, errors);
+  checkFrontmatter(brief, errors, warnings);
 
   const sections: BriefSectionStatus[] = [];
   for (const name of BRIEF_SECTIONS) {
@@ -54,6 +54,24 @@ export function checkBrief(text: string): BriefCheckResult {
     if (matches.length > 1) warnings.push({ section: name, message: `"${name}" appears ${matches.length} times; only the first is read` });
     if (filled && PLACEHOLDER.test(body)) warnings.push({ section: name, message: `"${name}" still has a ${PLACEHOLDER.exec(body)![1]}` });
     if (matches[0] && matches[0].body.includes(`<!-- ${BRIEF_PROMPTS[name]} -->`) && name !== "Open questions") {
+      warnings.push({ section: name, kind: "prompt", message: `"${name}" still has the template's prompt; replace it once the section is written` });
+    }
+  }
+
+  // Optional sections (decision 38): checked only when a brief has them.
+  for (const name of BRIEF_OPTIONAL_SECTIONS) {
+    const matches = brief.sections.filter((s) => normalizeHeading(s.name) === normalizeHeading(name));
+    if (matches.length === 0) continue;
+    const body = sectionText(matches[0]);
+    const filled = body.length > 0 && !/^none( found)?\.?$/i.test(body);
+    sections.push({ name, present: true, filled, chars: filled ? body.length : 0 });
+    if (!filled) warnings.push({ section: name, message: `"${name}" is empty; fill it or remove the heading` });
+    else if (name === "Where people get stuck" && !/^\s*[-*]\s+\S/m.test(body)) {
+      warnings.push({ section: name, message: `"${name}" needs one bullet per problem; the Common problems page lists bullets only` });
+    }
+    if (matches.length > 1) warnings.push({ section: name, message: `"${name}" appears ${matches.length} times; only the first is read` });
+    if (body && PLACEHOLDER.test(body)) warnings.push({ section: name, message: `"${name}" still has a ${PLACEHOLDER.exec(body)![1]}` });
+    if (matches[0].body.includes(`<!-- ${BRIEF_PROMPTS[name]} -->`)) {
       warnings.push({ section: name, kind: "prompt", message: `"${name}" still has the template's prompt; replace it once the section is written` });
     }
   }
@@ -86,7 +104,7 @@ export function briefNotPublishableReason(result: BriefCheckResult): string | un
   return undefined;
 }
 
-function checkFrontmatter(brief: ParsedBrief, errors: BriefIssue[]): void {
+function checkFrontmatter(brief: ParsedBrief, errors: BriefIssue[], warnings: BriefIssue[]): void {
   if (brief.frontmatterError) {
     errors.push({ message: brief.frontmatterError });
     return;
@@ -107,7 +125,27 @@ function checkFrontmatter(brief: ParsedBrief, errors: BriefIssue[]): void {
     const reader = (r ?? {}) as Record<string, unknown>;
     const missing = ["role", "name", "job"].filter((k) => typeof reader[k] !== "string" || !(reader[k] as string).trim());
     if (missing.length > 0) errors.push({ message: `readers[${i}] is missing ${missing.join(", ")}` });
+    checkReaderProfile(reader, i, warnings);
   });
+}
+
+/** The optional profile fields (devices, comfort, frequency, context): a malformed one is
+ * ignored by every reader of the brief, so it's a warning, never an error. */
+function checkReaderProfile(reader: Record<string, unknown>, i: number, warnings: BriefIssue[]): void {
+  const at = `readers[${i}]`;
+  if (reader.devices !== undefined) {
+    const list = Array.isArray(reader.devices) ? reader.devices : [reader.devices];
+    const bad = list.filter((d) => !(BRIEF_DEVICES as readonly unknown[]).includes(d));
+    if (!Array.isArray(reader.devices) || bad.length > 0) {
+      warnings.push({ message: `${at}.devices must be a list of ${BRIEF_DEVICES.join(", ")}${bad.length > 0 ? ` (not ${bad.map(String).join(", ")})` : ""}` });
+    }
+  }
+  if (reader.comfort !== undefined && !(BRIEF_COMFORT as readonly unknown[]).includes(reader.comfort)) {
+    warnings.push({ message: `${at}.comfort must be one of ${BRIEF_COMFORT.join(", ")}` });
+  }
+  for (const key of ["frequency", "context"] as const) {
+    if (reader[key] !== undefined && (typeof reader[key] !== "string" || !(reader[key] as string).trim())) warnings.push({ message: `${at}.${key} must be a short sentence` });
+  }
 }
 
 /** "Words it uses" holds a table: term | meaning | not to be confused with. */

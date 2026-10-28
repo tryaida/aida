@@ -19,7 +19,7 @@ full plan; you don't need to re-read them every run, just this skill and the one
 ## The first run
 
 Follow `docs/scope.md` → "First run: vibe coder in a coding agent". Ask at most **three plain
-questions** across the run, plus the brief's open questions (at most five, before planning).
+questions** across the run, plus the brief's open questions (at most five) or the interview.
 
 **On a new machine or a new app, run `aida doctor --config <cfg>` first** (Node, ffmpeg, Chromium,
 disk, the app's address and database, senders, caches, the help app; each with its fix). Fix what
@@ -32,8 +32,11 @@ server, whose cache grows to gigabytes over a run.
    app locally with demo data, or use a test login on the live site?"
 2. **Understand.** Hand off to `aida-understand`. It writes `app-brief.md` beside the config
    (purpose, readers and jobs, domain model, words, rules, rhythm, tasks with several starting
-   screens) and returns its open questions. Ask them now, before planning; move each answer into
-   its section, delete the question, and rerun `aida brief check --config <cfg>`. "Open
+   screens) and returns its open questions. Offer a choice: **answer just these** (a minute or
+   two), or **an in-depth interview** (10–45 minutes: readers, devices, whole jobs, where people
+   get stuck) for help written for their real users. For the interview, load `aida-interview`
+   and run it here, not as a subagent; it asks the open questions too. Otherwise ask them now;
+   move each answer into its section, delete the question, and rerun `aida brief check`. "Open
    questions" is never published, and `aida build` publishes no failing brief.
 3. **Plan.** Hand off to `aida-plan` with the discover summary and the brief. It returns outline
    cards (walkthrough titles + one-line purpose) for the reviewer to approve, rename, or remove —
@@ -121,6 +124,6 @@ target. Run-unique values (`{{run.id}}`) belong in setup data only, never in typ
 ## Engine commands this run assumes
 
 `doctor`, `validate`, `inspect`, `order`, `capture`, `paths`, `render`, `pages`, `qa`, `init`,
-`digest`, `domain`, `brief`, `outline`, `proof` and `build` all exist — run `aida <command> --help`
+`digest`, `domain`, `brief`, `interview`, `outline`, `proof` and `build` all exist — run `aida <command> --help`
 for exact flags. Report tokens as you go with `aida usage add` after each subagent turn, and print the run's total with `aida
 usage report` (see `references/tokens.md`).

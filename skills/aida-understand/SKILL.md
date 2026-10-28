@@ -42,8 +42,9 @@ app's source tree.
      every starting screen and when you'd use it. These feed the outline cards' `paths:`.
 5. **Ask only what you can't infer.** Put every uncertainty under "Open questions" and return
    the 3–5 that change what the help says (who can refund?); don't ask what the repo answers.
-   Run as a subagent you can't ask the person: the router asks them before planning and moves
-   each answer into its section. "Open questions" is never published, so no answer stays there.
+   Run as a subagent you can't ask the person: the router asks them before planning (or runs
+   `aida-interview`, which asks them with everything else) and moves each answer into its
+   section. "Open questions" is never published, so no answer stays there.
 6. **Check.** `aida brief check --config <cfg>` until it passes, and replace every section's
    prompt. `aida build` won't publish a brief with errors, personal data or prompts left; the
    rest is published (help chat, agent connector): no real names, emails or phone numbers
