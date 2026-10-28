@@ -16,7 +16,7 @@ import type { PlannedRun, PlannedWalkthrough } from "../states/index.js";
 import type { CaptureManifest, FrameDiffSummary, ValidationResult } from "../capture/index.js";
 import { resolveCaptureSettings } from "../config/types.js";
 import { buildVoiceManifest } from "../commands/voice.js";
-import { loadNarrationBeats, render } from "../render/index.js";
+import { defaultConcurrency, loadNarrationBeats, render } from "../render/index.js";
 import { pathClipFiles, pathClipLinks } from "../render/clips.js";
 import { resolveArtifactBrand } from "../render/brand.js";
 import type { RenderResult } from "../render/index.js";
@@ -319,6 +319,7 @@ async function runRenderStage(
   config: ResolvedConfig,
   state: WalkthroughPipelineState,
   draft: boolean,
+  concurrency?: number,
 ): Promise<void> {
   const started = Date.now();
   try {
@@ -329,6 +330,7 @@ async function runRenderStage(
       narration,
       draft,
       brand: resolveArtifactBrand(config),
+      concurrency,
     });
     state.renderResult = result;
     const clips = result.clips?.filter((c) => c.mp4) ?? [];
@@ -724,9 +726,13 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
     voiceCostUsdSoFar += state.voiceReport?.costUsd ?? 0;
   }
 
-  // Render: parallel, limited to 2 (build-plan.md M6/scope.md "Pipeline").
+  // Render: parallel, limited to 2 (build-plan.md M6/scope.md "Pipeline"). The render workers the
+  // machine can take are shared between them, not given to each, so two at once can't run it out
+  // of memory.
   if (stages.has("render")) {
-    await mapLimit(states, 2, async (state) => {
+    const parallel = Math.min(2, states.length);
+    const workers = Math.max(1, Math.floor(defaultConcurrency() / parallel));
+    await mapLimit(states, parallel, async (state) => {
       if (textFailed(state)) {
         state.stages.render = textSkip(state);
         return;
@@ -735,7 +741,7 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
         state.stages.render = skipped("capture or voice failed this run — not rendering a stale video");
         return;
       }
-      await runRenderStage(state.wf, config, state, draft);
+      await runRenderStage(state.wf, config, state, draft, workers);
     });
   } else {
     for (const state of states) state.stages.render = notSelected();

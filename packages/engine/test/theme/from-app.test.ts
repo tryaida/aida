@@ -85,6 +85,15 @@ beforeAll(async () => {
       res.end('<!doctype html><html><head><title>Plain · Acme Events</title><link rel="icon" href="/mark.svg"></head><body><main><button style="background:#4f46e5;color:#fff;height:36px">Go</button></main></body></html>');
       return;
     }
+    if (req.url === "/menu-only" || req.url === "/covered") {
+      // No logo: only a menu item that links home with an icon. "/covered" also has the real
+      // logo, but under a dialog's overlay.
+      res.setHeader("content-type", "text/html");
+      const logo = req.url === "/covered" ? '<a href="/" class="brand-logo"><svg width="40" height="24" aria-label="Acme logo"><rect width="40" height="24" fill="#4f46e5"/></svg></a>' : "";
+      const overlay = req.url === "/covered" ? '<div style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10"></div>' : "";
+      res.end(`<!doctype html><html><head><title>Acme Events</title></head><body style="margin:0"><aside style="width:220px">${logo}<nav><ul><li><a href="/"><svg width="18" height="18"><circle cx="9" cy="9" r="8" fill="#999"/></svg><span>Home</span></a></li></ul></nav></aside><main><button style="background:#4f46e5;color:#fff;height:36px">Go</button></main>${overlay}</body></html>`);
+      return;
+    }
     if (req.url === "/login") {
       res.setHeader("content-type", "text/html");
       res.end("<!doctype html><title>Sign in</title><form><input name=email><button>Sign in</button></form>");
@@ -195,6 +204,38 @@ describe("from-app safety (M34 review)", () => {
     expect(out?.saved).toBe(join(dir, "brand", "from-app.json"));
     expect(readAppBrand(dir)?.source.baseUrl).toBe(baseUrl);
   }, 60_000);
+});
+
+describe("logo pick", () => {
+  it("never takes a menu item that links home as the logo", async () => {
+    const r = await readBrandFromApp({ baseUrl, pages: ["/menu-only"], assetsDir: mkdtempSync(join(tmpdir(), "aida-menu-")) });
+    expect(r.assets.logo).toBeUndefined();
+  }, 60_000);
+
+  it("skips a logo covered by an overlay", async () => {
+    const r = await readBrandFromApp({ baseUrl, pages: ["/covered"], assetsDir: mkdtempSync(join(tmpdir(), "aida-covered-")) });
+    expect(r.assets.logo).toBeUndefined();
+  }, 60_000);
+});
+
+describe("titleName", () => {
+  it("takes the part every page shares", async () => {
+    const { titleName } = await import("../../src/theme/from-app.js");
+    expect(titleName([{ title: "Acme | Orders" }, { title: "Acme | Customers" }])).toBe("Acme");
+  });
+
+  it("takes the part that isn't the page's heading", async () => {
+    const { titleName } = await import("../../src/theme/from-app.js");
+    expect(titleName([{ title: "Polls - Acme", heading: "Polls" }])).toBe("Acme");
+    expect(titleName([{ title: "Acme - Polls", heading: "Polls" }])).toBe("Acme");
+  });
+
+  it("falls back to the last part, or the whole title", async () => {
+    const { titleName } = await import("../../src/theme/from-app.js");
+    expect(titleName([{ title: "Orders · Acme" }])).toBe("Acme");
+    expect(titleName([{ title: "Acme" }])).toBe("Acme");
+    expect(titleName([])).toBeUndefined();
+  });
 });
 
 describe("pure readings", () => {

@@ -1,0 +1,71 @@
+walkthrough: vote-on-a-poll
+version: 1
+title: Say when you're free
+summary: Open the invite link, mark the dates that work for you, and add your name.
+for: People invited to a poll
+section: Getting started
+start:
+  page: /invite/seed-0170
+data:
+  voter:
+    name: Jordan Lee
+steps:
+  - id: mark-dates
+    chapter: Mark your dates
+    title: Mark the dates that work
+    say: Open the invite link you were sent. Your row is at the top. Click a date once for yes. Click again for if need be, and a third time for no.
+    caption: Click once for yes, twice for if need be.
+    page_text: Open the invite link you were sent. In the **You** row at the top, click each date that works for you. Click once for **Yes**, twice for **If need be** and three times for **No**.
+    actions:
+      - do: click
+        target: { role: button, name: Pending, nth: 0 }
+      - do: click
+        target: { role: button, name: Pending, nth: 0 }
+        highlight: true
+  - id: continue
+    title: Continue
+    say: When your dates are marked, continue.
+    caption: Then continue.
+    page_text: Select **Continue** below the table.
+    actions:
+      - do: click
+        target: { role: button, name: Continue }
+        highlight: true
+  - id: add-your-name
+    chapter: Save your answer
+    title: Add your name
+    say: Type your name so the organizer knows who you are. Your email is optional.
+    caption: Type your name.
+    page_text: In **Name**, type your name. Adding your email is optional; it lets Rallly tell you when a date is picked.
+    actions:
+      - do: type
+        target: { label: Name, within: { role: dialog, name: New participant } }
+        text: "{{voter.name}}"
+  - id: save
+    title: Save your availability
+    say: Save your availability. Rallly confirms the organizer can now see it.
+    caption: Save your availability.
+    page_text: Select **Save availability**. Rallly confirms your response has been saved.
+    actions:
+      - do: click
+        target: { role: button, name: Save availability }
+        highlight: true
+      - do: expect
+        target: { text: Your response has been saved }
+  - id: see-your-row
+    title: See your answers in the poll
+    say: Go back to the poll. Your answers now sit alongside everyone else's.
+    caption: Your answers are in the poll.
+    page_text: Select **Back to poll**. Your name and answers now show in the poll with everyone else's. To change them later, open the same link again.
+    actions:
+      - do: click
+        target: { role: button, name: Back to poll }
+      - do: expect
+        target: { role: row, hasText: "{{voter.name}}" }
+        highlight: true
+validate:
+  database:
+    - name: vote-saved
+      sql: "select count(*)::int as n from participants where poll_id = 'seed-0170' and name = $1"
+      params: ["{{voter.name}}"]
+      expect: { n: 1 }

@@ -58,6 +58,17 @@ aida init <app-dir>                        # scaffold <app-dir>/help and install
   with JWT sessions, only signs in to an app on localhost, and its `claims(persona)` function must
   match the app's own `jwt` callback. The notes at the top of the file explain database sessions
   and seeded users.
+- **Signs in for capture (better-auth).** If the app uses `better-auth`, `init` writes the same
+  file from a better-auth template instead. It signs each persona in by inserting a session row for
+  an existing user in the app's local Postgres database (with the app's own `pg` package) and
+  setting the signed `better-auth.session_token` cookie, using the app's secret
+  (`BETTER_AUTH_SECRET`, then `AUTH_SECRET`) read the same way, never from `.env.production*`. Map
+  each walkthrough role to a seeded user's email in `USERS`, and check `SESSION_TABLE` and
+  `USER_TABLE` against the app's schema (better-auth's defaults are `session` and `user` with
+  camelCase columns; apps that map them to snake_case differ) and `SESSION_PATH` against its
+  `basePath` (default `/api/auth/get-session`). It checks that path after setting the cookie and
+  fails loudly unless the app sees the persona's user signed in. It refuses an app or database
+  that isn't on this machine.
 - **Checks the app's database.** It warns if the app's database setting points at a live
   database; capture refuses to run against one (see [Safety defaults](#safety-defaults)).
 
@@ -95,6 +106,7 @@ aida domain --config <cfg>                 # entities, links and states from the
 aida brief init --config <cfg>             # app-brief.md skeleton; fill it, then aida brief check
 aida outline list --config <cfg>          # the planned walkthroughs, and where the screen differs
 aida inspect /some/page --config <cfg>     # what's on screen: exact names, roles, options
+aida inspect /some/page --config <cfg> --as <role> --skip 79   # signed in; the next 80 lines
 aida inspect --config <cfg> --walkthrough <id> --after <step>   # the page after a save
 aida inspect --config <cfg> --walkthrough <id> --after <pathId>/<step>   # ...after a path's step
 aida record <id> --config <cfg> --page /some/page   # click through once; get a draft walkthrough
@@ -151,7 +163,7 @@ at all, so the upgrade's own changes are easy to review and undo (`--dry-run` st
 | `domain` | The app's domain model read from its schema (Drizzle, else Prisma, else SQL migrations; never a database connection): one line per entity with key columns, states and links; `--entity` for one in full, `--source` to pick a schema |
 | `brief` | The app brief, `app-brief.md` beside the config (config `brief` moves it): `sources` lists the app's own docs worth reading (paths and headings only), `init` writes the skeleton from the schema, `check` validates sections, glossary and personal data, `show [--section]` prints it. Once it passes `check` with no personal data or prompts left, `build` passes its opening sections to the help chat, an overview to the agent connector's `get_app_overview`, and its first paragraph to the home page |
 | `outline` | Outline cards in `outline.yaml` (`add`, `import`, `list`, `note`, `check`, `status`); capture records where the screen differs from a card |
-| `inspect` | Open one page signed in and list its interactive elements, read-only (`--click` repeatable); `--walkthrough <id> --after <step>` replays the steps (writes, like capture) and maps the page they leave; `--after <pathId>/<stepId>` replays a path from its own start page through its opening steps (or on to a shared main step after it joins), with the same safety checks |
+| `inspect` | Open one page signed in and list its interactive elements, read-only (`--click` repeatable; `--as <role>` takes a walkthrough's persona, or a role the config's `roles`/`readers` name before any walkthrough uses it; 80 lines at a time, `--skip <n>` for the next window, `--lines 0` for all); `--walkthrough <id> --after <step>` replays the steps (writes, like capture) and maps the page they leave; `--after <pathId>/<stepId>` replays a path from its own start page through its opening steps (or on to a shared main step after it joins), with the same safety checks |
 | `record` | "Show me": open the app in a browser window, signed in (`--as`), with `--needs` states set up, and turn one click-through into a draft walkthrough. A toolbar adds **Point at**, **Check shown**, **Note** (the step's narration), **New step**, **Undo** and **Finish**. Targets use on-screen names and are checked against the page as they're recorded; typed emails, phone numbers and card numbers become safe demo values; passwords are never kept. Same safety checks as capture; the draft is replayed once afterwards (`--no-replay` skips it, since a replay saves the same things again) |
 | `validate`, `import playwright` | Check walkthrough files, their states, caption and chapter line lengths, and every `{{placeholder}}` in reader-facing text (titles, `say`, `caption`, `page_text`, callout labels, cards, a path's `title`/`when`/`note`) has a value in `data`; convert existing Playwright tests into draft walkthroughs |
 | `order` | Print the capture order the walkthroughs' `needs`/`leaves`/`clears` imply, and where the database is reset |

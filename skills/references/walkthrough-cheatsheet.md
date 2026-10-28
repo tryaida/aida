@@ -22,8 +22,8 @@ start:
   persona: { role, name, email, cognitoSub }
 data: { <any demo values the steps reference via {{dotted.path}}> }
 voice: { provider, model, voiceId, speed, gapSeconds }
-intro: { eyebrow, title, subtitle, say, caption }
-outro: { title, recap: [...], say, caption }
+intro: { eyebrow, title, subtitle, say, caption }   # optional: left out, the video narrates title + summary
+outro: { title, recap: [...], say, caption }   # optional: left out, "You're done" + the chapters
 steps: [ ... ]        # minItems: 1
 validate: { database: [ { name, sql, params, expect } ] }   # optional, engineer-owned
 needs: [session-full]          # optional: data states that must hold before step 1

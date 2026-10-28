@@ -43,6 +43,14 @@ describe("detectFramework", () => {
     expect(detectFramework(dir).authLibrary).toBe("Auth.js (next-auth)");
   });
 
+  it("recognises better-auth as the sign-in library", () => {
+    const dir = tmpDir();
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: { next: "15.0.0", "better-auth": "1.2.0" } }));
+    mkdirSync(join(dir, "app"), { recursive: true });
+
+    expect(detectFramework(dir).authLibrary).toBe("better-auth");
+  });
+
   it("reports unknown when there's no package.json or app dir", () => {
     const dir = tmpDir();
     const result = detectFramework(dir);

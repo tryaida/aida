@@ -12,6 +12,8 @@ export interface Brand {
   icon: string | null;
   /** Stylesheet that loads the brand font, or null. */
   fontUrl: string | null;
+  /** The logo is a wordmark that already spells the name. */
+  logoWide: boolean;
 }
 
 const data = raw as Partial<Brand>;
@@ -22,6 +24,7 @@ export const brand: Brand = {
   logoDark: data.logoDark ?? null,
   icon: data.icon ?? null,
   fontUrl: data.fontUrl ?? null,
+  logoWide: data.logoWide === true,
 };
 
 /** "Acme Events Help", or just "Help" when the product name is unknown. */

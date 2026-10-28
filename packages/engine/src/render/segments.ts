@@ -41,9 +41,15 @@ const execFileAsync = promisify(execFile);
  * itself, so running one worker per core (not per two cores, M10's original `cpus/2`) roughly
  * doubles throughput without starving the host any more than a single full-quality `-preset
  * slow` ffmpeg encode already would. */
-export function defaultConcurrency(): number {
-  return Math.max(1, Math.min(8, os.cpus().length || 1));
+export function defaultConcurrency(freeBytes: number = os.freemem(), cpus: number = os.cpus().length || 1): number {
+  // Each worker is a Chromium page plus an ffmpeg encode, a few hundred MB together: on a small or
+  // busy machine one per CPU runs it out of memory, so also keep to what's free.
+  const byMemory = Math.floor(freeBytes / RENDER_WORKER_BYTES);
+  return Math.max(1, Math.min(8, cpus, byMemory));
 }
+
+/** Memory one render worker (a Chromium page and its ffmpeg encode) is budgeted, in bytes. */
+export const RENDER_WORKER_BYTES = 600 * 1024 * 1024;
 
 function overlapsRange(a0: number, a1: number, b0: number, b1: number): boolean {
   return a0 < b1 && a1 > b0;

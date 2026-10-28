@@ -1,0 +1,52 @@
+walkthrough: add-a-comment
+version: 1
+title: Leave a comment on a poll
+summary: Ask a question or add a note for the organizer and everyone else on the poll.
+for: People invited to a poll
+section: Getting started
+start:
+  page: /invite/seed-0087
+data:
+  comment:
+    author: Morgan Ellis
+    text: Saturday works best for me if the weather holds.
+steps:
+  - id: open-comments
+    title: Open the comments
+    say: To ask a question or leave a note, open the comments.
+    caption: Open the comments.
+    page_text: On the poll, select **Comments** in the bottom corner.
+    actions:
+      - do: click
+        target: { role: button, name: Comments }
+        highlight: true
+  - id: write-comment
+    title: Write your comment
+    say: Add your name, then write your comment. Everyone on the poll can see it.
+    caption: Add your name and your comment.
+    page_text: Type your name in **Your name**, then your comment in **Write a comment**. Comments are visible to everyone on the poll.
+    actions:
+      - do: type
+        target: { role: textbox, name: Your name… }
+        text: "{{comment.author}}"
+      - do: type
+        target: { role: textbox, name: Write a comment… }
+        text: "{{comment.text}}"
+  - id: post-comment
+    title: Add the comment
+    say: Add the comment. It appears at the top of the list.
+    caption: Add the comment.
+    page_text: Select **Add comment**. Your comment shows in the list straight away.
+    actions:
+      - do: click
+        target: { role: button, name: Add comment }
+        highlight: true
+      - do: expect
+        target: { text: "{{comment.text}}" }
+        highlight: true
+validate:
+  database:
+    - name: comment-saved
+      sql: "select count(*)::int as n from comments where poll_id = 'seed-0087' and author_name = $1"
+      params: ["{{comment.author}}"]
+      expect: { n: 1 }

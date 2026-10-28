@@ -1,0 +1,85 @@
+walkthrough: create-a-poll
+version: 1
+title: Create a poll
+summary: Suggest a few dates for an event, then create the poll so people can say when they're free.
+for: Organizers
+section: Polls
+start:
+  signed_in_as: organizer
+  page: /new
+data:
+  poll:
+    title: Team lunch
+leaves: [team-lunch-poll]
+steps:
+  - id: name-the-event
+    chapter: Describe the event
+    title: Name the event
+    say: Give the event a title people will recognise.
+    caption: Give the event a title.
+    page_text: In **Title**, type a short name for the event, such as "{{poll.title}}".
+    actions:
+      - do: type
+        target: { label: Title }
+        text: "{{poll.title}}"
+  - id: choose-all-day
+    chapter: Suggest dates
+    title: Choose how long it lasts
+    say: Choose how long the event lasts. For a lunch, All day keeps it simple.
+    caption: Choose how long it lasts.
+    page_text: Under **Duration**, choose **All day**, or a length such as **1h** to suggest times as well as dates.
+    actions:
+      - do: click
+        target: { role: radio, name: All day }
+        highlight: true
+  - id: go-to-next-month
+    title: Go to next month
+    say: Move the calendar on to next month.
+    caption: Move to next month.
+    page_text: Select the arrow beside the month name to move to next month.
+    actions:
+      - do: click
+        target: { role: button, name: Go to the next month }
+        highlight: true
+  - id: pick-dates
+    title: Pick a few dates
+    say: Click each date that could work. Three or four options is plenty.
+    caption: Click each date that could work.
+    page_text: Click each date that could work. Each one you pick is added to the list of options.
+    actions:
+      - do: click
+        target: { role: button, name: "10", exact: true }
+      - do: click
+        target: { role: button, name: "12", exact: true }
+      - do: click
+        target: { role: button, name: "17", exact: true }
+        highlight: true
+  - id: create
+    chapter: Create the poll
+    title: Create the poll
+    say: When the dates look right, create the poll.
+    caption: Create the poll.
+    page_text: Select **Create poll**.
+    actions:
+      - do: click
+        target: { role: button, name: Create poll }
+        highlight: true
+      - do: waitForUrl
+        pattern: "/(poll|polls)/"
+  - id: poll-ready
+    title: Share the invite link
+    say: Your poll is ready, and Rallly offers the invite link straight away. Copy it and send it to the people you're inviting.
+    caption: Copy the invite link and send it out.
+    page_text: The poll is created and the **Share** window opens. Select **Copy** to copy the invite link, then send it to the people you're inviting. You can also type their email addresses and select **Send invite**.
+    actions:
+      - do: expect
+        target: { role: dialog, name: Share }
+      - do: point
+        target: { role: button, name: Copy, within: { role: dialog, name: Share } }
+        highlight: true
+validate:
+  database:
+    - name: poll-saved
+      sql: "select count(*)::int as n from polls where title = $1 and deleted = false"
+      params: ["{{poll.title}}"]
+      expect: { n: 1 }

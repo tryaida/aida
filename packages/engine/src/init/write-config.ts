@@ -82,17 +82,20 @@ function ciBlock(ci: WriteConfigOptions["ci"]): string {
 
 function signInBlock(signIn: string | undefined): string {
   if (!signIn) return "";
-  return `  // Starter Auth.js adapter written by \`aida init\`: it mints the app's own session cookie
-  // for each walkthrough's persona. Read the notes at the top of the file before relying on it.
+  return `  // Starter sign-in adapter written by \`aida init\` for the app's sign-in library: it signs
+  // each walkthrough's persona in with the app's own session cookie. Read the notes at the top of
+  // the file before relying on it.
   signIn: ${JSON.stringify(signIn)},
 `;
 }
 
-function routesComment(detected: DetectResult): string {
+function routesComment(detected: DetectResult, destDir: string): string {
   if (detected.framework !== "nextjs") {
     return "// Framework: not detected as Next.js — fill in app.baseUrl by hand below.\n";
   }
-  const lines = [`// Detected: Next.js App Router (${detected.appDir ?? "app/"})`];
+  // Relative to the config, so a committed config doesn't carry this machine's paths.
+  const appDir = detected.appDir ? relative(destDir, detected.appDir).split(sep).join("/") : "app/";
+  const lines = [`// Detected: Next.js App Router (${appDir})`];
   if (detected.routes.length > 0) lines.push(`// Routes seen: ${detected.routes.join(", ")}`);
   if (detected.authLibrary) lines.push(`// Sign-in: looks like ${detected.authLibrary} — see docs/scope.md "Capture modes".`);
   return lines.map((l) => `${l}\n`).join("");
@@ -110,7 +113,7 @@ export function writeAidaConfig(opts: WriteConfigOptions): WriteConfigResult {
 // https://github.com/tryaida/aida/blob/main/packages/engine/src/config/types.ts
 // What each one does: https://github.com/tryaida/aida/blob/main/docs/scope.md
 // ("The help app", "Swappable providers").
-${routesComment(opts.detected)}import { defineConfig } from "aida-docs";
+${routesComment(opts.detected, opts.destDir)}import { defineConfig } from "aida-docs";
 
 export default defineConfig({
   app: {

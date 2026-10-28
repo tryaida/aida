@@ -13,6 +13,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
 import { detectFramework } from "../init/detect.js";
+import { detectAppUrl, pageLooksLikeApp, type DetectedAppUrl } from "../init/app-url.js";
 import { extractBrand, rebaseBrandPaths } from "../init/brand.js";
 import { copyTemplate, TEMPLATE_DIR } from "../init/copy-template.js";
 import { manifestWriteProblem, recordTemplateManifest } from "../init/template-manifest.js";
@@ -37,7 +38,7 @@ import {
   STUDIO_HOSTS_VAR,
   TUNNEL_HOST_WARNING,
 } from "../init/env-local.js";
-import { isAuthJs, writeAuthJsSignIn, SIGN_IN_ADAPTER_PATH } from "../init/sign-in-template.js";
+import { signInTemplateFor, writeAuthJsSignIn, writeBetterAuthSignIn, SIGN_IN_ADAPTER_PATH } from "../init/sign-in-template.js";
 import { excludeHelpFromAppTsconfig, type ExcludeHelpResult } from "../init/app-tsconfig.js";
 import { checkAppDatabase } from "../safety/index.js";
 import type { BrandConfig } from "../config/types.js";
@@ -118,10 +119,13 @@ export interface InitResult {
   };
   /** The starter sign-in adapter, when the app uses Auth.js. `configured` is false when an
    * existing config with no `signIn` was left alone (add it by hand). */
-  signIn?: { file: string; written: boolean; configured: boolean };
+  signIn?: { file: string; written: boolean; configured: boolean; kind: "auth-js" | "better-auth" };
   /** The help folder added to the app's own tsconfig `exclude`, so the app's `next build` doesn't
    * typecheck the help app. */
   appTsconfig: ExcludeHelpResult;
+  /** The app's local address written to the config, and where it came from (`--app-url`, the
+   * app's env files or scripts, or the default). */
+  appUrl: DetectedAppUrl;
   /** What to do next, in order — printed by `runInit`. */
   nextSteps: string[];
 }
@@ -149,13 +153,19 @@ export function runInitCommand(options: InitOptions): InitResult {
   recordTemplateManifest(destDir, TEMPLATE_DIR, { packageJsonCopied: copied.includes("package.json") });
   const appTsconfig = excludeHelpFromAppTsconfig(detected.appRoot ?? appRepoDir, destDir);
 
-  let signInFile: { file: string; written: boolean } | undefined;
-  if (isAuthJs(detected.authLibrary) && detected.appRoot) {
-    signInFile = writeAuthJsSignIn(destDir, detected.appRoot);
+  let signInFile: { file: string; written: boolean; kind: "auth-js" | "better-auth" } | undefined;
+  const signInKind = signInTemplateFor(detected.authLibrary);
+  if (signInKind && detected.appRoot) {
+    const write = signInKind === "better-auth" ? writeBetterAuthSignIn : writeAuthJsSignIn;
+    signInFile = { ...write(destDir, detected.appRoot), kind: signInKind };
   }
+  const appRoot = detected.appRoot ?? appRepoDir;
+  const appUrl: DetectedAppUrl = options.appUrl
+    ? { url: options.appUrl, source: "--app-url" }
+    : detectAppUrl([...new Set([appRoot, appRepoDir])], (f) => relative(appRepoDir, f) || f);
   const config = writeAidaConfig({
     destDir,
-    appUrl: options.appUrl ?? "http://localhost:3000",
+    appUrl: appUrl.url,
     brand,
     detected,
     ci: options.ci ? { claudeAction: options.ciClaude, docsRepo: options.ciDocsRepo } : undefined,
@@ -232,6 +242,7 @@ export function runInitCommand(options: InitOptions): InitResult {
     tunnelHosts,
     signIn: signInFile ? { ...signInFile, configured: signInConfigured } : undefined,
     appTsconfig,
+    appUrl,
     nextSteps: nextSteps({
       appTsconfig,
       destDir,
@@ -254,7 +265,7 @@ function nextSteps(o: {
   destDir: string;
   appRoot: string;
   installed: boolean;
-  signIn?: { file: string };
+  signIn?: { file: string; kind: "auth-js" | "better-auth" };
   signInConfigured: boolean;
   tunnel: boolean;
 }): string[] {
@@ -272,7 +283,9 @@ function nextSteps(o: {
   );
   if (o.signIn) {
     steps.push(
-      `Check ${relative(process.cwd(), o.signIn.file)}: it mints an Auth.js session cookie per persona; make claims() match the app's jwt callback` +
+      (o.signIn.kind === "better-auth"
+        ? `Check ${relative(process.cwd(), o.signIn.file)}: it inserts a better-auth database session per persona; map each role to a seeded user in USERS, and check SESSION_TABLE/USER_TABLE match the app's schema and SESSION_PATH its basePath`
+        : `Check ${relative(process.cwd(), o.signIn.file)}: it mints an Auth.js session cookie per persona; make claims() match the app's jwt callback`) +
         (o.signInConfigured ? "" : `, and add signIn: "${SIGN_IN_ADAPTER_PATH}" to the existing aida.config.ts`),
     );
   }
@@ -287,7 +300,8 @@ function nextSteps(o: {
     steps.push(`Opening the Studio through a tunnel? Re-run init with --tunnel-host <host> (adds it to ${STUDIO_HOSTS_VAR} in ${help}/.env.local and prints a private access link, which localhost then needs too)`);
   }
   steps.push(`Commit ${help}/vendor/ along with the help app: hosts install the engine (aida-docs) from that tarball`);
-  steps.push(`Make the docs: ask your coding agent (aida skills install --target ${app}), or write walkthroughs and run aida build`);
+  const repo = relative(process.cwd(), resolve(o.destDir, "..")) || ".";
+  steps.push(`Make the docs: ask your coding agent (aida skills install --target ${repo}), or write walkthroughs and run aida build`);
   return steps;
 }
 
@@ -327,6 +341,7 @@ export async function runInit(options: InitOptions, json: boolean): Promise<numb
 
   console.log(`help app scaffolded at ${result.destDir}`);
   console.log(`  app repo: ${result.appRepoDir} (${result.framework})`);
+  console.log(`  app address: ${result.appUrl.url} (${result.appUrl.source === "default" ? "default; set app.baseUrl if the app runs elsewhere" : `from ${result.appUrl.source}`})`);
   if (result.routes.length > 0) console.log(`  routes seen: ${result.routes.join(", ")}`);
   const brandEntries = Object.entries(result.brand).filter(([, v]) => typeof v === "string");
   if (brandEntries.length > 0) {
@@ -370,7 +385,7 @@ export async function runInit(options: InitOptions, json: boolean): Promise<numb
   }
   if (result.appTsconfig.note) console.log(`  note: ${result.appTsconfig.note}`);
   if (result.signIn) {
-    console.log(result.signIn.written ? `  wrote ${result.signIn.file} (Auth.js sign-in)` : `  left existing ${result.signIn.file} untouched`);
+    console.log(result.signIn.written ? `  wrote ${result.signIn.file} (${result.signIn.kind === "better-auth" ? "better-auth" : "Auth.js"} sign-in)` : `  left existing ${result.signIn.file} untouched`);
   }
   if (database) {
     console.log(`  warning: ${database.message}`);
@@ -405,7 +420,13 @@ export async function brandFromRunningApp(
     const probe = new URL(appUrl);
     probe.username = "";
     probe.password = ""; // fetch refuses URLs with credentials; the browser later uses them as set
-    await fetch(probe, { method: "GET", signal: AbortSignal.timeout(2000) });
+    const res = await fetch(probe, { method: "GET", signal: AbortSignal.timeout(2000) });
+    const type = res.headers.get("content-type") ?? "";
+    const html = type.includes("html") ? await res.text() : "";
+    // Another app may be answering on this port: only read a brand from a page that names this one.
+    if (html && !pageLooksLikeApp(html, result.brand?.name)) {
+      return { error: `the page at ${probe.origin} doesn't mention ${JSON.stringify(result.brand?.name)}, so it may be another app; check app.baseUrl` };
+    }
   } catch {
     return undefined; // not running: nothing to read, nothing to say
   }

@@ -25,6 +25,7 @@ import { gotoReady } from "../capture/page-ready.js";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { loadConfig } from "../config/index.js";
 import type { ResolvedConfig } from "../config/index.js";
+import { DEFAULT_CAPTURE_LOCALE, DEFAULT_CAPTURE_TIMEZONE } from "../config/types.js";
 import { loadWalkthroughFile, newRunId } from "../walkthrough/index.js";
 import type { Persona, Walkthrough } from "../walkthrough/index.js";
 import { formatFailureLines, isLocalBaseUrl, isSignInPath, runCapture, runLevelFailure } from "../capture/index.js";
@@ -53,6 +54,10 @@ export interface RunInspectOptions {
   after?: string;
   /** Caps every wait while replaying (tests and quick probes). */
   maxWaitMs?: number;
+  /** `--lines <n>`: lines to print (default 80; 0 prints them all). */
+  lines?: number;
+  /** `--skip <n>`: lines to skip from the top, to read a long page a window at a time. */
+  skip?: number;
 }
 
 /**
@@ -101,8 +106,10 @@ export function storageStateKey(
 /** Finds a persona to sign in as: `--as <role>` matches a walkthrough whose `start.persona.role`
  * or `start.signed_in_as` equals it; with no `--as`, the first walkthrough with any persona at
  * all. `undefined` when the walkthroughs dir has nothing usable (inspect still runs — a page
- * that needs no sign-in works fine with no persona). */
-export function resolvePersona(walkthroughsDir: string, as: string | undefined): Persona | undefined {
+ * that needs no sign-in works fine with no persona). A role no walkthrough uses yet but the
+ * config names (`roles`, `readers`) signs in as `{ role }`, so the first walkthrough for a role
+ * can be written from what inspect shows. */
+export function resolvePersona(walkthroughsDir: string, as: string | undefined, knownRoles: string[] = []): Persona | undefined {
   let files: string[] = [];
   try {
     files = readdirSync(walkthroughsDir)
@@ -130,9 +137,18 @@ export function resolvePersona(walkthroughsDir: string, as: string | undefined):
   }
 
   if (as !== undefined) {
-    throw new Error(`no walkthrough in ${walkthroughsDir} signs in as "${as}" (checked start.persona.role / start.signed_in_as)`);
+    if (knownRoles.includes(as)) return { role: as };
+    throw new Error(
+      `no walkthrough in ${walkthroughsDir} signs in as "${as}" (checked start.persona.role / start.signed_in_as), ` +
+        `and the config doesn't name it: add it to \`roles\` in the config (e.g. roles: { ${JSON.stringify(as)}: "..." }) to sign in as it before any walkthrough does`,
+    );
   }
   return undefined;
+}
+
+/** The role ids a config names: `roles` keys and `readers`. */
+export function configRoles(config: { roles?: Record<string, unknown>; readers?: string[] }): string[] {
+  return [...Object.keys(config.roles ?? {}), ...(config.readers ?? [])];
 }
 
 async function openSignedIn(
@@ -149,8 +165,8 @@ async function openSignedIn(
   const context = await browser.newContext({
     viewport: config.viewport ?? { width: 1440, height: 810 },
     deviceScaleFactor: config.deviceScaleFactor ?? 2,
-    locale: config.locale ?? "en-AU",
-    timezoneId: config.timezone ?? "Australia/Perth",
+    locale: config.locale ?? DEFAULT_CAPTURE_LOCALE,
+    timezoneId: config.timezone ?? DEFAULT_CAPTURE_TIMEZONE,
     colorScheme: "light",
     reducedMotion: config.reducedMotion ?? "reduce",
     // A service worker's requests bypass the context's route (the write block): none here.
@@ -238,7 +254,7 @@ async function applyAndScan(page: Page, opts: RunInspectOptions, gate: WriteGate
     await selectOption(page, field, option);
   }
 
-  const scanned = await scanPage(page, { area: opts.area });
+  const scanned = await scanPage(page, { area: opts.area, lineCap: opts.lines, skipLines: opts.skip });
   if (clicks.length === 0) return scanned;
   // `click` stays the last click's outcome (the one-click shape); `clicks` lists each when chained.
   const { name: _name, ...last } = clicks[clicks.length - 1];
@@ -394,7 +410,7 @@ export async function runInspectCommand(opts: RunInspectOptions, json: boolean):
 
   let persona: Persona | undefined;
   try {
-    persona = resolvePersona(config.walkthroughsDir, opts.as);
+    persona = resolvePersona(config.walkthroughsDir, opts.as, configRoles(config));
   } catch (err) {
     const message = (err as Error).message;
     if (json) console.log(JSON.stringify({ ok: false, error: message }));

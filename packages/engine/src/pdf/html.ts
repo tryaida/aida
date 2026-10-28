@@ -4,7 +4,7 @@
 // render/brand.ts's `resolveArtifactBrand`): colours, fonts, logo and product name.
 import type { Walkthrough } from "../walkthrough/index.js";
 import { stepInstruction } from "../walkthrough/describe.js";
-import { NEUTRAL_COLORS, cssColor, fontStack, imageDataUrl, safeFontName, safeFontUrl, type ArtifactColors } from "../render/brand.js";
+import { NEUTRAL_COLORS, cssColor, fontStack, imageDataUrl, isWordmark, safeFontName, safeFontUrl, type ArtifactColors } from "../render/brand.js";
 import { escapeHtml, markdownToHtml } from "./markdown.js";
 import { guideUrl, qrSvg } from "./qr.js";
 import { HeadingSlugger, stripMarkdown } from "../index-search/build.js";
@@ -21,11 +21,19 @@ export interface PdfTheme {
   logo?: string;
   /** Logo for dark backgrounds (data: URL), when the brand has one. */
   logoDark?: string;
+  /** The logo is a wordmark that already spells the name, so it's shown without the name. */
+  logoWide?: boolean;
   /** Local `@font-face` rules (fonts.ts) that replace `fontUrl` when its files are cached. */
   fontFaceCss?: string;
   /** House style preset: cover layout, screenshot framing, ring shape. */
   style: "minimal" | "friendly" | "bold";
   tagline?: string;
+}
+
+/** The name beside the logo, left out when the logo is a wordmark that already spells it. */
+function brandName(theme: PdfTheme, name: string | undefined): string {
+  if (!name || ((theme.logo || theme.logoDark) && theme.logoWide)) return "";
+  return `<span>${escapeHtml(name)}</span>`;
 }
 
 /** `PdfBrand` (any vintage) -> a fully-populated theme. */
@@ -50,6 +58,7 @@ export function pdfTheme(brand?: PdfBrand): PdfTheme {
     fontUrl: safeFontUrl(brand?.fontUrl),
     logo: brand?.logoSrc ?? imageDataUrl(brand?.logoPath),
     logoDark: brand?.logoDarkSrc ?? imageDataUrl(brand?.logoDarkPath),
+    ...(isWordmark(brand?.logoPath) || isWordmark(brand?.logoDarkPath) ? { logoWide: true } : {}),
     fontFaceCss: brand?.fontFaceCss,
     style: brand?.style === "minimal" || brand?.style === "friendly" ? brand.style : "bold",
     ...(brand?.tagline ? { tagline: brand.tagline } : {}),
@@ -600,7 +609,7 @@ export function buildCoverHtml(title: string, date: string, brand?: PdfBrand, op
     .has-hero .facts { flex-direction: column; gap: 6mm; }
   `;
   const hero = opts.heroImage ? `<img class="hero" src="${fileUrl(opts.heroImage)}" alt="" />` : "";
-  const brandRow = name || theme.logo || theme.logoDark ? `<div class="brand">${logoOnDark(theme, "logo")}${name ? `<span>${escapeHtml(name)}</span>` : ""}</div>` : "";
+  const brandRow = name || theme.logo || theme.logoDark ? `<div class="brand">${logoOnDark(theme, "logo")}${brandName(theme, name)}</div>` : "";
   const lede = name
     ? `Step-by-step guides for everyday tasks in ${escapeHtml(name)}, with a screenshot for every step.`
     : "Step-by-step guides for everyday tasks, with a screenshot for every step.";
@@ -663,7 +672,7 @@ function lightCoverHtml(title: string, date: string, theme: PdfTheme, name: stri
     .foot { margin-top: ${opts.heroImage ? "8mm" : "auto"}; display: flex; justify-content: space-between; font-size: 8.5pt; color: var(--muted-fg);
       border-top: 0.75pt solid ${friendly ? "color-mix(in srgb, var(--primary) 18%, white)" : "var(--border)"}; padding-top: 4mm; }
   `;
-  const brandRow = name || theme.logo || theme.logoDark ? `<div class="brand">${logoOnLight(theme, "logo")}${name ? `<span>${escapeHtml(name)}</span>` : ""}</div>` : "";
+  const brandRow = name || theme.logo || theme.logoDark ? `<div class="brand">${logoOnLight(theme, "logo")}${brandName(theme, name)}</div>` : "";
   const eyebrow = `<div class="eyebrow">${name ? `${escapeHtml(name)} · ` : ""}Printable manual</div>`;
   const tagline = theme.tagline ? `<p class="tagline">${escapeHtml(theme.tagline)}</p>` : "";
   const text = `${friendly ? "" : '<div class="rule"></div>'}${eyebrow}<h1>${escapeHtml(title)}</h1><p class="lede">${lede}</p>${tagline}<div class="facts">${facts}</div>`;
@@ -820,7 +829,7 @@ function cardPageHeightMm(paper: "A4" | "Letter" = "A4"): number {
 }
 
 function cardStrip(theme: PdfTheme, name: string | undefined, kind: string): string {
-  return `<div class="strip"><div class="who">${logoOnDark(theme, "logo")}${name ? `<span>${escapeHtml(name)}</span>` : ""}</div><div class="kind">${kind}</div></div>`;
+  return `<div class="strip"><div class="who">${logoOnDark(theme, "logo")}${brandName(theme, name)}</div><div class="kind">${kind}</div></div>`;
 }
 
 const CARD_STRIP_STYLE = `

@@ -9,7 +9,7 @@ import { newRunId, personaRole, resolveTemplatesDeep, withRunValues } from "../w
 import { checkLeftStates, needsPreparation, prepareWalkthrough, preparationWrites, WalkthroughSetupError } from "../states/prepare.js";
 import type { PrepareOptions, PrepareReport } from "../states/prepare.js";
 import type { ResolvedConfig } from "../config/types.js";
-import { resolveCaptureSettings } from "../config/types.js";
+import { DEFAULT_CAPTURE_LOCALE, DEFAULT_CAPTURE_TIMEZONE, resolveCaptureSettings } from "../config/types.js";
 import { boxOf, center, locate } from "./locate.js";
 import { waitForText } from "./text-check.js";
 import { paint, settle, smoothScrollTo } from "./settle.js";
@@ -182,8 +182,8 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
     const contextOptions = {
       viewport,
       deviceScaleFactor,
-      locale: config.locale ?? "en-AU",
-      timezoneId: config.timezone ?? "Australia/Perth",
+      locale: config.locale ?? DEFAULT_CAPTURE_LOCALE,
+      timezoneId: config.timezone ?? DEFAULT_CAPTURE_TIMEZONE,
       colorScheme: "light" as const,
       // Most real apps' CSS/JS honour this, which keeps captures still —
       // crisper frames, fewer flaky mid-animation screenshots.

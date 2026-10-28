@@ -1,0 +1,57 @@
+walkthrough: pick-the-final-date
+version: 1
+title: Pick the final date
+summary: Once people have answered, choose the date that works best and let everyone know.
+for: Organizers
+section: Polls
+start:
+  signed_in_as: organizer
+  page: /poll/seed-0278
+steps:
+  - id: open-finalize
+    chapter: Choose the date
+    title: Open Finalize
+    say: When enough people have answered, finalize the poll.
+    caption: Finalize the poll.
+    page_text: Open the poll and select **Finalize**.
+    actions:
+      - do: click
+        target: { role: button, name: Finalize }
+        highlight: true
+  - id: choose-top-date
+    title: Choose the date
+    say: Dates are ranked by how many people can make it. Pick the one at the top, or any other.
+    caption: Pick the date that works best.
+    page_text: Dates are listed by how many people can make them, best first. Select the date you want.
+    actions:
+      - do: click
+        target: { role: button, nth: 0, within: { role: list, within: { role: dialog, name: Finalize poll } } }
+        highlight: true
+  - id: choose-who-to-tell
+    chapter: Let people know
+    title: Choose who to tell
+    say: Choose who gets an email with the final date and a calendar invite. Everyone who answered is ticked to start with.
+    caption: Choose who gets the invite.
+    page_text: Everyone who answered is ticked. Untick anyone who shouldn't get the email and calendar invite, then select **Next**.
+    actions:
+      - do: point
+        target: { role: list, within: { role: dialog, name: Notify participants } }
+        highlight: true
+      - do: click
+        target: { role: button, name: Next }
+  - id: finalize
+    title: Check and finalize
+    say: Check the date, then finalize. Rallly emails everyone you chose and marks the poll as scheduled.
+    caption: Check the date, then finalize.
+    page_text: Check the date in the summary, then select **Finalize and notify**. Rallly emails the people you chose and marks the poll as scheduled.
+    actions:
+      - do: click
+        target: { role: button, name: Finalize and notify }
+        highlight: true
+      - do: expect
+        target: { text: Date scheduled }
+validate:
+  database:
+    - name: poll-scheduled
+      sql: "select status::text as status from polls where id = 'seed-0278'"
+      expect: { status: scheduled }

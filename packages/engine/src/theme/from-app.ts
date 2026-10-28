@@ -23,6 +23,8 @@ export interface AppStyleSample {
   siteName?: string;
   body: { bg: string; color: string; fontFamily: string };
   headingFontFamily?: string;
+  /** The page's first visible h1/h2 text, to tell the page's own name from the app's in the title. */
+  heading?: string;
   /** Families `document.fonts` reports as loaded. */
   loadedFamilies: string[];
   nav?: { bg: string; color: string; activeBg?: string };
@@ -67,7 +69,10 @@ export const APP_STYLE_SCRIPT = String.raw`(() => {
   };
   try { document.fonts.forEach((f) => { if (f.status === 'loaded') out.loadedFamilies.push(f.family.replace(/^["']|["']$/g, '')); }); } catch {}
   const h = [...document.querySelectorAll('h1, h2')].find(visible);
-  if (h) out.headingFontFamily = getComputedStyle(h).fontFamily;
+  if (h) {
+    out.headingFontFamily = getComputedStyle(h).fontFamily;
+    out.heading = (h.innerText || h.textContent || '').trim().slice(0, 80);
+  }
 
   // Nav / sidebar: the biggest visible landmark hugging the left or top edge.
   const navs = [...document.querySelectorAll('nav, aside, header, [role=navigation], [data-sidebar], [class*="sidebar" i]')]
@@ -113,8 +118,18 @@ export const APP_STYLE_SCRIPT = String.raw`(() => {
 
   // Logo: a graphic (img/svg) near the top-left, preferring one inside a link home that also
   // carries the app's name — then the whole link is the wordmark.
+  // Covered by a dialog's overlay or a banner, a graphic would be drawn dimmed or not at all.
+  const uncovered = (el) => {
+    const r = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(Math.min(innerWidth - 1, r.left + r.width / 2), Math.min(innerHeight - 1, r.top + r.height / 2));
+    return Boolean(hit && (el.contains(hit) || hit.contains(el) || (el.closest('a') && el.closest('a').contains(hit))));
+  };
   const graphics = [...document.querySelectorAll('img, svg')].filter(visible).map((el) => ({ el, r: el.getBoundingClientRect() }))
-    .filter(({ r }) => r.left < 420 && r.top < 170 && r.width >= 14 && r.height >= 12 && r.width <= 420 && r.height <= 140);
+    .filter(({ r }) => r.left < 420 && r.top < 170 && r.width >= 14 && r.height >= 12 && r.width <= 420 && r.height <= 140)
+    .filter(({ el }) => uncovered(el));
+  // Menu items link home too ("Home", "Dashboard"): an icon beside one of these words is a menu
+  // item, not the logo.
+  const NAV_WORDS = /^(home|dashboard|overview|start|back|menu|polls?|events?|inbox|today)$/i;
   const score = ({ el }) => {
     const a = el.closest('a');
     const href = a ? a.getAttribute('href') || '' : '';
@@ -124,6 +139,8 @@ export const APP_STYLE_SCRIPT = String.raw`(() => {
     if (a && (href === '/' || href === location.origin + '/' || /^\/(dashboard|home)?$/.test(href))) s += 3;
     if (el.closest('header, nav, aside, [data-sidebar], [class*="sidebar" i]')) s += 1;
     if (el.closest('button')) s -= 4;
+    const label = a ? (a.innerText || a.textContent || '').trim() : '';
+    if (!/logo|brand|wordmark/.test(hint) && NAV_WORDS.test(label)) s -= 4;
     return s;
   };
   const best = graphics.map((g) => ({ ...g, s: score(g) })).filter((g) => g.s >= 2).sort((a, b) => b.s - a.s || a.r.top - b.r.top || a.r.left - b.r.left)[0];
@@ -313,7 +330,7 @@ export function brandFromSamples(samples: AppStyleSample[]): AppBrandReading {
   return { brand, notes };
 }
 
-/** The app's name: og:site_name, the logo's alt/text, else the page title's first part. */
+/** The app's name: og:site_name, the logo's alt/text, else from the page titles (see titleName). */
 export function appName(samples: AppStyleSample[]): string | undefined {
   for (const s of samples) {
     const v = s.siteName?.trim();
@@ -325,8 +342,27 @@ export function appName(samples: AppStyleSample[]): string | undefined {
     const text = s.logo?.text.split(/\s{2,}|\n/)[0].trim();
     if (text && text.length <= 30) return text;
   }
-  const title = samples[0]?.title.split(/\s+[-|–—:·•]\s+/)[0].trim();
-  return title && title.length <= 40 ? title : undefined;
+  return titleName(samples);
+}
+
+/** The app's name from page titles like "Orders · Acme" or "Acme | Orders": the part every
+ * sampled page shares, else the part that isn't the page's own heading, else the last part (the
+ * usual "Page - App" order). A title with no separator is taken whole. */
+export function titleName(samples: Pick<AppStyleSample, "title" | "heading">[]): string | undefined {
+  const split = (t: string) => t.split(/\s+[-|–—:·•]\s+/).map((p) => p.trim()).filter(Boolean);
+  const titled = samples.filter((s) => s.title?.trim());
+  if (titled.length === 0) return undefined;
+  const parts = split(titled[0].title);
+  const fits = (p: string | undefined) => (p && p.length <= 40 ? p : undefined);
+  if (parts.length <= 1) return fits(parts[0]);
+  if (titled.length > 1) {
+    const shared = parts.filter((p) => titled.every((s) => split(s.title).includes(p)));
+    if (shared.length === 1) return fits(shared[0]);
+  }
+  const heading = titled[0].heading?.trim().toLowerCase();
+  const notHeading = heading ? parts.filter((p) => p.toLowerCase() !== heading) : [];
+  if (notHeading.length === 1) return fits(notHeading[0]);
+  return fits(parts[parts.length - 1]);
 }
 
 // ------------------------------------------------------------------ browser session

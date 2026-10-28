@@ -1,4 +1,4 @@
-// The site's header mark: the app's own logo and name, then "Help". Light/dark logos swap with
+// The site's header mark: the app's own logo and name (or its wordmark alone), then "Help". Light/dark logos swap with
 // the theme when the app has both (lib/brand.json, written by the aida engine).
 import { brand } from "@/lib/brand";
 import { cn } from "@/lib/cn";
@@ -18,12 +18,22 @@ export function BrandLogo({ className }: { className?: string }) {
 }
 
 export function BrandMark() {
+  // A wordmark already spells the name: show it on its own, at text height.
+  const wordmark = Boolean(brand.logo && brand.logoWide);
   return (
     <span className="inline-flex items-center gap-2.5">
-      <BrandLogo className="size-7" />
-      <span className="font-heading text-[0.95rem] font-semibold tracking-tight">
-        {brand.name === "Help" ? "Help" : brand.name}
-      </span>
+      {wordmark ? (
+        <span role="img" aria-label={brand.name} className="inline-flex">
+          <BrandLogo className="h-5 w-auto max-w-40" />
+        </span>
+      ) : (
+        <>
+          <BrandLogo className="size-7" />
+          <span className="font-heading text-[0.95rem] font-semibold tracking-tight">
+            {brand.name === "Help" ? "Help" : brand.name}
+          </span>
+        </>
+      )}
       {brand.name === "Help" ? null : (
         <span className="rounded-full border border-fd-primary/25 bg-fd-primary/10 px-2 py-0.5 text-[0.7rem] font-medium uppercase tracking-wider text-fd-primary">
           Help

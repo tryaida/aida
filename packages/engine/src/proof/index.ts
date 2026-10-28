@@ -26,6 +26,7 @@ import { loadNarrationBeats } from "../render/voice-input.js";
 import { qualityFor } from "../render/video.js";
 import { loadWalkthroughFile, type Walkthrough } from "../walkthrough/index.js";
 import { renderBrandCss } from "../theme/write.js";
+import { cardText } from "../walkthrough/cards.js";
 import { SITE_PAGE_WIDTH, sitePageHtml } from "./site-page.js";
 
 const execFileAsync = promisify(execFile);
@@ -118,8 +119,8 @@ function narrationFor(wf: Walkthrough, voiceDir: string): Record<string, Narrati
     }
   }
   const line = (id: string): string => {
-    if (id === "intro") return wf.intro?.say ?? wf.title;
-    if (id === "outro") return wf.outro?.say ?? "";
+    if (id === "intro") return cardText(wf).intro.say;
+    if (id === "outro") return cardText(wf).outro.say;
     return wf.steps.find((s) => s.id === id)?.say ?? "";
   };
   return Object.fromEntries(beatIds(wf).map((id) => [id, { audioPath: "", durationMs: Math.max(1200, line(id).length * 65) }]));

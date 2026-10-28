@@ -4,7 +4,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { ResolvedConfig } from "../config/index.js";
-import { buildDomain } from "../domain/index.js";
 import {
   BRIEF_SECTIONS,
   briefPath,
@@ -16,7 +15,7 @@ import {
   parseBrief,
   sectionText,
 } from "../brief/index.js";
-import { fail, loadOptionalConfig, resolveAppRepo } from "./domain.js";
+import { buildAppDomain, fail, loadOptionalConfig, resolveAppRepo } from "./domain.js";
 
 interface BriefFileOptions {
   configPath?: string;
@@ -100,7 +99,7 @@ export async function runBriefInit(opts: BriefFileOptions & { repo?: string; for
     return fail("brief init", `${file} already exists; pass --force to replace it`, opts.json, { path: file });
   }
   const repo = resolveAppRepo(opts.repo, config);
-  const domain = existsSync(repo) ? buildDomain(repo) : undefined;
+  const domain = existsSync(repo) ? buildAppDomain(repo, {}, !opts.repo) : undefined;
   const roles = config?.roles
     ? Object.entries(config.roles).map(([role, v]) => ({ role, name: typeof v === "string" ? v : v.name }))
     : (config?.readers ?? []).map((r) => ({ role: r, name: r.replace(/[-_]/g, " ") }));

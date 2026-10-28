@@ -27,6 +27,7 @@ vi.mock("../../src/capture/index.js", async (importOriginal) => {
 });
 vi.mock("../../src/commands/voice.js", () => ({ buildVoiceManifest: vi.fn() }));
 vi.mock("../../src/render/index.js", () => ({
+  defaultConcurrency: vi.fn(() => 2),
   loadNarrationBeats: vi.fn(() => undefined),
   render: vi.fn(),
 }));

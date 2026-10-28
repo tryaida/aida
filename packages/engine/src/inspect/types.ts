@@ -5,8 +5,10 @@ export interface InspectScanOptions {
    * contentinfo, complementary, form, region, dialog) instead of the default main-landmark/open-
    * dialog scope. */
   area?: string;
-  /** Hard cap on printed lines (after option/line trimming). Default 80. */
+  /** Hard cap on printed lines (after option/line trimming). Default 80; 0 prints them all. */
   lineCap?: number;
+  /** Lines to skip from the top before printing, to read a long page a window at a time. */
+  skipLines?: number;
   /** Cap on native `<select>` options listed before "+N more". Default 15. */
   optionCap?: number;
 }

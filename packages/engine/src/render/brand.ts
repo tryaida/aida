@@ -5,7 +5,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import type { BrandConfig } from "../config/types.js";
-import { DEFAULT_BRAND_PRIMARY, brandFontUrl } from "../theme/write.js";
+import { DEFAULT_BRAND_PRIMARY, WORDMARK_ASPECT, brandFontUrl, imageAspect } from "../theme/write.js";
 import { isGrayish, isPale, isReadable, readableForeground, toCssColor } from "../theme/color.js";
 import type { TimelineBrand } from "./types.js";
 import { withAppBrand } from "../theme/app-brand.js";
@@ -208,6 +208,7 @@ export function timelineBrand(brand: ArtifactBrand | undefined, productName?: st
   if (logoSrc) {
     out.logoSrc = logoSrc;
     out.logoForDark = Boolean(dark);
+    if (isWordmark(dark ? brand.logoDarkPath : brand.logoPath)) out.logoWide = true;
   }
   // Light cards (minimal/friendly) want the light-background logo; only worth a second copy when
   // the dark-background one took `logoSrc`.
@@ -227,4 +228,11 @@ export function timelineBrand(brand: ArtifactBrand | undefined, productName?: st
   if (brand.tagline) out.tagline = brand.tagline;
   if (brand.radiusPx !== undefined) out.radius = Math.max(0, Math.min(24, brand.radiusPx));
   return out;
+}
+
+/** True when the logo file is much wider than tall (a wordmark that spells the name). */
+export function isWordmark(file: string | undefined): boolean {
+  if (!file || !existsSync(file)) return false;
+  const aspect = imageAspect(readFileSync(file), path.extname(file).toLowerCase());
+  return aspect !== undefined && aspect >= WORDMARK_ASPECT;
 }

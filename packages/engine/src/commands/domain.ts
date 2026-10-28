@@ -1,7 +1,7 @@
 // `aida domain` (build-plan.md M31): prints the app's domain model, read statically from its
 // database schema — entities, key columns, links and states — for the Understand step.
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { loadConfig, type ResolvedConfig } from "../config/index.js";
 import { buildDomain, findEntity, formatDomain, formatEntity, type DomainSourceKind } from "../domain/index.js";
 import { resolveAppDir } from "../safety/database.js";
@@ -52,7 +52,7 @@ export async function runDomain(opts: RunDomainOptions): Promise<number> {
   const repo = resolveAppRepo(opts.repo, config);
   if (!existsSync(repo)) return fail("domain", `app repo not found: ${repo}`, opts.json);
 
-  const result = buildDomain(repo, { source: opts.source as DomainSourceKind | undefined });
+  const result = buildAppDomain(repo, { source: opts.source as DomainSourceKind | undefined }, !opts.repo);
   if (!result.ok) return fail("domain", result.error, opts.json, { repo });
   const { model } = result;
 
@@ -69,4 +69,33 @@ export async function runDomain(opts: RunDomainOptions): Promise<number> {
   if (opts.json) console.log(JSON.stringify({ ok: true, repo, ...model }));
   else console.log(formatDomain(model));
   return 0;
+}
+
+/** `buildDomain` for the app's repo. When the repo wasn't named explicitly and has no schema, the
+ * workspace monorepo root around it is read instead: there the schema often lives in a shared
+ * package (packages/db), not the app's own folder. */
+export function buildAppDomain(repo: string, opts: Parameters<typeof buildDomain>[1] = {}, tryWorkspace = true): ReturnType<typeof buildDomain> {
+  const result = buildDomain(repo, opts);
+  const workspace = !result.ok && tryWorkspace ? workspaceRoot(repo) : undefined;
+  if (!workspace) return result;
+  const fromWorkspace = buildDomain(workspace, opts);
+  return fromWorkspace.ok ? fromWorkspace : result;
+}
+
+/** The workspace monorepo root above `dir` (a pnpm-workspace.yaml, or a package.json with
+ * `workspaces`), stopping at the git root. Undefined when `dir` isn't inside one. */
+export function workspaceRoot(dir: string): string | undefined {
+  for (let d = dirname(resolve(dir)); d !== dirname(d); d = dirname(d)) {
+    if (existsSync(join(d, "pnpm-workspace.yaml"))) return d;
+    const pkg = join(d, "package.json");
+    if (existsSync(pkg)) {
+      try {
+        if ((JSON.parse(readFileSync(pkg, "utf8")) as { workspaces?: unknown }).workspaces) return d;
+      } catch {
+        // not a readable package.json: keep looking
+      }
+    }
+    if (existsSync(join(d, ".git"))) return undefined;
+  }
+  return undefined;
 }

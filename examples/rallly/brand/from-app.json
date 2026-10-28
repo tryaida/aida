@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "source": {
+    "baseUrl": "http://localhost:3210",
+    "pages": [
+      "/polls"
+    ]
+  },
+  "brand": {
+    "colors": {
+      "background": "hsl(0 0% 98%)",
+      "foreground": "hsl(240 3.7% 15.9%)",
+      "border": "hsl(240 5.9% 90%)"
+    },
+    "font": "Inter",
+    "density": "regular",
+    "name": "Polls"
+  },
+  "replaces": {}
+}

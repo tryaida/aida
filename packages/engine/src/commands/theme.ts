@@ -16,7 +16,7 @@ import { loadWalkthroughFile } from "../walkthrough/index.js";
 import { detectedReplaces, writeAppBrand, withAppBrand, type MergeField } from "../theme/app-brand.js";
 import { readBrandFromApp } from "../theme/from-app.js";
 import { readBrandNotes, resolveBrandStyle, type ResolvedStyle } from "../theme/style.js";
-import { resolvePersona, storageStateKey } from "./inspect.js";
+import { configRoles, resolvePersona, storageStateKey } from "./inspect.js";
 import { extractBrand, rebaseBrandPaths } from "../init/brand.js";
 import { formatBrandBlock } from "../init/write-config.js";
 import { writeHelpAppTheme, type WriteThemeResult } from "../theme/write.js";
@@ -140,7 +140,7 @@ async function themeFromApp(config: ResolvedConfig, configFile: string, options:
   // Same gate as capture and inspect: even a read-only visit signs in.
   const refusal = await captureSafetyRefusal(config);
   if (refusal) throw new Error(refusal.error);
-  const persona = resolvePersona(config.walkthroughsDir, options.as);
+  const persona = resolvePersona(config.walkthroughsDir, options.as, configRoles(config));
   const pages = options.pages && options.pages.length > 0 ? options.pages : startPages(config.walkthroughsDir, persona?.role);
   const brandDir = join(config.configDir, "brand");
   const read = await readBrandFromApp({

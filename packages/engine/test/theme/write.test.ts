@@ -204,3 +204,34 @@ describe("writeHelpAppTheme", () => {
     );
   });
 });
+
+describe("imageAspect and logoWide", () => {
+  it("reads an SVG's viewBox, or its width and height", async () => {
+    const { imageAspect } = await import("../../src/theme/write.js");
+    expect(imageAspect(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 97 18"></svg>'), ".svg")).toBeCloseTo(97 / 18);
+    expect(imageAspect(Buffer.from('<svg width="32px" height="32px"></svg>'), ".svg")).toBe(1);
+    expect(imageAspect(Buffer.from("<svg></svg>"), ".svg")).toBeUndefined();
+  });
+
+  it("reads a PNG's header", async () => {
+    const { imageAspect } = await import("../../src/theme/write.js");
+    const png = Buffer.alloc(24);
+    png.write("IHDR", 12, "ascii");
+    png.writeUInt32BE(300, 16);
+    png.writeUInt32BE(60, 20);
+    expect(imageAspect(png, ".png")).toBe(5);
+  });
+
+  it("marks a wordmark logo as wide in brand.json, and a square one not", async () => {
+    const { mkdtempSync, writeFileSync, readFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join: j } = await import("node:path");
+    const { writeHelpAppTheme } = await import("../../src/theme/write.js");
+    for (const [viewBox, wide] of [["0 0 120 24", true], ["0 0 32 32", false]] as const) {
+      const dir = mkdtempSync(j(tmpdir(), "aida-wordmark-"));
+      writeFileSync(j(dir, "logo.svg"), `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}"></svg>`);
+      writeHelpAppTheme({ brand: { name: "Acme", logo: "logo.svg" }, configDir: dir }, j(dir, "help"));
+      expect(JSON.parse(readFileSync(j(dir, "help", "lib", "brand.json"), "utf8")).logoWide).toBe(wide);
+    }
+  });
+});

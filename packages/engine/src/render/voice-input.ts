@@ -47,7 +47,9 @@ export function loadNarrationBeats(voiceArg: string): Record<string, NarrationBe
   const beats: Record<string, NarrationBeat> = {};
   if (Array.isArray(raw.results)) {
     for (const r of (raw as EngineNarrateManifest).results) {
-      beats[r.id] = { audioPath: path.isAbsolute(r.audioPath) ? r.audioPath : path.resolve(dir, r.audioPath), durationMs: r.durationMs };
+      // A blank line has no clip (audioPath ""): keep it empty rather than resolve it to the folder.
+      const audioPath = !r.audioPath ? "" : path.isAbsolute(r.audioPath) ? r.audioPath : path.resolve(dir, r.audioPath);
+      beats[r.id] = { audioPath, durationMs: r.durationMs };
     }
     return beats;
   }

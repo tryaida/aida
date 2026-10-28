@@ -134,6 +134,8 @@ export interface TimelineBrand {
   tagline?: string;
   /** The app's corner radius in px (0-24), for the caption box and frame. */
   radius?: number;
+  /** The logo is a wordmark that already spells the name: the cards show it without the name. */
+  logoWide?: boolean;
 }
 
 export interface Timeline {

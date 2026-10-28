@@ -312,6 +312,7 @@ export async function scanPage(page: Page, opts: InspectScanOptions = {}): Promi
   const duplicates = await collectDuplicateHints(root, combined).catch(() => []);
   const { text, lineCount, truncated } = formatSnapshot(combined, requiredNames, {
     lineCap: opts.lineCap,
+    skipLines: opts.skipLines,
     optionCap: opts.optionCap,
     hints,
     duplicates,

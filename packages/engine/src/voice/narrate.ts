@@ -23,6 +23,12 @@ export async function narrate(
 
   for (const line of lines) {
     const text = applyPronunciation(line.text, pronunciation)
+    // Nothing to say: no clip at all. A voice given empty text returns a short burst of noise.
+    if (!text.trim()) {
+      results.push({ id: line.id, audioPath: '', durationMs: 0, cached: true, text: '' })
+      cached++
+      continue
+    }
     const model = line.model ?? opts.model
     const voice = line.voice ?? opts.voice
     const speed = line.speed ?? opts.speed

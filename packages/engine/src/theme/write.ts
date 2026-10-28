@@ -29,6 +29,9 @@ export interface BrandJson {
   logoDark: string | null;
   icon: string | null;
   fontUrl: string | null;
+  /** True when the logo is a wordmark (much wider than tall, so it already spells the name): the
+   * site shows it on its own instead of the logo followed by the name again. */
+  logoWide?: boolean;
   /** House style preset (theme/style.ts) — the site and Studio frame screenshots to match. */
   style?: BrandStyle;
 }
@@ -63,6 +66,29 @@ const ASSET_KINDS = [
   { field: "logoDark", base: "logo-dark" },
   { field: "icon", base: "icon" },
 ] as const;
+
+/** Width over height from which a logo counts as a wordmark (logoWide). */
+export const WORDMARK_ASPECT = 2.2;
+
+/** Width over height of a PNG or SVG logo, from its header or viewBox/size attributes; undefined
+ * for other formats or when it can't tell. */
+export function imageAspect(bytes: Buffer, ext: string): number | undefined {
+  if (ext === ".png" && bytes.length >= 24 && bytes.toString("ascii", 12, 16) === "IHDR") {
+    const w = bytes.readUInt32BE(16);
+    const h = bytes.readUInt32BE(20);
+    return w > 0 && h > 0 ? w / h : undefined;
+  }
+  if (ext === ".svg") {
+    const tag = bytes.toString("utf8", 0, Math.min(bytes.length, 4096)).match(/<svg\b[^>]*>/i)?.[0];
+    if (!tag) return undefined;
+    const vb = tag.match(/viewBox\s*=\s*["']\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)/i);
+    if (vb && Number(vb[1]) > 0 && Number(vb[2]) > 0) return Number(vb[1]) / Number(vb[2]);
+    const w = Number(tag.match(/\swidth\s*=\s*["']([\d.]+)(px)?["']/i)?.[1]);
+    const h = Number(tag.match(/\sheight\s*=\s*["']([\d.]+)(px)?["']/i)?.[1]);
+    return w > 0 && h > 0 ? w / h : undefined;
+  }
+  return undefined;
+}
 
 type VarList = Array<[name: string, value: string] | null>;
 
@@ -307,8 +333,13 @@ export function writeHelpAppTheme(sourceIn: ThemeSource, helpAppDir: string): Wr
     const dest = join(brandDir, name);
     keep.add(name);
     files.push(dest);
-    if (writeIfChanged(dest, readFileSync(src))) written.push(dest);
+    const bytes = readFileSync(src);
+    if (writeIfChanged(dest, bytes)) written.push(dest);
     json[field] = `/brand/${name}`;
+    if (field === "logo") {
+      const aspect = imageAspect(bytes, ext);
+      if (aspect !== undefined) json.logoWide = aspect >= WORDMARK_ASPECT;
+    }
   }
 
   if (existsSync(brandDir)) {

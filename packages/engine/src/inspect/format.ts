@@ -175,17 +175,26 @@ export function redactLines(lines: string[]): string[] {
 }
 
 /** Hard line cap, applied last — truncates with a one-line count of what got cut, same shape as
- * capture's failure-report snapshot cap. */
-export function capLines(lines: string[], cap: number): { lines: string[]; truncated: boolean } {
-  if (lines.length <= cap) return { lines, truncated: false };
-  const kept = lines.slice(0, cap - 1);
-  kept.push(`… (${lines.length - (cap - 1)} more lines trimmed — scope with --area)`);
+ * capture's failure-report snapshot cap. `skip` drops that many lines from the top first (with a
+ * line saying so), so a long page can be read a window at a time; `cap` 0 means no cap. */
+export function capLines(lines: string[], cap: number, skip = 0): { lines: string[]; truncated: boolean } {
+  const start = Math.max(0, Math.min(skip, lines.length));
+  const head = start > 0 ? [`… (${start} lines above skipped)`] : [];
+  const rest = lines.slice(start);
+  if (cap <= 0 || rest.length + head.length <= cap) return { lines: [...head, ...rest], truncated: false };
+  const room = Math.max(1, cap - 1 - head.length);
+  const kept = [...head, ...rest.slice(0, room)];
+  const more = rest.length - room;
+  kept.push(`… (${more} more lines trimmed — see them with --skip ${start + room}, or scope with --area)`);
   return { lines: kept, truncated: true };
 }
 
 export interface FormatOptions {
   optionCap?: number;
+  /** Lines to print. Default 80; 0 prints them all. */
   lineCap?: number;
+  /** Lines to skip from the top before printing (`--skip`). */
+  skipLines?: number;
   /** Short-name + required/optional hints per field; see `annotateFieldHints`. */
   hints?: FieldHint[];
   /** Role+name duplicate disambiguators; see `annotateDuplicates`. */
@@ -208,7 +217,7 @@ export function formatSnapshot(rawSnapshotText: string, requiredNames: Set<strin
   lines = markRequired(lines, requiredNames);
   lines = annotateDuplicates(lines, opts.duplicates ?? []);
   lines = redactLines(lines);
-  const { lines: finalLines, truncated } = capLines(lines, lineCap);
+  const { lines: finalLines, truncated } = capLines(lines, lineCap, opts.skipLines ?? 0);
 
   return { text: finalLines.join("\n"), lineCount: finalLines.length, truncated };
 }

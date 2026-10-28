@@ -184,3 +184,33 @@ describe("formatSnapshot", () => {
     expect(text.split("\n").at(-1)).toMatch(/more lines trimmed/);
   });
 });
+
+describe("capLines paging", () => {
+  const lines = Array.from({ length: 200 }, (_, i) => `- text: line ${i}`);
+
+  it("says where the next window starts", () => {
+    const { lines: out, truncated } = capLines(lines, 80);
+    expect(truncated).toBe(true);
+    expect(out).toHaveLength(80);
+    expect(out.at(-1)).toMatch(/121 more lines trimmed — see them with --skip 79/);
+  });
+
+  it("skips lines from the top and says so", () => {
+    const { lines: out } = capLines(lines, 80, 79);
+    expect(out[0]).toBe("… (79 lines above skipped)");
+    expect(out[1]).toBe("- text: line 79");
+    expect(out.at(-1)).toMatch(/--skip 157/);
+  });
+
+  it("prints everything with a cap of 0", () => {
+    const { lines: out, truncated } = capLines(lines, 0);
+    expect(truncated).toBe(false);
+    expect(out).toHaveLength(200);
+  });
+
+  it("ends cleanly on the last window", () => {
+    const { lines: out, truncated } = capLines(lines, 80, 157);
+    expect(truncated).toBe(false);
+    expect(out.at(-1)).toBe("- text: line 199");
+  });
+});

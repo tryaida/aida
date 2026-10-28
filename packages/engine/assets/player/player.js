@@ -62,6 +62,8 @@
   for (const [nameId, logoId] of [['brand-name', 'brand-logo'], ['outro-brand-name', 'outro-logo']]) {
     $(nameId).textContent = brand.name
     if (logoSrc) { $(logoId).src = logoSrc; $(logoId).style.display = ''; logos.push($(logoId)) }
+    // A wordmark already spells the name: don't print it again beside it.
+    if (logoSrc && brand.logoWide) $(nameId).style.display = 'none'
   }
   $('chrome-url').textContent = brand.name || ''
   // Long titles step down a size so they wrap to at most ~2-3 balanced lines.

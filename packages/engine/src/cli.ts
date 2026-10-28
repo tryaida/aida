@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { Command } from "commander";
+import { Command, InvalidArgumentError } from "commander";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -207,15 +207,17 @@ program
       "and --after, replay that walkthrough's real steps (this writes, like capture) and map the page a step leaves",
   )
   .requiredOption("--config <path>", "path to aida.config.ts/.mjs")
-  .option("--as <persona>", "sign in as the walkthrough persona whose start.persona.role/signed_in_as matches this")
+  .option("--as <persona>", "sign in as the walkthrough persona whose start.persona.role/signed_in_as matches this, or a role the config names (roles, readers) that no walkthrough uses yet")
   .option("--area <cssOrLandmark>", "scope the scan to this CSS selector or ARIA landmark role (main, navigation, dialog, ...)")
   .option("--click <name>", "click this button/menuitem/tab/combobox first, to open a menu, dialog or custom listbox before scanning; repeat to click several in order (every non-GET request is blocked for the whole scan, so this can never submit anything)", (v: string, acc: string[] = []) => [...acc, v])
   .option("--check <name>", "check this radio/checkbox first, to reveal any field it conditionally shows before scanning")
   .option("--select <values...>", 'choose an option: --select "<field>" "<option>" — native <select> or custom combobox/listbox, to reveal any field it conditionally shows before scanning (non-GET requests stay blocked)')
   .option("--walkthrough <fileOrId>", "with --after: the walkthrough to replay (its file, or its id)")
   .option("--after <stepId>", "with --walkthrough: sign in as its persona, run its setup and its real actions up to and including this step (no frames or screenshots; the same safety checks as capture), then map that page. <pathId>/<stepId> replays that path instead: its start page, its opening steps, then the main steps from where it joins")
+  .option("--lines <n>", "lines to print (default 80; 0 prints them all)", (v: string) => parseNonNegativeInt(v, "--lines"))
+  .option("--skip <n>", "skip this many lines from the top, to read a long page a window at a time", (v: string) => parseNonNegativeInt(v, "--skip"))
   .option("--json", "print a single JSON object instead of a summary")
-  .action(async (path: string | undefined, opts: { config: string; as?: string; area?: string; click?: string[]; check?: string; select?: string[]; walkthrough?: string; after?: string; json?: boolean }) => {
+  .action(async (path: string | undefined, opts: { config: string; as?: string; area?: string; click?: string[]; check?: string; select?: string[]; walkthrough?: string; after?: string; lines?: number; skip?: number; json?: boolean }) => {
     if (opts.select && opts.select.length !== 2) {
       console.error('--select needs exactly two values: --select "<field>" "<option>"');
       process.exitCode = 1;
@@ -232,6 +234,8 @@ program
         select: opts.select as [string, string] | undefined,
         walkthrough: opts.walkthrough,
         after: opts.after,
+        lines: opts.lines,
+        skip: opts.skip,
       },
       Boolean(opts.json),
     );
@@ -604,6 +608,7 @@ program
   .description("scaffold the help app template into <dir>/help, detecting the app's framework, routes and brand")
   .option("--app-repo <path>", "app repo to detect framework/routes/brand from (default: <dir>)")
   .option("--app <path>", "app directory within a workspace monorepo (e.g. apps/web) — required when several Next.js apps are found")
+  .option("--app-url <url>", "where the app runs locally, for app.baseUrl (default: from the app's env files or scripts, else http://localhost:3000)")
   .option("--ci", "also write .github/workflows/aida.yml (PR check with screenshot diffs, publish-on-merge)")
   .option("--ci-start-command <cmd>", "command that starts the app in CI (default: npm run dev)")
   .option("--ci-uses <ownerRepoAtRef>", "the aida action to use (default: tryaida/aida@main)")
@@ -624,6 +629,7 @@ program
       opts: {
         appRepo?: string;
         app?: string;
+        appUrl?: string;
         ci?: boolean;
         ciStartCommand?: string;
         ciUses?: string;
@@ -641,6 +647,7 @@ program
           dir,
           appRepo: opts.appRepo,
           app: opts.app,
+          appUrl: opts.appUrl,
           ci: opts.ci,
           ciStartCommand: opts.ciStartCommand,
           ciUses: opts.ciUses,
@@ -850,3 +857,9 @@ program
   });
 
 program.parse();
+
+function parseNonNegativeInt(value: string, flag: string): number {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0) throw new InvalidArgumentError(`${flag} needs a whole number, 0 or more.`);
+  return n;
+}

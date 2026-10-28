@@ -179,6 +179,9 @@ users yet. Expect rough edges and breaking changes.
 - A setup path for no-code builders (Lovable, Bolt) that doesn't require opening GitHub
 - Longer-term evidence that docs stay current over weeks of real app changes
 
+[examples/rallly](examples/rallly) is a worked run against an open-source app: config, a
+better-auth sign-in adapter, four walkthroughs and the pages they built.
+
 The detailed plan is in [docs/scope.md](docs/scope.md), and milestone status is in
 [docs/build-plan.md](docs/build-plan.md).
 

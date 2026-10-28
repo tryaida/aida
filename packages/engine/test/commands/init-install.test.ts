@@ -184,6 +184,17 @@ describe("aida init: Auth.js sign-in", () => {
     expect(runInitCommand({ dir, runner: f.run, engineDir: f.engineDir }).signIn?.written).toBe(true);
   });
 
+  it("writes the better-auth adapter for better-auth", () => {
+    const dir = tmpDir();
+    fakeApp(dir, { next: "16.0.0", "better-auth": "1.2.0" });
+    const f = fakeRunner(dir);
+    const result = runInitCommand({ dir, runner: f.run, engineDir: f.engineDir });
+    expect(result.signIn).toMatchObject({ written: true, configured: true, kind: "better-auth" });
+    expect(readFileSync(join(dir, "help", "aida.config.ts"), "utf8")).toContain('signIn: "./adapters/sign-in.mjs",');
+    expect(readFileSync(result.signIn!.file, "utf8")).toContain("better-auth.session_token");
+    expect(result.nextSteps.join("\n")).toMatch(/USERS/);
+  });
+
   it("writes no adapter for other sign-in libraries", () => {
     const dir = tmpDir();
     fakeApp(dir, { next: "16.0.0", "@clerk/nextjs": "6.0.0" });

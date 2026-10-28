@@ -109,4 +109,14 @@ describe('narrate', () => {
     expect(third.summary.synthesized).toBe(1)
     expect(third.summary.cached).toBe(0)
   })
+
+  it('never sends a blank line to the voice: no clip, nothing billed', async () => {
+    const calls: string[] = []
+    const silent = createSilentProvider()
+    const provider: VoiceProvider = { ...silent, synthesize: (o) => { calls.push(o.text); return silent.synthesize(o) } }
+    const { results, summary } = await narrate([{ id: 'intro', text: '  ' }, { id: 'step-1', text: 'Click Add.' }], provider, { cacheDir })
+    expect(calls).toEqual(['Click Add.'])
+    expect(results[0]).toMatchObject({ id: 'intro', audioPath: '', durationMs: 0 })
+    expect(summary.charsBilled).toBe('Click Add.'.length)
+  })
 })

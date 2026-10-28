@@ -16,6 +16,7 @@ import type {
   TimelineHighlight,
   TimelineScene,
 } from "./types.js";
+import { cardText } from "../walkthrough/cards.js";
 import { timelineBrand, type ArtifactBrand } from "./brand.js";
 
 const T = {
@@ -54,6 +55,21 @@ export function beatIds(wf: Walkthrough): string[] {
 function requireStepId(s: Step): string {
   if (!s.id) throw new Error(`step "${s.title ?? "?"}" has no id — render needs one per step`);
   return s.id;
+}
+
+/** Each step's chapter: a step without `chapter:` continues the one before it (as on the help
+ * page), so it never starts a blank chapter of its own. */
+export function stepChapters(wf: Walkthrough): string[] {
+  let current = "";
+  return wf.steps.map((s) => (current = s.chapter?.trim() || current));
+}
+
+/** A beat's narration and caption at `t`. A beat with no sound (a blank line) adds neither, so a
+ * silent card never plays a stray clip or shows an empty caption. */
+function pushVoice(tl: Timeline, id: string, b: NarrationBeat, t: number, caption: string): void {
+  const d = b.durationMs / 1000;
+  if (b.audioPath && b.durationMs > 0) tl.audio.push({ id, file: b.audioPath, t });
+  if (caption.trim() && d > 0) tl.captions.push({ t0: t, t1: t + d + 0.3, text: caption });
 }
 
 function beat(narration: Record<string, NarrationBeat>, id: string): NarrationBeat {
@@ -388,6 +404,8 @@ export function buildTimeline(
 ): Timeline {
   // Captions, chips and cards show `{{data}}` filled in (M35).
   const wf = displayWalkthrough(written);
+  const cards = cardText(wf);
+  const chapterOf = stepChapters(wf);
   const FPS = opts.fps;
   const frameSrc = opts.frameSrc ?? ((f: string) => `../capture/frames/${f}`);
   const VW = manifest.viewport.width;
@@ -414,8 +432,8 @@ export function buildTimeline(
       ...(reader ? { reader } : {}),
       facts: opts.clip?.facts ?? [`${stepCount} step${stepCount === 1 ? "" : "s"}`],
     },
-    outro: { title: wf.outro?.title ?? "", recap: wf.outro?.recap ?? [], ...(site ? { site } : {}) },
-    chapters: [...new Set(wf.steps.map((s) => s.chapter ?? ""))],
+    outro: { title: cards.outro.title, recap: cards.outro.recap, ...(site ? { site } : {}) },
+    chapters: [...new Set(stepChapters(wf))],
     frames: [],
     moves: [],
     clicks: [],
@@ -446,8 +464,7 @@ export function buildTimeline(
     const introBeat = beat(narration, "intro");
     const d = introBeat.durationMs / 1000;
     const introEnd = Math.max(opts.clip?.introMinSeconds ?? 5.5, 0.7 + d + 1.0);
-    tl.audio.push({ id: "intro", file: introBeat.audioPath, t: 0.7 });
-    tl.captions.push({ t0: 0.7, t1: 0.7 + d + 0.3, text: wf.intro?.caption ?? wf.intro?.say ?? "" });
+    pushVoice(tl, "intro", introBeat, 0.7, cards.intro.caption);
     tl.stageIn = { t0: introEnd - 0.85, t1: introEnd };
     t = introEnd;
     scenes.push({ id: "intro", t0: 0, t1: introEnd });
@@ -558,19 +575,14 @@ export function buildTimeline(
     let cleared = false;
     let moveStart: number | undefined;
 
-    tl.audio.push({ id, file: stepBeat.audioPath, t: stepStart + T.voiceDelay });
-    tl.captions.push({
-      t0: stepStart + T.voiceDelay,
-      t1: stepStart + T.voiceDelay + d + 0.3,
-      text: step.caption ?? step.say ?? "",
-    });
+    pushVoice(tl, id, stepBeat, stepStart + T.voiceDelay, step.caption ?? step.say ?? "");
     tl.chips.push({
       t0: stepStart,
       t1: 0,
       num: String(si + 1),
       eyebrow:
         tl.chapters.length > 1
-          ? `Part ${tl.chapters.indexOf(step.chapter ?? "") + 1} · ${step.chapter ?? ""}`
+          ? `Part ${tl.chapters.indexOf(chapterOf[si]) + 1} · ${chapterOf[si]}`
           : `Step ${si + 1} of ${stepCount}`,
       title: step.title ?? "",
     });
@@ -694,9 +706,8 @@ export function buildTimeline(
     const d = outroBeat.durationMs / 1000;
     tl.stageOut = { t0: t, t1: t + 0.9 };
     const at = t + 1.1;
-    tl.audio.push({ id: "outro", file: outroBeat.audioPath, t: at });
-    tl.captions.push({ t0: at, t1: at + d + 0.3, text: wf.outro?.caption ?? wf.outro?.say ?? "" });
-    t = Math.max(at + d + 2.2, t + 0.35 + 0.5 + (wf.outro?.recap?.length ?? 0) * 0.35 + 3.5);
+    pushVoice(tl, "outro", outroBeat, at, cards.outro.caption);
+    t = Math.max(at + d + 2.2, t + 0.35 + 0.5 + cards.outro.recap.length * 0.35 + 3.5);
   }
   tl.duration = Number(t.toFixed(3));
   scenes.push({ id: "outro", t0: outroStart, t1: tl.duration });

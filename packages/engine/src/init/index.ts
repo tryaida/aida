@@ -12,5 +12,5 @@ export { ensureEngineBuilt, packEngine, pruneOldTarballs, hashStagedPackage, sta
 export type { CommandRunner as InitCommandRunner, CommandResult as InitCommandResult, RunOptions as InitRunOptions, PackResult } from "./install.js";
 export { writeTunnelHosts, normalizeTunnelHost, ensureStudioKey, studioAccessUrl, localStudioAccessUrl, STUDIO_HOSTS_VAR, STUDIO_KEY_VAR } from "./env-local.js";
 export type { WriteTunnelHostsResult, EnsureStudioKeyResult } from "./env-local.js";
-export { writeAuthJsSignIn, isAuthJs, SIGN_IN_ADAPTER_PATH } from "./sign-in-template.js";
+export { writeAuthJsSignIn, writeBetterAuthSignIn, isAuthJs, isBetterAuth, signInTemplateFor, SIGN_IN_ADAPTER_PATH } from "./sign-in-template.js";
 export type { WriteSignInResult } from "./sign-in-template.js";

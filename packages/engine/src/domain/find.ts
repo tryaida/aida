@@ -92,12 +92,14 @@ function findDrizzle(repo: string, configs: DrizzleConfig[]): string[] {
 }
 
 function findPrisma(repo: string): string[] {
-  const files = walkFiles(repo, (rel) => rel.endsWith(".prisma"), { maxDepth: 4, limit: 50 });
+  // Depth 6 reaches a workspace package's schema (packages/db/prisma/models/user.prisma).
+  const files = walkFiles(repo, (rel) => rel.endsWith(".prisma"), { maxDepth: 6, limit: 200 });
   if (files.length === 0) return [];
-  // One schema: `schema.prisma` and, for a multi-file schema, the other files in its folder.
+  // One schema: `schema.prisma` and, for a multi-file schema, every other file under its folder
+  // (Prisma reads the whole folder, subfolders such as `models/` included).
   const main = files.find((f) => f.endsWith("schema.prisma")) ?? files[0];
   const dir = posix.dirname(main);
-  return files.filter((f) => posix.dirname(f) === dir || posix.dirname(f).startsWith(`${dir === "." ? "" : `${dir}/`}schema`));
+  return dir === "." ? files.filter((f) => !f.includes("/") || f.startsWith("schema")) : files.filter((f) => f.startsWith(`${dir}/`));
 }
 
 function findSqlMigrations(repo: string, configs: DrizzleConfig[]): string[] {

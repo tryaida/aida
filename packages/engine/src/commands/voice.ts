@@ -11,6 +11,7 @@ import { getProvider, narrate } from "../voice/index.js";
 import { DEFAULT_CACHE_DIR } from "../voice/cache.js";
 import { voiceFitForConfig } from "../voice/fit.js";
 import { pathClipLines } from "../render/clip-lines.js";
+import { cardText } from "../walkthrough/cards.js";
 import type { NarrateReport, NarrationLine } from "../voice/index.js";
 
 export interface VoiceStageResult {
@@ -25,12 +26,13 @@ export interface VoiceStageResult {
 export function narrationLinesOf(written: Walkthrough): NarrationLine[] {
   // Spoken as shown: `{{data}}` filled in (M35).
   const wf = displayWalkthrough(written);
-  const lines: NarrationLine[] = [{ id: "intro", text: wf.intro?.say ?? "" }];
+  const cards = cardText(wf);
+  const lines: NarrationLine[] = [{ id: "intro", text: cards.intro.say }];
   for (const step of wf.steps) {
     if (!step.id) throw new Error(`step "${step.title ?? "?"}" has no id — voice needs one per step`);
     lines.push({ id: step.id, text: step.say ?? "" });
   }
-  lines.push({ id: "outro", text: wf.outro?.say ?? "" });
+  lines.push({ id: "outro", text: cards.outro.say });
   // Each path's short clip (M35): its card, its opening steps' `say`, its closing card.
   lines.push(...pathClipLines(wf));
   return lines.map((l) => ({

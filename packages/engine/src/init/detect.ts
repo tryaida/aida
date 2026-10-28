@@ -23,7 +23,7 @@ export interface DetectResult {
   appRoot?: string;
   /** Top-level route segments under `appDir`, e.g. "/dashboard", "/login". Route groups `(x)` and private folders `_x` are skipped. */
   routes: string[];
-  /** True when any `@auth/*`/`next-auth`, `@clerk/*`, `@supabase/*` or `firebase` dependency is present. */
+  /** True when any `@auth/*`/`next-auth`, `better-auth`, `@clerk/*`, `@supabase/*` or `firebase` dependency is present. */
   authLibrary?: string;
   /** Set instead of framework/routes when `repoDir` is a workspace monorepo with more than one
    * Next.js app and no `--app`/`opts.app` was given to pick one. */
@@ -64,6 +64,7 @@ function routeSegments(appDir: string): string[] {
 const AUTH_LIBRARIES: Record<string, string> = {
   "next-auth": "Auth.js (next-auth)",
   "@auth/core": "Auth.js",
+  "better-auth": "better-auth",
   "@clerk/nextjs": "Clerk",
   "@supabase/auth-helpers-nextjs": "Supabase Auth",
   "@supabase/ssr": "Supabase Auth",

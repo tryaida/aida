@@ -433,7 +433,10 @@ export interface AidaConfig {
   buildDir?: string;
   viewport?: Viewport;
   deviceScaleFactor?: number;
+  /** The capture browser's locale (dates, numbers). Default `DEFAULT_CAPTURE_LOCALE` ("en-US"). */
   locale?: string;
+  /** The capture browser's IANA time zone. Default `DEFAULT_CAPTURE_TIMEZONE` ("UTC"): fixed, so
+   * screenshots don't depend on the machine that captured them. */
   timezone?: string;
   /** Default `"reduce"` — most real apps' CSS/JS honour it, which keeps captures still for crisper frames. */
   reducedMotion?: "no-preference" | "reduce";
@@ -554,3 +557,8 @@ export const DEFAULT_MODEL_TIERS: Required<ModelTiers> = {
   standard: "claude-sonnet-5",
   deep: "claude-opus-5-5",
 };
+
+/** The capture browser's locale when the config sets none. */
+export const DEFAULT_CAPTURE_LOCALE = "en-US";
+/** The capture browser's time zone when the config sets none. */
+export const DEFAULT_CAPTURE_TIMEZONE = "UTC";

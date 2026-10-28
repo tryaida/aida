@@ -243,3 +243,17 @@ describe("frameRangesForScenes (concat duration math)", () => {
     expect(ranges[ranges.length - 1].end).toBe(Math.round(tl.duration * 30));
   });
 });
+
+describe("defaultConcurrency", () => {
+  it("is one worker per CPU, capped at 8, when memory allows", async () => {
+    const { defaultConcurrency, RENDER_WORKER_BYTES } = await import("../../src/render/segments.js");
+    expect(defaultConcurrency(RENDER_WORKER_BYTES * 100, 4)).toBe(4);
+    expect(defaultConcurrency(RENDER_WORKER_BYTES * 100, 32)).toBe(8);
+  });
+
+  it("keeps to the memory that's free", async () => {
+    const { defaultConcurrency, RENDER_WORKER_BYTES } = await import("../../src/render/segments.js");
+    expect(defaultConcurrency(RENDER_WORKER_BYTES * 2.5, 8)).toBe(2);
+    expect(defaultConcurrency(0, 8)).toBe(1);
+  });
+});
