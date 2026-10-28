@@ -86,8 +86,11 @@ Then open your coding agent in `~/my-app` and ask:
 
 > Make help docs for my app.
 
-The agent maps your app, proposes a list of guides for you to approve, writes and captures each
-walkthrough, and fixes what fails. To see the result, run `npm run dev` in `help/` and open the
+The agent maps your app, writes a short brief on what it's for and who uses it, and asks you what
+it can't work out. Or, if you'd like help written for your real users, it interviews you for 10 to
+45 minutes about them: their devices, whole jobs from start to finish, and where they get stuck.
+It then proposes a list of guides for you to approve, writes and captures each walkthrough, and
+fixes what fails. To see the result, run `npm run dev` in `help/` and open the
 site. Run `aida build --config help/aida.config.ts` to rebuild it all yourself.
 
 Capture against a production build of your app (`next build && next start`) rather than the dev
@@ -97,12 +100,13 @@ every command.
 ## Supported agents
 
 AIDA's engine is a deterministic CLI that never needs a model. Your coding agent does the judgment
-work using the skills in [`skills/`](skills): planning what to document, writing walkthroughs,
-repairing broken ones and reviewing the output.
+work using the skills in [`skills/`](skills): understanding the app (and, if you want, interviewing
+you about its users), planning what to document, writing walkthroughs, repairing broken ones and
+reviewing the output.
 
 | Agent | Support |
 | --- | --- |
-| **Claude Code** | Main target. `aida skills install` adds the skills and subagents, each on a suggested model tier: Haiku to map the app, Opus to plan, Sonnet to write, repair and review. |
+| **Claude Code** | Main target. `aida skills install` adds the skills and subagents, each on a suggested model tier: Haiku to map the app, Opus to understand it, interview you and plan, Sonnet to write, repair and review. |
 | **Codex** and other agents that read `AGENTS.md` or `SKILL.md` | Point them at [`skills/AGENTS.md`](skills/AGENTS.md). Same skills, run on whichever single model you've chosen. Less tested than Claude Code. |
 | **Claude Code GitHub Action** *(optional)* | Repairs a broken walkthrough when someone comments `@claude` on a PR. Uses a Claude Code OAuth token, not an API key. |
 
@@ -168,6 +172,8 @@ users yet. Expect rough edges and breaking changes.
 - Importing Playwright tests as draft walkthroughs (about a third of calls map automatically)
 - `aida record`: click through a task once in a browser window and get a draft walkthrough. Tested
   on fixture pages; not yet used by a person on a real app
+- `aida interview`: the agent interviews you about your app's users, workflows and pitfalls, and
+  writes the answers into the app brief. Tested on an example brief; not yet run with a person
 - MiniMax and ElevenLabs voices
 - Codex and other `AGENTS.md`-based agents
 
