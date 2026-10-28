@@ -1,0 +1,37 @@
+walkthrough: change-your-name
+version: 1
+title: Change your name
+summary: Update the name participants see on your polls.
+for: Organizers
+section: Screens and settings / Your account
+start:
+  signed_in_as: organizer
+  page: /settings/profile
+data:
+  me:
+    name: Dev Organizer
+steps:
+  - id: edit-name
+    title: Change your name
+    say: Your name is shown on every poll you organize. To change it, open Settings, then Profile, and type your new name.
+    caption: Type your new name.
+    page_text: Open **Settings**, then **Profile**. In **Name**, type the name you want participants to see.
+    actions:
+      - do: type
+        target: { role: textbox, name: Name }
+        text: "{{me.name}}"
+  - id: save
+    title: Save
+    say: Save it. Your polls now show your new name.
+    caption: Save it.
+    page_text: Select **Save**. Your polls now show the new name as their organizer.
+    actions:
+      - do: click
+        target: { role: button, name: Save }
+        highlight: true
+validate:
+  database:
+    - name: name-saved
+      sql: "select name from users where id = 'user-1'"
+      params: []
+      expect: { name: Dev Organizer }

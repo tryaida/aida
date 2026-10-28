@@ -1,0 +1,44 @@
+walkthrough: close-a-poll
+version: 1
+title: Close a poll
+summary: Stop a poll taking new answers without picking a date, for example when plans have changed.
+for: Organizers
+section: Polls
+start:
+  signed_in_as: organizer
+  page: /poll/seed-0461
+steps:
+  - id: open-manage
+    title: Open the Manage menu
+    say: To stop a poll taking new answers, open the Manage menu on the poll.
+    caption: Open the Manage menu.
+    page_text: On your poll's page, select **Manage**.
+    actions:
+      - do: click
+        target: { role: button, name: Manage }
+        highlight: true
+  - id: close
+    title: Close the poll
+    say: Choose Close. The poll keeps everyone's answers, but nobody can add new ones.
+    caption: Choose Close.
+    page_text: Select **Close**. Everyone's answers are kept, but nobody can add or change one. Closing doesn't pick a date or tell anyone; to do that, finalize the poll instead.
+    actions:
+      - do: click
+        target: { role: menuitem, name: Close }
+        highlight: true
+  - id: closed
+    title: Reopen it later if you need to
+    say: The poll is now closed. If you change your mind, you can reopen it from the same menu.
+    caption: The poll is closed. You can reopen it any time.
+    page_text: The poll now shows as closed. To take answers again, open **Manage** and select **Reopen**.
+    actions:
+      - do: click
+        target: { role: button, name: Manage }
+      - do: point
+        target: { role: menuitem, name: Reopen }
+        highlight: true
+validate:
+  database:
+    - name: poll-closed
+      sql: "select status::text as status from polls where id = 'seed-0461'"
+      expect: { status: closed }

@@ -366,3 +366,15 @@ describe("review fixes: what aida build publishes", () => {
     expect(overview).not.toContain("## Rhythm");
   });
 });
+
+describe("docsDirs", () => {
+  it("finds docs/ and a workspace's docs app", async () => {
+    const { mkdirSync, mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { docsDirs } = await import("../../src/brief/sources.js");
+    const root = mkdtempSync(join(tmpdir(), "aida-docs-dirs-"));
+    for (const d of ["docs", "apps/web", "apps/docs", "packages/ui", "packages/documentation"]) mkdirSync(join(root, d), { recursive: true });
+    expect(docsDirs(root)).toEqual(["docs", "apps/docs", "packages/documentation"]);
+  });
+});

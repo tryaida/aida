@@ -116,3 +116,21 @@ describe("type action: capture.maxTypeMs caps visible per-character typing", () 
     TEST_TIMEOUT,
   );
 });
+
+describe("type replaces what's in the field", () => {
+  it(
+    "sets a field that already holds a value to the typed text",
+    async () => {
+      const wt: Walkthrough = {
+        walkthrough: "fixture-prefilled",
+        title: "t",
+        start: { page: "/prefilled.html" },
+        steps: [{ id: "pick", actions: [{ do: "type", target: { role: "combobox", name: "Time zone" }, text: "London" }] }],
+      };
+      const result = await runCapture({ walkthrough: wt, config: baseConfig(server.url), outDir: tmpOutDir() });
+      expect(result.failure).toBeUndefined();
+      expect(result.validation.ok).toBe(true);
+    },
+    TEST_TIMEOUT,
+  );
+});

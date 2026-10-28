@@ -1,0 +1,39 @@
+walkthrough: find-your-polls
+version: 1
+title: Find your polls
+summary: See all your polls in one list, and filter it to the ones still open, closed or scheduled.
+for: Organizers
+section: Polls
+start:
+  signed_in_as: organizer
+  page: /polls
+steps:
+  - id: polls-list
+    title: Open Polls
+    say: Polls lists every poll you've created, newest first.
+    caption: All your polls, newest first.
+    page_text: Open **Polls** from the menu. Every poll you've created is listed, newest first, with how many people have answered.
+    actions:
+      - do: point
+        target: { role: heading, name: Polls, exact: true }
+        highlight: true
+  - id: filter-closed
+    title: Filter by status
+    say: Use the filters to see only open, closed or scheduled polls.
+    caption: Filter by status.
+    page_text: Select **Open**, **Closed** or **Scheduled** to show only those polls. Open polls are still taking answers; scheduled ones have a final date.
+    actions:
+      - do: click
+        target: { role: link, name: Scheduled, within: { role: navigation, name: Filter by status } }
+        highlight: true
+      - do: waitForUrl
+        pattern: "status=scheduled"
+  - id: open-one
+    title: Open a poll
+    say: Select a poll to open it.
+    caption: Select a poll to open it.
+    page_text: Select a poll's title to open it.
+    actions:
+      - do: point
+        target: { role: link, name: Car service appointment }
+        highlight: true

@@ -120,6 +120,17 @@ describe("capture setup phase", () => {
   );
 
   it(
+    "starts setup steps on the walkthrough's start page",
+    async () => {
+      const setupSteps = [{ id: "add", actions: [{ do: "click" as const, target: { role: "button", name: "Add thing" } }] }];
+      const result = await runCapture({ walkthrough: walkthrough({ setup: { steps: setupSteps } }), config: config(), outDir: tmpDir() });
+      expect(result.failure).toBeUndefined();
+      expect(api.count).toBe(1);
+    },
+    TIMEOUT,
+  );
+
+  it(
     "runs setup steps unrecorded: nothing from them in the manifest or frames, {{run.id}} filled in",
     async () => {
       const outDir = tmpDir();

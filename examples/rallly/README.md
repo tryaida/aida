@@ -2,18 +2,28 @@
 
 [Rallly](https://github.com/lukevella/rallly) is an open-source meeting scheduler (Next.js App
 Router, better-auth, Prisma, pnpm workspace). This folder is the AIDA help app's own files from a
-run against it: config, adapters, four walkthroughs and the pages they built. Videos and PDFs are
+run against it: config, adapters, the app brief, 13 walkthroughs and the pages they built. Videos and PDFs are
 build outputs and aren't committed; rebuild them with `aida build`.
 
 | Walkthrough | For | Steps | What it does |
 | --- | --- | --- | --- |
 | `create-a-poll` | Organizers | 6 | Names an event, picks all-day dates next month, creates the poll |
-| `vote-on-a-poll` | Invitees (signed out) | 5 | Marks dates on an invite link, adds a name, saves |
+| `edit-a-poll` | Organizers | 5 | Changes the location and a setting, keeps the answers |
 | `pick-the-final-date` | Organizers | 4 | Finalizes a poll and chooses who gets the calendar invite |
-| `add-a-comment` | Invitees (signed out) | 3 | Leaves a comment on a poll |
+| `close-a-poll` | Organizers | 3 | Stops new answers, shows where to reopen |
+| `duplicate-a-poll` | Organizers | 4 | Copies a poll under a new title |
+| `delete-a-poll` | Organizers | 3 | Deletes a poll after the warning |
+| `find-your-polls` | Organizers | 3 | The Polls list and its status filters |
+| `see-upcoming-events` | Organizers | 2 | Finalized dates on the Events page |
+| `set-your-time-zone` | Organizers | 4 | Time zone, time format and start of week |
+| `change-your-name` | Organizers | 2 | The name shown on your polls |
+| `vote-on-a-poll` | Participants (signed out) | 5 | Marks dates on an invite link, adds a name, saves |
+| `change-your-answers` | Participants (signed out) | 4 | Edits an earlier answer (set up unrecorded first) |
+| `add-a-comment` | Participants (signed out) | 3 | Leaves a comment on a poll |
 
-All four pass capture against a production build with the seeded demo data, and each one that
-saves data checks the database afterwards (`validate.database`). `proof.png` is the brand proof
+All 13 pass capture against a production build with the seeded demo data, and each one that
+saves data checks the database afterwards (`validate.database`). `app-brief.md` is the brief the
+help chat answers from, written from Rallly's own `apps/docs`. `proof.png` is the brand proof
 sheet.
 
 ## Run it yourself
@@ -45,6 +55,11 @@ psql rallly_demo -c "update users set email = split_part(email,'@',1)||'@example
   update participants set email = split_part(email,'@',1)||'@example.com' where email is not null;
   update scheduled_event_invites set invitee_email = split_part(invitee_email,'@',1)||'@example.com';
   update poll_invites set email = split_part(email,'@',1)||'@example.com' where email is not null;"
+
+# Self-hosted Rallly allows one account without a licence; the seed makes five. Keep the
+# organizer the walkthroughs use (it owns most of the polls), or every signed-in screen shows a
+# licence warning
+psql rallly_demo -c "delete from users where id <> 'user-1' and not anonymous"
 
 # Snapshot it: the database adapter restores this before each capture that saves data
 mkdir -p help/.demo-data && pg_dump -Fc rallly_demo -f help/.demo-data/rallly-demo.dump
@@ -118,6 +133,15 @@ Fixed in a second pass:
 - Steps without a `chapter:` started a blank chapter on the video's intro card instead of
   continuing the one before, and the video cards and printed covers repeated the name beside a
   wordmark logo.
+
+Fixed in a third pass, while writing the other nine walkthroughs:
+
+- `aida brief sources` only read the app's own folder; it now reads the workspace root and a docs
+  app or package (`apps/docs` here, Rallly's own user guide).
+- `setup:` steps started on the app's home page, which is a sign-in screen when signed out. They
+  now start on the walkthrough's start page.
+- `type` appended to a field that already had a value (the time zone combobox showed "New
+  YorkLondon"). It now selects what's there first, so the typed text replaces it.
 
 Worth knowing when writing walkthroughs for an app like this: new invitees land on a poll with
 their own row already open, and finalizing opens a chain of dialogs. Both were found from failure

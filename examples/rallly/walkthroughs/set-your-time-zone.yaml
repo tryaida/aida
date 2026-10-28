@@ -1,0 +1,57 @@
+walkthrough: set-your-time-zone
+version: 1
+title: Set your time zone and language
+summary: Choose the language, time zone and time format Rallly uses for you.
+for: Organizers
+section: Screens and settings / Your account
+start:
+  signed_in_as: organizer
+  page: /settings/preferences
+steps:
+  - id: open-preferences
+    title: Open Preferences
+    say: Your language and time settings are under Preferences, in Settings.
+    caption: Open Settings, then Preferences.
+    page_text: Open **Settings**, then **Preferences**.
+    actions:
+      - do: point
+        target: { role: heading, name: Language & region }
+        highlight: true
+  - id: open-time-zone
+    title: Open the time zone list
+    say: Times in your polls are shown in your time zone. Open the list to change it.
+    caption: Open the time zone list.
+    page_text: Rallly shows every time in your own time zone. Select **Time zone** to change it.
+    actions:
+      - do: click
+        target: { role: combobox, name: Time zone }
+        highlight: true
+  - id: pick-time-zone
+    title: Pick your time zone
+    say: Search for your city and pick it.
+    caption: Search for your city and pick it.
+    page_text: Type the name of a nearby city, then select it.
+    actions:
+      - do: press
+        key: ControlOrMeta+A
+        target: { role: combobox, name: Time zone }
+      - do: type
+        target: { role: combobox, name: Time zone }
+        text: London
+      - do: click
+        target: { role: option, name: London }
+        highlight: true
+  - id: time-format
+    title: Choose 12-hour or 24-hour time
+    say: You can also choose 12-hour or 24-hour times, and the day your week starts.
+    caption: Choose your time format.
+    page_text: Use **Time format** and **Start of week** the same way. Changes are saved as you make them.
+    actions:
+      - do: point
+        target: { role: combobox, name: Time format }
+        highlight: true
+validate:
+  database:
+    - name: time-zone-saved
+      sql: "select time_zone from users where id = 'user-1'"
+      expect: { time_zone: Europe/London }

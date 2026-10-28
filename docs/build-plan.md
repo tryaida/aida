@@ -131,6 +131,7 @@ Newest last. One line per loop turn: date, milestone, result, anything blocked.
 
 - 2026-10-28 · Rallly trial follow-ups closed: better-auth sign-in template written by `init`; `inspect --as` takes a config role; `inspect --skip`/`--lines` paging; `theme --from-app` skips covered graphics and menu items; wordmark logos shown once in the site header (`logoWide`). The better-auth template signed in to Rallly after its documented edits.
 - 2026-10-28 · Video intro/outro fixed (found on the Rallly example): empty narration was sent to the voice (a 0.5 s noise burst) and the outro card was blank. Blank lines are never voiced or captioned; a walkthrough without `intro`/`outro` gets default card text (`walkthrough/cards.ts`). Steps without `chapter:` continue the previous chapter in the video; wordmark logos aren't followed by the name on video cards and PDF covers.
+- 2026-10-28 · Rallly example grown to 13 walkthroughs and an app brief; demo data cut to one account (self-hosted licence warning). Fixed: `brief sources` reads the workspace root and its docs app; setup steps start on the walkthrough's start page; `type` replaces a field's existing value.
 ## Follow-ups
 
 - First pilot: plain `aida inspect` lands on an empty "nothing selected" screen (the current record is set by the post-login route); add a `states` hook for it to the pilot's config, which also explains a one-off capture failure on the selection page.

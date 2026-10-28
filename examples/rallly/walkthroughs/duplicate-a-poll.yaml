@@ -1,0 +1,58 @@
+walkthrough: duplicate-a-poll
+version: 1
+title: Duplicate a poll
+summary: Start a new poll from an existing one, with the same dates and settings, for a repeat event.
+for: Organizers
+section: Polls
+start:
+  signed_in_as: organizer
+  page: /poll/seed-0496
+data:
+  poll:
+    title: Team Offsite Planning (spring)
+steps:
+  - id: open-manage
+    title: Open the Manage menu
+    say: To run a similar poll again, start from the old one. Open the Manage menu.
+    caption: Open the Manage menu.
+    page_text: On the poll you want to copy, select **Manage**.
+    actions:
+      - do: click
+        target: { role: button, name: Manage }
+        highlight: true
+  - id: choose-duplicate
+    title: Choose Duplicate
+    say: Choose Duplicate.
+    caption: Choose Duplicate.
+    page_text: Select **Duplicate**.
+    actions:
+      - do: click
+        target: { role: menuitem, name: Duplicate }
+        highlight: true
+  - id: name-it
+    title: Give the new poll its own title
+    say: Give the new poll a title of its own, so you can tell the two apart.
+    caption: Give it a new title.
+    page_text: In **Title**, change the name so you can tell the new poll from the old one.
+    actions:
+      - do: type
+        target: { role: textbox, name: Title, within: { role: dialog, name: Duplicate } }
+        text: "{{poll.title}}"
+  - id: duplicate
+    title: Create the copy
+    say: Duplicate it. The new poll opens with the same dates and settings, and no answers yet.
+    caption: Duplicate it.
+    page_text: Select **Duplicate**. The new poll opens with the same dates, details and settings, but none of the answers or comments. Share its link as you would for any new poll.
+    actions:
+      - do: click
+        target: { role: button, name: Duplicate, within: { role: dialog, name: Duplicate } }
+        highlight: true
+      - do: expect
+        target: { role: heading, name: "{{poll.title}}" }
+        highlight: true
+validate:
+  database:
+    - name: copy-made
+      sql: "select count(*)::int as n from polls where title = $1 and deleted = false"
+      params: ["{{poll.title}}"]
+      expect: { n: 1 }

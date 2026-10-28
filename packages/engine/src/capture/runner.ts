@@ -994,6 +994,10 @@ async function runAction(args: RunActionArgs): Promise<number> {
       const isFocused = await loc.evaluate((el) => el === document.activeElement);
       seen.push(await accessibleName(loc));
       if (!isFocused) await loc.focus();
+      // `type` sets the field to `text`: select what's already there so the first key replaces
+      // it, as a person would, instead of appending (a combobox showing its current choice).
+      const before = await loc.inputValue().catch(() => "");
+      if (before) await loc.selectText().catch(() => {});
       const masked = isMaskedTarget(a.target, step.mask);
       const images: string[] = [];
       // Visible per-character typing (one screenshot per char, for the video) up to `maxTypeMs`

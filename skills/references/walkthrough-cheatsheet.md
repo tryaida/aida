@@ -43,7 +43,7 @@ will use, and `capture`/`build` (`--with-deps`) and `ci` follow it.
 - **`needs`**: met by a walkthrough that `leaves` the state (it runs first), or by a `setup`/`check`
   hook for the state in `aida.config` `states` (then any order works, and the walkthrough can be
   captured on its own or twice). A walkthrough that `clears` a state runs after those that need it.
-- **`setup:`** steps use the same `do:`/`check:`/`actions:` grammar as `steps`, but have no
+- **`setup:`** steps start on the walkthrough's `start.page` (a role named by `as:` starts on its home page). They use the same `do:`/`check:`/`actions:` grammar as `steps`, but have no
   `say`/`caption`/`page_text`/camera fields and are never filmed. `as:` signs in as another role.
   Use them for data only this walkthrough needs (a second competitor to pick from).
 - **State hooks** get `ctx.request`, an API client. Without `as:` on the state it shares the

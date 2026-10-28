@@ -1,0 +1,28 @@
+walkthrough: see-upcoming-events
+version: 1
+title: See your upcoming events
+summary: Every date you've finalized, in one list, with past and canceled events a click away.
+for: Organizers
+section: Events
+start:
+  signed_in_as: organizer
+  page: /events
+steps:
+  - id: upcoming
+    title: Open Events
+    say: Once you finalize a poll, its date shows under Events.
+    caption: Finalized dates show under Events.
+    page_text: Open **Events** from the menu. Every date you've finalized is listed here, soonest first.
+    actions:
+      - do: point
+        target: { role: heading, name: Events, exact: true }
+        highlight: true
+  - id: past
+    title: See past events
+    say: Switch to Past or Canceled to look back.
+    caption: Switch to Past or Canceled.
+    page_text: Select **Past** or **Canceled** to see events that have happened or were called off.
+    actions:
+      - do: click
+        target: { role: link, name: Past }
+        highlight: true

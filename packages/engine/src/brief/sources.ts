@@ -3,7 +3,7 @@
 // test titles, the PR template and recent commit subjects — ranked and capped so the list stays
 // around 60 lines. Paths, sizes and headings only: never file contents.
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, posix } from "node:path";
 import { walkFiles } from "../domain/walk.js";
 
@@ -125,6 +125,22 @@ function gitSubjects(repo: string): string[] {
   }
 }
 
+/** Folders holding the app's own user docs: `docs/`, and in a workspace a docs app or package
+ * (`apps/docs`, `packages/documentation`, `apps/help`, ...). */
+export function docsDirs(repo: string): string[] {
+  const dirs = existsSync(join(repo, "docs")) ? ["docs"] : [];
+  for (const group of ["apps", "packages"]) {
+    let names: string[] = [];
+    try {
+      names = readdirSync(join(repo, group), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+    } catch {
+      continue;
+    }
+    for (const name of names.sort()) if (/^(docs?|documentation|help|guides?|handbook|manual)$/i.test(name)) dirs.push(`${group}/${name}`);
+  }
+  return dirs;
+}
+
 export function findBriefSources(repo: string): BriefSourcesResult {
   const all: BriefSource[] = [];
   const add = (kind: BriefSourceKind, rel: string, extra: Partial<BriefSource> = {}) =>
@@ -162,9 +178,11 @@ export function findBriefSources(repo: string): BriefSourcesResult {
     add("landing", rel, { headings: jsxHeadings(read(repo, rel)), score: BASE.landing + (/\((marketing|home|landing|public|site)\)/.test(rel) ? 5 : 0) });
   }
 
-  for (const rel of walkFiles(join(repo, "docs"), (f) => /\.mdx?$/i.test(f), { maxDepth: 3, limit: 400 })) {
-    const path = `docs/${rel}`;
-    add("docs", path, { headings: markdownHeadings(read(repo, path)), score: scoreDoc(path, BASE.docs) });
+  for (const dir of docsDirs(repo)) {
+    for (const rel of walkFiles(join(repo, dir), (f) => /\.mdx?$/i.test(f), { maxDepth: 3, limit: 400 })) {
+      const path = `${dir}/${rel}`;
+      add("docs", path, { headings: markdownHeadings(read(repo, path)), score: scoreDoc(path, BASE.docs) });
+    }
   }
 
   const deep = walkFiles(

@@ -1,0 +1,73 @@
+walkthrough: edit-a-poll
+version: 1
+title: Edit a poll
+summary: Change a poll's details, dates or settings after you've shared it, without losing anyone's answers.
+for: Organizers
+section: Polls
+start:
+  signed_in_as: organizer
+  page: /poll/seed-0335
+data:
+  poll:
+    location: Board room, level 3
+steps:
+  - id: open-manage
+    chapter: Open the poll's settings
+    title: Open the Manage menu
+    say: On your poll, open the Manage menu.
+    caption: Open the Manage menu.
+    page_text: On your poll's page, select **Manage**.
+    actions:
+      - do: click
+        target: { role: button, name: Manage }
+        highlight: true
+  - id: choose-edit
+    title: Choose Edit
+    say: Choose Edit. The edit page looks just like the one you used to create the poll.
+    caption: Choose Edit.
+    page_text: Select **Edit**. The edit page is laid out like the create page, filled in with the poll's current details.
+    actions:
+      - do: click
+        target: { role: menuitem, name: Edit }
+        highlight: true
+      - do: waitForUrl
+        pattern: "/edit"
+  - id: change-location
+    chapter: Make your changes
+    title: Change the details
+    say: Change anything you need. Here, we'll update the location.
+    caption: Change the details you need.
+    page_text: Change the title, location or description. Under **Calendar** you can also add or remove dates.
+    actions:
+      - do: type
+        target: { role: textbox, name: Location }
+        text: "{{poll.location}}"
+  - id: require-email
+    title: Change a setting
+    say: Settings are further down. For example, turn on Require email so you can send everyone the final invite.
+    caption: Turn on Require email.
+    page_text: Under **Settings**, turn on **Require email** so every participant leaves an address you can send the final invite to.
+    actions:
+      - do: click
+        target: { role: switch, name: Require email }
+        highlight: true
+  - id: save
+    chapter: Save
+    title: Save your changes
+    say: Save your changes. Only what you changed is updated, so everyone's answers stay as they were.
+    caption: Save your changes.
+    page_text: Select **Save changes**. Only the parts you changed are updated, so everyone's answers stay as they were. If you removed a date people voted for, Rallly asks you to confirm first.
+    actions:
+      - do: click
+        target: { role: button, name: Save changes }
+        highlight: true
+      - do: waitForUrl
+        pattern: "/poll/seed-0335$"
+      - do: expect
+        target: { text: "{{poll.location}}" }
+        highlight: true
+validate:
+  database:
+    - name: location-saved
+      sql: "select location, require_participant_email::text as req from polls where id = 'seed-0335'"
+      expect: { location: "Board room, level 3", req: "true" }

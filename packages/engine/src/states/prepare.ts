@@ -242,7 +242,10 @@ class RoleSessions {
       const page = await this.opts.context.newPage();
       this.pages.push(page);
       await this.installClock(page);
-      await page.goto(this.opts.baseUrl + "/", { waitUntil: "domcontentloaded", timeout: 120_000 });
+      // Setup as the walkthrough's own persona starts where the walkthrough does: signed out,
+      // the home page is often a sign-in screen, and setup is usually about the same screen.
+      const startPath = this.opts.walkthrough.start?.page ?? "/";
+      await page.goto(this.opts.baseUrl + startPath, { waitUntil: "domcontentloaded", timeout: 120_000 });
       session = { page, context: this.opts.context, persona: this.opts.walkthrough.start?.persona };
     } else {
       session = await this.signInAs(key);

@@ -15,7 +15,7 @@ import {
   parseBrief,
   sectionText,
 } from "../brief/index.js";
-import { buildAppDomain, fail, loadOptionalConfig, resolveAppRepo } from "./domain.js";
+import { buildAppDomain, fail, loadOptionalConfig, resolveAppRepo, workspaceRoot } from "./domain.js";
 
 interface BriefFileOptions {
   configPath?: string;
@@ -42,8 +42,10 @@ async function setup(command: string, opts: BriefFileOptions): Promise<{ config?
 export async function runBriefSources(opts: { configPath?: string; repo?: string; json: boolean }): Promise<number> {
   const { config, code } = await loadOptionalConfig(opts.configPath, "brief sources", opts.json);
   if (code) return code;
-  const repo = resolveAppRepo(opts.repo, config);
-  if (!existsSync(repo)) return fail("brief sources", `app repo not found: ${repo}`, opts.json);
+  const appRepo = resolveAppRepo(opts.repo, config);
+  if (!existsSync(appRepo)) return fail("brief sources", `app repo not found: ${appRepo}`, opts.json);
+  // An app inside a workspace monorepo: its README and docs app sit at the workspace root.
+  const repo = (!opts.repo && workspaceRoot(appRepo)) || appRepo;
   const result = findBriefSources(repo);
   if (opts.json) console.log(JSON.stringify({ ok: true, ...result }));
   else console.log(formatBriefSources(result));

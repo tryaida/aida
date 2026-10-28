@@ -1,0 +1,44 @@
+walkthrough: delete-a-poll
+version: 1
+title: Delete a poll
+summary: Remove a poll you no longer need, with all its dates, answers and comments.
+for: Organizers
+section: Polls
+start:
+  signed_in_as: organizer
+  page: /poll/seed-0074
+steps:
+  - id: open-manage
+    title: Open the Manage menu
+    say: On the poll you want to remove, open the Manage menu.
+    caption: Open the Manage menu.
+    page_text: On the poll's page, select **Manage**.
+    actions:
+      - do: click
+        target: { role: button, name: Manage }
+        highlight: true
+  - id: choose-delete
+    title: Choose Delete
+    say: Choose Delete.
+    caption: Choose Delete.
+    page_text: Select **Delete**.
+    actions:
+      - do: click
+        target: { role: menuitem, name: Delete }
+        highlight: true
+  - id: confirm
+    title: Confirm
+    say: Deleting removes the poll and everyone's answers for good, and it can't be undone. If you might need it again, close it instead.
+    caption: This can't be undone.
+    page_text: Rallly asks you to confirm. Deleting removes the poll, its dates, answers and comments, and **can't be undone**. If you might need the poll again, [close it](./close-a-poll) instead. Select **Delete** to confirm.
+    actions:
+      - do: click
+        target: { role: button, name: Delete, within: { role: dialog, name: Delete poll } }
+        highlight: true
+      - do: waitForUrl
+        pattern: "/polls"
+validate:
+  database:
+    - name: poll-deleted
+      sql: "select deleted::text as deleted from polls where id = 'seed-0074'"
+      expect: { deleted: "true" }

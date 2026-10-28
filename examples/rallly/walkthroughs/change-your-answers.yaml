@@ -1,0 +1,73 @@
+walkthrough: change-your-answers
+version: 1
+title: Change your answers
+summary: Update which dates work for you after you've answered a poll.
+for: People invited to a poll
+section: Getting started
+start:
+  page: /invite/seed-0559
+data:
+  voter:
+    name: Jordan Lee
+setup:
+  steps:
+    - id: first-answer
+      actions:
+        - do: goto
+          path: /invite/seed-0559
+        - do: click
+          target: { role: button, name: Pending, nth: 0 }
+        - do: click
+          target: { role: button, name: Continue }
+        - do: type
+          target: { label: Name, within: { role: dialog, name: New participant } }
+          text: "{{voter.name}}"
+        - do: click
+          target: { role: button, name: Save availability }
+        - do: click
+          target: { role: button, name: Back to poll }
+steps:
+  - id: open-menu
+    title: Open the menu by your name
+    say: To change your answers, open the poll's link again and open the menu next to your name.
+    caption: Open the menu next to your name.
+    page_text: Open the poll's link again, in the same browser you answered in. Select the menu next to your name.
+    actions:
+      - do: click
+        target: { role: button, name: More options, within: { role: row, hasText: "{{voter.name}}" } }
+        highlight: true
+  - id: edit-votes
+    title: Choose Edit votes
+    say: Choose Edit votes.
+    caption: Choose Edit votes.
+    page_text: Select **Edit votes**. You can also change the name you answered with, or delete your answer.
+    actions:
+      - do: click
+        target: { role: menuitem, name: Edit votes }
+        highlight: true
+  - id: change-a-date
+    title: Change your answers
+    say: Your row opens for editing. Click a date to change your answer, just as before.
+    caption: Click a date to change your answer.
+    page_text: Your row opens for editing. Click a date to move it between **Yes**, **If need be** and **No**.
+    actions:
+      - do: click
+        target: { role: button, name: ", No", nth: 0, within: { role: row, hasText: "{{voter.name}}" } }
+        highlight: true
+  - id: save
+    title: Save
+    say: Save, and your new answers replace the old ones.
+    caption: Save your changes.
+    page_text: Select **Save**. Your new answers replace the old ones. On another device, use the link in your confirmation email instead; if you didn't leave an email, ask the organizer to send you your edit link.
+    actions:
+      - do: click
+        target: { role: button, name: Save, exact: true }
+        highlight: true
+      - do: expect
+        target: { role: button, name: More options, within: { role: row, hasText: "{{voter.name}}" } }
+validate:
+  database:
+    - name: two-yes
+      sql: "select count(*)::int as n from votes v join participants p on p.id = v.participant_id where p.poll_id = 'seed-0559' and p.name = $1 and v.type::text = 'yes'"
+      params: ["{{voter.name}}"]
+      expect: { n: 2 }
