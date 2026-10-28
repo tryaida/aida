@@ -1,0 +1,8 @@
+<!doctype html>
+<html><head><title>Code</title></head>
+<body><main><label>Code <input id="c" aria-label="Code" maxlength="6"></label></main>
+<script>
+document.getElementById("c").addEventListener("input", (e) => {
+  if (e.target.value.length === 6) location.href = "/success.html";
+});
+</script></body></html>

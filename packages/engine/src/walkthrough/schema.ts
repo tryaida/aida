@@ -269,7 +269,7 @@ const PathSchema = z
 export type RawPath = z.infer<typeof PathSchema>;
 
 /** Data keys the engine fills in itself; `{{run.id}}` is a short id unique to each capture run. */
-export const RESERVED_DATA_KEYS = ["run"] as const;
+export const RESERVED_DATA_KEYS = ["run", "inbox"] as const;
 
 // The id is used as a path segment (capture/render output dirs, cache paths, etc.), so it's
 // restricted to a slug: lowercase letters/digits, starting with one, hyphens as separators.
@@ -306,7 +306,7 @@ export const WalkthroughDocSchema = z
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
               path: [key],
-              message: `\`${key}\` is reserved in data: aida fills in {{${key}.id}} itself on each run; rename this key`,
+              message: `\`${key}\` is reserved in data: ${key === "run" ? "aida fills in {{run.id}} itself on each run" : "{{inbox.<key>}} holds values read from emails during capture"}; rename this key`,
             });
           }
         }

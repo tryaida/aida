@@ -134,3 +134,22 @@ describe("type replaces what's in the field", () => {
     TEST_TIMEOUT,
   );
 });
+
+describe("type into a field that submits itself", () => {
+  it(
+    "follows the page the last key opens, with no blank frame",
+    async () => {
+      const wt: Walkthrough = {
+        walkthrough: "fixture-autosubmit",
+        title: "t",
+        start: { page: "/autosubmit.html" },
+        steps: [{ id: "code", actions: [{ do: "type", target: { label: "Code" }, text: "123456" }] }],
+      };
+      const outDir = tmpOutDir();
+      const result = await runCapture({ walkthrough: wt, config: baseConfig(server.url), outDir });
+      expect(result.failure).toBeUndefined();
+      expect(result.validation.ok).toBe(true);
+    },
+    TEST_TIMEOUT,
+  );
+});

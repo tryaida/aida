@@ -1,0 +1,62 @@
+walkthrough: change-your-email
+version: 1
+title: Change your email address
+summary: Move your account to a new email address. Rallly checks it's yours with a code.
+for: Organizers
+section: Screens and settings / Your account
+start:
+  signed_in_as: organizer
+  page: /settings/profile
+data:
+  me:
+    newEmail: dev.organizer@example.com
+steps:
+  - id: open-change
+    title: Open Change email
+    say: In Settings, under Profile, choose Change email.
+    caption: Choose Change email.
+    page_text: Open **Settings**, then **Profile**, and select **Change email**.
+    actions:
+      - do: click
+        target: { role: button, name: Change email }
+        highlight: true
+  - id: new-address
+    title: Enter your new address
+    say: Type your new email address and continue. Rallly sends a code to it.
+    caption: Type the new address, then continue.
+    page_text: Type your new address in **Email** and select **Continue**. Rallly sends a code to the new address, to check it's yours.
+    actions:
+      - do: type
+        target: { role: textbox, name: Email, within: { role: dialog, name: Change email } }
+        text: "{{me.newEmail}}"
+      - do: click
+        target: { role: button, name: Continue, within: { role: dialog, name: Change email } }
+        highlight: true
+  - id: the-code
+    title: Find the code
+    say: Open the email at your new address to find the code.
+    caption: Find the code in the email.
+    page_text: Open the email Rallly sent to your new address. It holds a six-digit code.
+    actions:
+      - do: showEmail
+        to: "{{me.newEmail}}"
+        remember:
+          code: "/\\b(\\d{6})\\b/"
+        highlight: true
+  - id: enter-code
+    title: Enter the code
+    say: Type the code to confirm. Your account now uses the new address.
+    caption: Type the code to confirm.
+    page_text: Back in Rallly, type the code in **Enter your 6-digit code**. Rallly checks it as soon as it's complete; from now on you sign in with the new address.
+    actions:
+      - do: type
+        target: { role: textbox, name: Enter your 6-digit code }
+        text: "{{inbox.code}}"
+      - do: expect
+        target: { text: "{{me.newEmail}}" }
+        highlight: true
+validate:
+  database:
+    - name: email-changed
+      sql: "select email from users where id = 'user-1'"
+      expect: { email: dev.organizer@example.com }

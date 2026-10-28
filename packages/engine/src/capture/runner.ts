@@ -27,6 +27,7 @@ import { seenTargets } from "./target-names.js";
 import { startMailCatcher, type CaughtEmail, type MailCatcher } from "../mail/catcher.js";
 import { emailCardBox, hideEmailOverlay, showEmailOverlay, type EmailView } from "../mail/overlay.js";
 import type { MockEmail } from "../walkthrough/action.js";
+import { fillEmailValues } from "../walkthrough/template.js";
 import type {
   Box,
   CaptureEvent,
@@ -281,9 +282,20 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
       if (!record) return "";
       const file = `${String(++frameNo).padStart(4, "0")}-${kind}.png`;
       await applyMasks(page, mask, maskOptions);
-      await profileAsync("screenshot", () =>
-        page.screenshot({ path: join(framesDir, file), animations: "disabled", caret: "hide", scale: "device" }),
-      );
+      const take = (timeout: number) =>
+        profileAsync("screenshot", () =>
+          page.screenshot({ path: join(framesDir, file), animations: "disabled", caret: "hide", scale: "device", timeout }),
+        );
+      try {
+        await take(10_000);
+      } catch {
+        // A page caught mid-navigation (a form that submitted itself, a redirect) can't be
+        // screenshotted until the next page has loaded: wait for it, mask again, try once more.
+        await page.waitForLoadState("load", { timeout: 60_000 }).catch(() => {});
+        await settle(page);
+        await applyMasks(page, mask, maskOptions);
+        await take(30_000);
+      }
       await clearMasks(page);
       return file;
     };
@@ -304,6 +316,8 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
     };
     const results: StepResult[] = [];
     let failure: FailureReport | undefined;
+    // `showEmail` `remember` values, kept for the rest of this walkthrough (`{{inbox.<key>}}`).
+    const emailValues: Record<string, string> = {};
 
     const startPath = walkthrough.start?.page ?? "/";
     log("opening", startPath);
@@ -393,7 +407,8 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
       try {
         const acts = step.actions;
         for (let ai = 0; ai < acts.length; ai++) {
-          const a = acts[ai];
+          // `{{inbox.<key>}}`: filled in now, from an email an earlier showEmail remembered.
+          const a = withEmailValues(acts[ai], emailValues);
           failedAction = a;
           progress.current = { index: ai + 1, do: a.do, ...("target" in a ? { target: a.target } : {}) };
           // An email shown by `showEmail` stays up until the next action.
@@ -415,6 +430,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
             waitCap,
             seen,
             mail,
+            emailValues,
           });
           progress.lastOk = { index: ai + 1, do: acts[ai].do };
         }
@@ -678,6 +694,49 @@ interface RunActionArgs {
   seen: (string | undefined)[];
   /** The run's mail catcher (config `mail`), for `showEmail`. */
   mail?: MailCatcher;
+  /** Values `showEmail` `remember` read out of emails this run, for `{{inbox.<key>}}`. */
+  emailValues: Record<string, string>;
+}
+
+/** `action` with `{{inbox.<key>}}` filled in where a value is used: typed text, a goto path, an
+ * expected text. Other actions are returned as they are. */
+function withEmailValues(action: Action, values: Record<string, string>): Action {
+  if (action.do === "type" && action.text.includes("{{")) return { ...action, text: fillEmailValues(action.text, values) };
+  if (action.do === "goto" && action.path.includes("{{")) return { ...action, path: fillEmailValues(action.path, values) };
+  if (action.do === "expect" && action.text?.includes("{{")) return { ...action, text: fillEmailValues(action.text, values) };
+  return action;
+}
+
+/** The values `remember` asks for, read from the email's subject, text and HTML (links in it
+ * included): each pattern's first group, else its whole match. Throws when one isn't found. */
+export function rememberFromEmail(email: EmailView, remember: Record<string, string> | undefined): Record<string, string> {
+  if (!remember) return {};
+  const html = email.html ?? "";
+  const shown = html
+    .replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&");
+  const haystack = [email.subject, email.text ?? "", shown, html.replace(/&amp;/g, "&")].join("\n");
+  const out: Record<string, string> = {};
+  for (const [key, pattern] of Object.entries(remember)) {
+    const m = /^\/(.+)\/([a-z]*)$/.exec(pattern);
+    const found = m ? new RegExp(m[1], m[2]).exec(haystack) : null;
+    if (!found) throw new Error(`showEmail: remember.${key} found nothing matching ${pattern} in the email "${email.subject}"`);
+    out[key] = found[1] ?? found[0];
+  }
+  return out;
+}
+
+/** True when the page shows no text at all (between two documents, or a client-side page swap
+ * that hasn't painted yet): a frame of it would flash blank in the video. */
+async function isBlankPage(page: Page): Promise<boolean> {
+  return page.evaluate("!(document.body && document.body.innerText.trim())").then((v) => Boolean(v)).catch(() => true);
+}
+
+/** True while the page is loading a new document (a form posted, a redirect). */
+async function isNavigating(page: Page): Promise<boolean> {
+  return page.evaluate("document.readyState !== 'complete'").then((v) => Boolean(v)).catch(() => true);
 }
 
 /** A `mock` email as shown: plain text, or HTML. */
@@ -703,7 +762,10 @@ async function caughtEmail(a: { to?: string; subject?: string }, mail: MailCatch
     m = await mail.waitFor((e) => matches(e.subject, a.subject) && (a.to === undefined || e.to.some((t) => matches(t, a.to))), timeoutMs);
   } catch (err) {
     const seen = mail.messages().map((e) => `"${e.subject}" to ${e.to.join(", ")}`).slice(-5);
-    throw new Error(`showEmail: ${(err as Error).message}${seen.length ? `; caught: ${seen.join("; ")}` : ""}`);
+    const hint = seen.length
+      ? `; caught: ${seen.join("; ")}`
+      : `. The app sent no email this run: check its SMTP settings point at 127.0.0.1:${mail.port} without TLS, and that it isn't rate-limiting what it sends (an app with an in-memory limit clears it on restart)`;
+    throw new Error(`showEmail: ${(err as Error).message}${hint}`);
   }
   return { from: m.from, to: m.to.join(", "), subject: m.subject, ...(m.html !== undefined ? { html: m.html } : { text: m.text ?? "" }) };
 }
@@ -869,6 +931,7 @@ async function runAction(args: RunActionArgs): Promise<number> {
     }
     case "showEmail": {
       const email = a.mock ? mockEmailView(a.mock) : await caughtEmail(a, args.mail, waitCap(30_000));
+      Object.assign(args.emailValues, rememberFromEmail(email, a.remember));
       await showEmailOverlay(page, email);
       await paint(page);
       events.push({ type: "clearHighlight" }, { type: "frame", image: await shot("state", step.mask), transition: "fade" });
@@ -1067,14 +1130,28 @@ async function runAction(args: RunActionArgs): Promise<number> {
       const chars = Array.from(a.text);
       const typeStarted = Date.now();
       let typed = 0;
+      const urlBefore = page.url();
+      let navigated = false;
       for (const ch of chars) {
         if (Date.now() - typeStarted >= maxTypeMs) break;
         await page.keyboard.type(ch);
+        typed += 1;
+        // A form that submits itself on the last key (a one-time code) leaves the page: stop
+        // filming keys and let the next page load instead of screenshotting a page in flight.
+        // The last key is the one that submits: give the page a moment to start leaving.
+        const last = typed === chars.length;
+        if (last) await page.waitForURL((u) => u.href !== urlBefore, { timeout: 400 }).catch(() => {});
+        if (page.url() !== urlBefore || (await isNavigating(page)) || (last && (await isBlankPage(page)))) {
+          navigated = true;
+          break;
+        }
         await paint(page);
         images.push(await shot("type", step.mask));
-        typed += 1;
       }
-      if (typed < chars.length) {
+      if (navigated) {
+        if (typed < chars.length) await page.keyboard.type(chars.slice(typed).join(""));
+        await page.waitForLoadState("load", { timeout: waitCap(60_000) }).catch(() => {});
+      } else if (typed < chars.length) {
         await loc.fill(a.text);
       }
       await settle(page);
@@ -1082,7 +1159,8 @@ async function runAction(args: RunActionArgs): Promise<number> {
       // never store the real text for a masked field here either.
       events.push({ type: "typeFrames", images, text: masked ? "[REDACTED]" : a.text });
       events.push({ type: "frame", image: await shot("state", step.mask), transition: "cut" });
-      const value = await loc.inputValue().catch(() => null);
+      // A page the typing submitted has no field left to read back.
+      const value = navigated ? null : await loc.inputValue({ timeout: 5_000 }).catch(() => null);
       const ok = value === null || value === a.text;
       pushCheck(stepResult, {
         type: a.target,

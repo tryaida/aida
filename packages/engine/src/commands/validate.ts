@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, extname } from "node:path";
 import {
+  emailKeysIn,
   findUnresolvedTemplates,
   loadWalkthroughText,
   unresolvedDisplayText,
@@ -67,6 +68,23 @@ function unresolvedTemplatesIn(wt: Walkthrough): string[] {
   return [...unresolved];
 }
 
+/** `{{inbox.<key>}}` used before any `showEmail` remembers that key (in step order; setup steps
+ * can't show email). */
+export function emailValueProblems(wt: Walkthrough): string[] {
+  const problems: string[] = [];
+  const known = new Set<string>();
+  for (const step of wt.steps) {
+    for (const a of step.actions ?? []) {
+      const used = a.do === "type" ? a.text : a.do === "goto" ? a.path : a.do === "expect" ? (a.text ?? "") : "";
+      for (const key of emailKeysIn(used)) {
+        if (!known.has(key)) problems.push(`step "${step.id}": {{inbox.${key}}} is used before a showEmail remembers "${key}"`);
+      }
+      if (a.do === "showEmail") for (const key of Object.keys(a.remember ?? {})) known.add(key);
+    }
+  }
+  return problems;
+}
+
 /** Marks every result sharing a `walkthrough` id with another file in the same run as invalid. */
 function markDuplicateIds(results: ValidateResult[]): ValidateResult[] {
   const filesById = new Map<string, string[]>();
@@ -111,6 +129,7 @@ function validateFile(file: string): ValidateResult {
         message: `unresolved template placeholder {{${path}}}`,
         path,
       }));
+    for (const message of emailValueProblems(walkthrough)) errors.push({ message, path: "steps" });
     for (const p of checkWalkthroughText(walkthrough, source)) {
       errors.push({
         message: `${p.step ? `step "${p.step}": ` : ""}${p.message} — "${p.text}"`,

@@ -667,6 +667,15 @@
                         },
                         "highlight": {
                           "type": "boolean"
+                        },
+                        "remember": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "propertyNames": {
+                            "pattern": "^\\w+$"
+                          }
                         }
                       },
                       "required": [

@@ -94,3 +94,47 @@ describe("showEmail", () => {
     TIMEOUT,
   );
 });
+
+describe("showEmail remember", () => {
+  it("reads a value out of the email and types it later", async () => {
+    const { rememberFromEmail } = await import("../../src/capture/runner.js");
+    const email = { from: "a", to: "b", subject: "Your code", html: '<p>Your code is <b>483 921</b></p><a href="http://localhost:3000/verify?t=abc&amp;x=1">Verify</a>' };
+    expect(rememberFromEmail(email, { code: "/(\\d{3} \\d{3})/", link: '/href="([^"]+verify[^"]*)"/' })).toEqual({ code: "483 921", link: "http://localhost:3000/verify?t=abc&x=1" });
+    expect(() => rememberFromEmail(email, { missing: "/nope(\\d+)/" })).toThrow(/found nothing/);
+  });
+
+  it("validate: {{email.x}} needs an earlier showEmail that remembers x", async () => {
+    const { emailValueProblems } = await import("../../src/commands/validate.js");
+    const wt = (order: "before" | "after") =>
+      ({
+        walkthrough: "w",
+        title: "t",
+        steps: [
+          ...(order === "before" ? [{ id: "mail", actions: [{ do: "showEmail", subject: "Code", remember: { code: "/(\\d+)/" } }] }] : []),
+          { id: "type", actions: [{ do: "type", target: { label: "Code" }, text: "{{inbox.code}}" }] },
+          ...(order === "after" ? [{ id: "mail", actions: [{ do: "showEmail", subject: "Code", remember: { code: "/(\\d+)/" } }] }] : []),
+        ],
+      }) as unknown as Walkthrough;
+    expect(emailValueProblems(wt("before"))).toEqual([]);
+    expect(emailValueProblems(wt("after"))[0]).toMatch(/used before a showEmail remembers "code"/);
+  });
+
+  it(
+    "types a code from a mock email into the page",
+    async () => {
+      const wt: Walkthrough = {
+        walkthrough: "email-code",
+        title: "t",
+        start: { page: "/" },
+        steps: [
+          { id: "mail", actions: [{ do: "showEmail", mock: { from: "a@example.com", to: "b@example.com", subject: "Your code", text: "Code: 551204" }, remember: { code: "/Code: (\\d+)/" } }] },
+          { id: "enter", actions: [{ do: "type", target: { label: "First name" }, text: "{{inbox.code}}" }] },
+        ],
+      };
+      const result = await runCapture({ walkthrough: wt, config: config(), outDir: outDir() });
+      expect(result.failure).toBeUndefined();
+      expect(JSON.stringify(result.validation)).toContain("551204");
+    },
+    TIMEOUT,
+  );
+});

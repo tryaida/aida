@@ -45,9 +45,11 @@ export type Action =
    * Shows an email on screen, drawn as a mail client over the app, until the next action. Either
    * one the app sent during this capture, caught by the local mail catcher (config `mail.port`)
    * and matched by `to` and/or `subject` (text it contains, or a `"/pattern/"`), or an emulated
-   * one written out in `mock`, for mail capture can't receive.
+   * one written out in `mock`, for mail capture can't receive. `remember` reads values out of
+   * the email for later actions: `{ code: "/(\\d{6})/" }` makes `{{inbox.code}}` (the first
+   * group, else the whole match) usable in a later `type` text or `goto` path.
    */
-  | { do: "showEmail"; to?: string; subject?: string; mock?: MockEmail; highlight?: boolean };
+  | { do: "showEmail"; to?: string; subject?: string; mock?: MockEmail; highlight?: boolean; remember?: Record<string, string> };
 
 /** An emulated email for `showEmail`: written in the walkthrough, never sent. */
 export interface MockEmail {
@@ -126,6 +128,7 @@ export const ActionSchema: z.ZodType<Action> = z.discriminatedUnion("do", [
         .strict()
         .optional(),
       highlight: z.boolean().optional(),
+      remember: z.record(z.string().regex(/^\w+$/, "a remember key is letters, digits and _"), z.string()).optional(),
     })
     .strict()
     .describe("Shows an email on screen: one the app sent (caught locally, matched by to/subject) or an emulated `mock`."),
@@ -143,6 +146,10 @@ export const ActionSchema: z.ZodType<Action> = z.discriminatedUnion("do", [
     if (a.subject !== undefined) {
       const problem = textPatternProblem(a.subject);
       if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["subject"], message: problem });
+    }
+    for (const [key, pattern] of Object.entries(a.remember ?? {})) {
+      const problem = /^\/.+\/[a-z]*$/.test(pattern) ? textPatternProblem(pattern) : `remember.${key} must be a "/pattern/" (its first group, else the whole match, is kept)`;
+      if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["remember", key], message: problem });
     }
   }
   if (a.do === "expect" && a.text !== undefined) {

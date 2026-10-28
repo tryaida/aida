@@ -1,0 +1,64 @@
+walkthrough: delete-your-answer
+version: 1
+title: Remove your answer
+summary: Take your name and answers off a poll you've answered.
+for: People invited to a poll
+section: Getting started
+start:
+  page: /invite/seed-0559
+data:
+  voter:
+    name: Jordan Lee
+setup:
+  steps:
+    - id: first-answer
+      actions:
+        - do: goto
+          path: /invite/seed-0559
+        - do: click
+          target: { role: button, name: Pending, nth: 0 }
+        - do: click
+          target: { role: button, name: Continue }
+        - do: type
+          target: { label: Name, within: { role: dialog, name: New participant } }
+          text: "{{voter.name}}"
+        - do: click
+          target: { role: button, name: Save availability }
+        - do: click
+          target: { role: button, name: Back to poll }
+steps:
+  - id: open-menu
+    title: Open the menu by your name
+    say: To take your answer off a poll, open its link again and open the menu next to your name.
+    caption: Open the menu next to your name.
+    page_text: Open the poll's link again, in the same browser you answered in. Select the menu next to your name.
+    actions:
+      - do: click
+        target: { role: button, name: More options, within: { role: row, hasText: "{{voter.name}}" } }
+        highlight: true
+  - id: choose-delete
+    title: Choose Delete
+    say: Choose Delete.
+    caption: Choose Delete.
+    page_text: Select **Delete**.
+    actions:
+      - do: click
+        target: { role: menuitem, name: Delete }
+        highlight: true
+  - id: confirm
+    title: Confirm
+    say: Confirm, and your answer is gone. You can answer again later from the same link.
+    caption: Confirm to remove your answer.
+    page_text: Select **Delete** to confirm. Your name and answers are removed; this can't be undone, but you can answer again from the same link with **Add participant**.
+    actions:
+      - do: click
+        target: { role: button, name: Delete, within: { role: dialog, name: "Delete {{voter.name}}?" } }
+        highlight: true
+      - do: expect
+        target: { role: button, name: Add participant }
+validate:
+  database:
+    - name: answer-gone
+      sql: "select count(*)::int as n from participants where poll_id = 'seed-0559' and name = $1"
+      params: ["{{voter.name}}"]
+      expect: { n: 0 }

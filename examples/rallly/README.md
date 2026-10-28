@@ -2,7 +2,7 @@
 
 [Rallly](https://github.com/lukevella/rallly) is an open-source meeting scheduler (Next.js App
 Router, better-auth, Prisma, pnpm workspace). This folder is the AIDA help app's own files from a
-run against it: config, adapters, the app brief, 14 walkthroughs and the pages they built. Videos and PDFs are
+run against it: config, adapters, the app brief, 23 walkthroughs and the pages they built. Videos and PDFs are
 build outputs and aren't committed; rebuild them with `aida build`.
 
 | Walkthrough | For | Steps | What it does |
@@ -11,18 +11,27 @@ build outputs and aren't committed; rebuild them with `aida build`.
 | `edit-a-poll` | Organizers | 5 | Changes the location and a setting, keeps the answers |
 | `pick-the-final-date` | Organizers | 5 | Finalizes a poll, chooses who gets the calendar invite, shows that email |
 | `invite-people-by-email` | Organizers | 4 | Sends an email invite, then shows the email they receive |
+| `suggest-times` | Organizers | 6 | A poll with start times, two on one day |
+| `keep-answers-private` | Organizers | 4 | Hides participant names and votes |
+| `reopen-a-poll` | Organizers | 2 | Takes answers again on a closed poll |
 | `close-a-poll` | Organizers | 3 | Stops new answers, shows where to reopen |
 | `duplicate-a-poll` | Organizers | 4 | Copies a poll under a new title |
 | `delete-a-poll` | Organizers | 3 | Deletes a poll after the warning |
 | `find-your-polls` | Organizers | 3 | The Polls list and its status filters |
+| `cancel-an-event` | Organizers | 3 | Calls off a booked event |
 | `see-upcoming-events` | Organizers | 2 | Finalized dates on the Events page |
 | `set-your-time-zone` | Organizers | 4 | Time zone, time format and start of week |
+| `sign-in` | Organizers (signed out) | 4 | Signs in with the code from the real email |
+| `change-your-email` | Organizers | 4 | New address, confirmed with the emailed code |
+| `email-notifications` | Organizers | 2 | Shows a "new response" email (mocked), turns it off |
 | `change-your-name` | Organizers | 2 | The name shown on your polls |
 | `vote-on-a-poll` | Participants (signed out) | 5 | Marks dates on an invite link, adds a name, saves |
 | `change-your-answers` | Participants (signed out) | 4 | Edits an earlier answer (set up unrecorded first) |
+| `add-a-note` | Participants (signed out) | 4 | A note only the organizer sees |
+| `delete-your-answer` | Participants (signed out) | 3 | Removes an earlier answer |
 | `add-a-comment` | Participants (signed out) | 3 | Leaves a comment on a poll |
 
-All 14 pass capture against a production build with the seeded demo data, and each one that
+All 23 pass capture against a production build with the seeded demo data, and each one that
 saves data checks the database afterwards (`validate.database`). `app-brief.md` is the brief the
 help chat answers from, written from Rallly's own `apps/docs`. `proof.png` is the brand proof
 sheet.
@@ -30,7 +39,8 @@ sheet.
 ## Run it yourself
 
 Needs Node 24 for Rallly (AIDA itself runs on Node 22+), pnpm, a local Postgres and ffmpeg. No
-Docker: Redis, S3 and the mail catcher in Rallly's compose file are optional.
+Docker: Redis and S3 in Rallly's compose file are optional, and AIDA catches Rallly's email
+itself during capture (`mail: { port: 1025 }` in the config).
 
 ```bash
 git clone https://github.com/lukevella/rallly.git && cd rallly
@@ -89,9 +99,10 @@ cd help && npm run dev -- -p 3001       # the help site, and /studio
   then asks the app who's signed in and fails unless it's that user. It refuses any app or
   database that isn't on this machine. For Rallly four things were edited, as the file's notes
   ask: `SECRET_VARS` (Rallly's secret is `SECRET_PASSWORD`), `SESSION_PATH`
-  (`/api/better-auth/get-session`), the snake_case `sessions`/`users` table names, and `USERS`.
+  (`/api/better-auth/get-session`), the snake_case `sessions`/`users` table names, and `USERS`
+  (the organizer by user id, since `change-your-email` changes its address).
 - `adapters/database.mjs`: `validate.database` queries, and `reset()` restores the demo snapshot.
-- `walkthroughs/`: the four walkthroughs. The two for invitees run signed out on a seeded poll's
+- `walkthroughs/`: the 23 walkthroughs. The participants' ones run signed out on a seeded poll's
   invite link (`/invite/seed-0170`); Rallly signs them in as a guest when they vote.
 - `pages/`: the help pages and screenshots `aida build` wrote from them.
 
@@ -147,6 +158,8 @@ Fixed in a third pass, while writing the other nine walkthroughs:
 Emails: Rallly's SMTP settings point at `127.0.0.1:1025` and the config sets `mail: { port: 1025 }`,
 so capture catches the app's real email there (never sent) and `showEmail` puts it on screen: the
 invitation in `invite-people-by-email` and the "Date booked" email in `pick-the-final-date`. The
+`sign-in` and `change-your-email` read the six-digit code out of the caught email
+(`remember`) and type it. `email-notifications` shows a mocked email. The
 brief also publishes "Words Rallly uses", "Good to know" and "What Rallly is for" pages.
 
 Worth knowing when writing walkthroughs for an app like this: new invitees land on a poll with

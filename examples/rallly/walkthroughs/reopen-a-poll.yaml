@@ -1,0 +1,33 @@
+walkthrough: reopen-a-poll
+version: 1
+title: Reopen a closed poll
+summary: Start taking answers again on a poll you closed.
+for: Organizers
+section: Polls
+start:
+  signed_in_as: organizer
+  page: /poll/seed-0148
+steps:
+  - id: open-manage
+    title: Open the Manage menu
+    say: On the closed poll, open the Manage menu.
+    caption: Open the Manage menu.
+    page_text: On the closed poll's page, select **Manage**.
+    actions:
+      - do: click
+        target: { role: button, name: Manage }
+        highlight: true
+  - id: reopen
+    title: Choose Reopen
+    say: Choose Reopen. People can add and change their answers again.
+    caption: Choose Reopen.
+    page_text: Select **Reopen**. The poll takes answers again, and everything people said before is still there.
+    actions:
+      - do: click
+        target: { role: menuitem, name: Reopen }
+        highlight: true
+validate:
+  database:
+    - name: poll-open
+      sql: "select status::text as status from polls where id = 'seed-0148'"
+      expect: { status: open }

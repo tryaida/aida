@@ -1,0 +1,55 @@
+walkthrough: sign-in
+version: 1
+title: Sign in
+summary: Sign in with a one-time code sent to your email. There's no password to remember.
+for: Organizers
+section: Getting started
+start:
+  page: /login
+data:
+  me:
+    email: dev@example.com
+steps:
+  - id: enter-email
+    title: Enter your email address
+    say: To sign in, type the email address you use with Rallly.
+    caption: Type your email address.
+    page_text: Open the sign-in page and type your email address in **Email**.
+    actions:
+      - do: type
+        target: { role: textbox, name: Email }
+        text: "{{me.email}}"
+  - id: continue
+    title: Continue
+    say: Continue. Rallly emails you a code.
+    caption: Continue.
+    page_text: Select **Continue with email**. Rallly sends a one-time code to that address.
+    actions:
+      - do: click
+        target: { role: button, name: Continue with email }
+        highlight: true
+  - id: open-email
+    title: Find the code in your email
+    say: Open the email from Rallly. Your six-digit code is in it, and it works for fifteen minutes.
+    caption: Find the six-digit code in the email.
+    page_text: Open the email from Rallly. It holds a six-digit code that works for 15 minutes. Can't see it? Check your spam or junk folder.
+    actions:
+      - do: showEmail
+        to: "{{me.email}}"
+        remember:
+          code: "/\\b(\\d{6})\\b/"
+        highlight: true
+  - id: enter-code
+    title: Enter the code
+    say: Back on the sign-in page, type the code. Rallly signs you in as soon as it's complete.
+    caption: Type the code to sign in.
+    page_text: Back on the sign-in page, type the code in **Enter your 6-digit code**. Rallly signs you in as soon as the code is complete, and opens your home page.
+    actions:
+      - do: type
+        target: { role: textbox, name: Enter your 6-digit code }
+        text: "{{inbox.code}}"
+      - do: waitForUrl
+        pattern: "localhost:3210/(polls)?$"
+      - do: expect
+        target: { role: heading, name: Home, exact: true }
+        highlight: true

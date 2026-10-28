@@ -8,7 +8,7 @@
 // A placeholder with no data is left as written; `aida validate` and the build's text check report
 // it as an error (`unresolvedDisplayText`), so it never reaches a reader.
 import type { Step, TitleCard, Walkthrough, WalkthroughPath } from "./types.js";
-import { isRunPath } from "./template.js";
+import { isEmailPath, isRunPath } from "./template.js";
 
 const PLACEHOLDER = /\{\{\s*([\w.]+)\s*\}\}/g;
 const RUN_PLACEHOLDER = /[ \t]*\{\{\s*run\.[\w.]+\s*\}\}/g;
@@ -38,7 +38,7 @@ export function resolveDisplayText(text: string, data: Record<string, unknown> |
   if (!text.includes("{{")) return text;
   let dropped = false;
   const out = text.replace(PLACEHOLDER, (whole, path: string) => {
-    if (path === "run" || path.startsWith("run.")) {
+    if (path === "run" || path.startsWith("run.") || isEmailPath(path)) {
       dropped = true;
       return "";
     }
@@ -138,7 +138,7 @@ export function unresolvedDisplayText(wt: Walkthrough): UnresolvedDisplayText[] 
     if (typeof text !== "string" || !text.includes("{{")) return;
     for (const m of text.matchAll(PLACEHOLDER)) {
       const p = m[1];
-      if (isRunPath(p) || p === "run" || p.startsWith("run.")) continue;
+      if (isRunPath(p) || p === "run" || p.startsWith("run.") || isEmailPath(p)) continue;
       if (printable(getPath(data, p)) === undefined) out.push({ path, step: stepId, placeholder: p, text });
     }
   };

@@ -17,7 +17,10 @@ export class UnresolvedTemplateError extends Error {
  * and fail confusingly downstream instead of at the source.
  */
 export function resolveTemplate(text: string, data: unknown): string {
-  return text.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_whole, path: string) => {
+  return text.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (whole, path: string) => {
+    // `{{inbox.<key>}}` is read from an email during capture (`showEmail` `remember`), when the
+    // action runs: left in place here.
+    if (isEmailPath(path)) return whole;
     const value = getPath(data, path);
     if (value === undefined) {
       throw new UnresolvedTemplateError(path);
@@ -60,7 +63,7 @@ function collectUnresolvedTemplates(value: unknown, data: unknown, out: string[]
     for (const m of value.matchAll(/\{\{\s*([\w.]+)\s*\}\}/g)) {
       const path = m[1];
       // `{{run.id}}` has no entry in `data`: capture fills it in (see `withRunValues`).
-      if (isRunPath(path)) continue;
+      if (isRunPath(path) || isEmailPath(path)) continue;
       if (getPath(data, path) === undefined) out.push(path);
     }
     return;
@@ -97,6 +100,27 @@ const RUN_KEYS = new Set<string>(["id"]);
 export function isRunPath(path: string): boolean {
   const [head, key, ...rest] = path.split(".");
   return head === "run" && key !== undefined && RUN_KEYS.has(key) && rest.length === 0;
+}
+
+/** True for `{{inbox.<key>}}`: a value capture reads from an email a `showEmail` action showed
+ * (its `remember`), filled in when a later action runs. */
+export function isEmailPath(path: string): boolean {
+  const [head, key, ...rest] = path.split(".");
+  return head === "inbox" && Boolean(key) && rest.length === 0;
+}
+
+/** The `{{inbox.<key>}}` keys a string uses. */
+export function emailKeysIn(text: string): string[] {
+  return [...text.matchAll(/\{\{\s*inbox\.(\w+)\s*\}\}/g)].map((m) => m[1]);
+}
+
+/** `text` with `{{inbox.<key>}}` filled in from `values`; throws naming a key no email gave. */
+export function fillEmailValues(text: string, values: Record<string, string>): string {
+  return text.replace(/\{\{\s*inbox\.(\w+)\s*\}\}/g, (_whole, key: string) => {
+    const v = values[key];
+    if (v === undefined) throw new Error(`no {{inbox.${key}}} yet: an earlier showEmail must remember "${key}" (remember: { ${key}: "/pattern/" })`);
+    return v;
+  });
 }
 
 /**

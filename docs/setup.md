@@ -139,6 +139,22 @@ A walkthrough can show the email a reader gets (an invitation, a booking confirm
 The email is drawn over the app as an inbox card, its body in a sandboxed frame, and stays on
 screen until the next action.
 
+**Sign-in codes and links.** `remember` reads values out of the email for later steps, so a
+walkthrough can show a real sign-in by emailed code or magic link:
+
+```yaml
+- do: showEmail
+  to: "{{me.email}}"
+  remember:
+    code: "/\\b(\\d{6})\\b/"      # first group, else the whole match
+- do: type
+  target: { role: textbox, name: Enter your code }
+  text: "{{inbox.code}}"
+```
+
+`{{inbox.<key>}}` works in a later `type` text, `goto` path or `expect` text; `aida validate`
+reports one used before a `showEmail` remembers it. Reader-facing text never shows it.
+
 ## Upgrade the help app
 
 ```bash

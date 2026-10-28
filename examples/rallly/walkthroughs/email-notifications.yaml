@@ -1,0 +1,38 @@
+walkthrough: email-notifications
+version: 1
+title: Choose your email notifications
+summary: Decide whether Rallly emails you when someone answers or comments on your polls.
+for: Organizers
+section: Screens and settings / Your account
+start:
+  signed_in_as: organizer
+  page: /settings/notifications
+steps:
+  - id: what-you-get
+    title: See what you'll be told about
+    say: By default, Rallly emails you whenever someone answers one of your polls.
+    caption: Rallly emails you when someone answers.
+    page_text: Open **Settings**, then **Notifications**. With **New response** on, Rallly emails you each time someone answers one of your polls.
+    actions:
+      - do: showEmail
+        mock:
+          from: Rallly <support@example.com>
+          to: dev@example.com
+          subject: "Jordan Lee has responded to Weekend hike"
+          text: |
+            Hi Dev,
+
+            Jordan Lee has responded to Weekend hike.
+
+            View results: http://localhost:3210/poll/seed-0087
+
+            You're receiving this email because notifications are turned on for this poll. You can change this in your notification settings.
+  - id: turn-off-responses
+    title: Turn notifications off or on
+    say: Don't want an email for every answer? Turn New response off. Comments work the same way.
+    caption: Turn New response off.
+    page_text: To stop these emails, turn off **New response**. **New comment** does the same for comments. Changes are saved straight away.
+    actions:
+      - do: click
+        target: { role: switch, name: New response }
+        highlight: true

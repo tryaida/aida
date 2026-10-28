@@ -14,7 +14,8 @@
 //   camelCase columns). Many apps rename them, for example with Prisma's `@@map("sessions")`
 //   and `@map("user_id")`: check the app's schema and edit SESSION_TABLE and USER_TABLE.
 // - Each walkthrough role needs a user that already exists in the app's local database. Map the
-//   role to that user's email in USERS (a walkthrough's `start.persona.email` wins over it).
+//   role to that user's email in USERS, or to its id when a walkthrough changes the email (a
+//   walkthrough's `start.persona.email` wins over both).
 // - The secret must be the one the app server under capture uses. It's read from the capture
 //   run's environment first, then from the app's `.env.local` and `.env` (the files both
 //   `next dev` and `next start` load). Never from `.env.production*`: those hold production
@@ -70,7 +71,8 @@ export const SESSION_TABLE = {
 };
 export const USER_TABLE = { table: "user", id: "id", email: "email" };
 
-// EDIT ME: walkthrough role -> the email of a user that exists in the app's local database.
+// EDIT ME: walkthrough role -> the email of a user that exists in the app's local database, or
+// { id: "<user id>" } when a walkthrough changes that user's email (the id still finds them).
 export const USERS = {
   // admin: "admin@example.com",
 };
@@ -147,13 +149,21 @@ export function signedCookieValue(token, secret) {
   return encodeURIComponent(`${token}.${signature}`);
 }
 
-/** The persona's email: its own, else USERS[role]. */
-export function personaEmail(persona, users = USERS) {
-  const email = persona?.email ?? users[persona?.role];
-  if (!email) {
+/** The persona's user: its own email, else USERS[role]: an email, or `{ id: "<user id>" }` when a
+ * walkthrough changes that user's email (then the id still finds them). */
+export function personaUser(persona, users = USERS) {
+  const entry = persona?.email ?? users[persona?.role];
+  if (!entry) {
     throw new Error(`sign-in: no user for role ${JSON.stringify(persona?.role)}; add it to USERS in the sign-in adapter (or give the walkthrough's persona an email)`);
   }
-  return email;
+  return typeof entry === "string" ? { email: entry } : { id: String(entry.id) };
+}
+
+/** The persona's email (USERS entries that are emails only). */
+export function personaEmail(persona, users = USERS) {
+  const user = personaUser(persona, users);
+  if (!user.email) throw new Error(`sign-in: USERS gives role ${JSON.stringify(persona?.role)} a user id, not an email`);
+  return user.email;
 }
 
 function quoteIdent(name) {
@@ -171,32 +181,33 @@ function loadPg(appDir) {
   }
 }
 
-/** Inserts a session row for `email`'s user and returns its token. */
-export async function insertSession({ databaseUrl, email, appDir = APP_DIR, now = Date.now() }) {
+/** Inserts a session row for the user (`{ email }` or `{ id }`) and returns its token and the
+ * user's id. */
+export async function insertSession({ databaseUrl, email, user = { email }, appDir = APP_DIR, now = Date.now() }) {
   const { Client } = loadPg(appDir);
   const db = new Client({ connectionString: databaseUrl });
   await db.connect();
   try {
     const u = USER_TABLE;
     const s = SESSION_TABLE;
-    const { rows } = await db.query(
-      `select ${quoteIdent(u.id)} as id from ${quoteIdent(u.table)} where lower(${quoteIdent(u.email)}) = lower($1)`,
-      [email],
-    );
-    if (!rows[0]) throw new Error(`sign-in: no user ${email} in the app's database; seed it first`);
+    const { rows } = user.id
+      ? await db.query(`select ${quoteIdent(u.id)} as id from ${quoteIdent(u.table)} where ${quoteIdent(u.id)}::text = $1`, [user.id])
+      : await db.query(`select ${quoteIdent(u.id)} as id from ${quoteIdent(u.table)} where lower(${quoteIdent(u.email)}) = lower($1)`, [user.email]);
+    if (!rows[0]) throw new Error(`sign-in: no user ${user.id ?? user.email} in the app's database; seed it first`);
     const token = randomBytes(24).toString("base64url");
     await db.query(
       `insert into ${quoteIdent(s.table)} (${[s.id, s.token, s.userId, s.expiresAt, s.createdAt, s.updatedAt].map(quoteIdent).join(", ")}) values ($1, $2, $3, $4, $5, $5)`,
       [`aida-${randomBytes(8).toString("hex")}`, token, rows[0].id, new Date(now + MAX_AGE * 1000), new Date(now)],
     );
-    return token;
+    return { token, userId: String(rows[0].id) };
   } finally {
     await db.end();
   }
 }
 
-/** Asks the app who's signed in and throws a plain-English error unless it's `email`. */
-export async function verifySession({ context, baseUrl, email }) {
+/** Asks the app who's signed in and throws a plain-English error unless it's the user with
+ * `userId`. */
+export async function verifySession({ context, baseUrl, userId }) {
   const url = new URL(SESSION_PATH, baseUrl).href;
   let session;
   try {
@@ -209,10 +220,10 @@ export async function verifySession({ context, baseUrl, email }) {
         `SESSION_PATH in the sign-in adapter right for its better-auth basePath?`,
     );
   }
-  const got = session?.user?.email;
-  if (String(got ?? "").toLowerCase() !== email.toLowerCase()) {
+  const got = session?.user?.id;
+  if (String(got ?? "") !== userId) {
     throw new Error(
-      `sign-in: the app didn't accept the session cookie for ${email} (it sees ${got ?? "no one"} signed in). ` +
+      `sign-in: the app didn't accept the session cookie for user ${userId} (it sees ${session?.user?.email ?? got ?? "no one"} signed in). ` +
         `Check the secret matches the app server's, and the cookie name and SESSION_PATH in the sign-in adapter.`,
     );
   }
@@ -230,8 +241,7 @@ export default async function signIn({ context, baseUrl, persona, env }) {
   if (!databaseUrl) throw new Error(`sign-in: no ${DATABASE_VAR} found in the environment or the app's env files`);
   assertLocal(databaseUrl, "database");
   const secret = findSecret(env);
-  const email = personaEmail(persona);
-  const token = await insertSession({ databaseUrl, email });
+  const { token, userId } = await insertSession({ databaseUrl, user: personaUser(persona) });
   await context.addCookies([
     {
       name: cookieName(baseUrl),
@@ -243,5 +253,5 @@ export default async function signIn({ context, baseUrl, persona, env }) {
       expires: Math.floor(Date.now() / 1000) + MAX_AGE,
     },
   ]);
-  await verifySession({ context, baseUrl, email });
+  await verifySession({ context, baseUrl, userId });
 }

@@ -115,3 +115,12 @@ describe("writeBetterAuthSignIn", () => {
     expect(readFileSync(r.file, "utf8")).toBe("// mine\n");
   });
 });
+
+describe("personaUser", () => {
+  it("takes an email or a user id from USERS", async () => {
+    const tpl = await import("../../src/init/templates/better-auth-sign-in.mjs");
+    expect(tpl.personaUser({ role: "admin" }, { admin: "admin@example.com" })).toEqual({ email: "admin@example.com" });
+    expect(tpl.personaUser({ role: "admin" }, { admin: { id: "user-1" } })).toEqual({ id: "user-1" });
+    expect(tpl.personaUser({ role: "admin", email: "pat@example.com" }, { admin: { id: "user-1" } })).toEqual({ email: "pat@example.com" });
+  });
+});

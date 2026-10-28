@@ -1,0 +1,42 @@
+walkthrough: cancel-an-event
+version: 1
+title: Cancel an event
+summary: Call off an event you've already booked, and let the people invited know.
+for: Organizers
+section: Events
+start:
+  signed_in_as: organizer
+  page: /events
+steps:
+  - id: open-menu
+    title: Open the event's menu
+    say: On Events, open the menu on the event you want to call off.
+    caption: Open the event's menu.
+    page_text: Open **Events** and select the menu (**More options**) on the event you want to call off.
+    actions:
+      - do: click
+        target: { role: button, name: More options, nth: 0 }
+        highlight: true
+  - id: choose-cancel
+    title: Choose Cancel event
+    say: Choose Cancel event.
+    caption: Choose Cancel event.
+    page_text: Select **Cancel event**.
+    actions:
+      - do: click
+        target: { role: menuitem, name: Cancel event }
+        highlight: true
+  - id: confirm
+    title: Confirm
+    say: Confirm, and the event moves to Canceled. The people invited are told it's off.
+    caption: Confirm to cancel the event.
+    page_text: Select **Cancel event** to confirm. The event moves to the **Canceled** list, and the people invited get an email saying it's off.
+    actions:
+      - do: click
+        target: { role: button, name: Cancel event, within: { role: dialog, name: Cancel event } }
+        highlight: true
+validate:
+  database:
+    - name: canceled
+      sql: "select count(*)::int as n from scheduled_events where user_id = 'user-1' and status::text = 'canceled'"
+      expect: { n: 1 }

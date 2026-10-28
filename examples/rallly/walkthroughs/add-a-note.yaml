@@ -1,0 +1,62 @@
+walkthrough: add-a-note
+version: 1
+title: Add a note to your answer
+summary: Explain your answers, like when you can only stay for part of the time.
+for: People invited to a poll
+section: Getting started
+start:
+  page: /invite/seed-0170
+data:
+  voter:
+    name: Sam Rivera
+    note: I can only stay until 4 on the Friday.
+steps:
+  - id: mark-dates
+    title: Mark your dates
+    say: Mark the dates that work for you, then continue.
+    caption: Mark your dates, then continue.
+    page_text: Mark the dates that work for you in the **You** row, then select **Continue**.
+    actions:
+      - do: click
+        target: { role: button, name: Pending, nth: 0 }
+        highlight: true
+      - do: click
+        target: { role: button, name: Continue }
+  - id: open-note
+    title: Add a note
+    say: Before you save, add your name, then choose Add a note.
+    caption: Add your name, then choose Add a note.
+    page_text: Type your name in **Name**, then select **Add a note**.
+    actions:
+      - do: type
+        target: { label: Name, within: { role: dialog, name: New participant } }
+        text: "{{voter.name}}"
+      - do: click
+        target: { role: button, name: Add a note }
+        highlight: true
+  - id: write-note
+    title: Write your note
+    say: Write your note. Only the organizer sees it.
+    caption: Write your note. Only the organizer sees it.
+    page_text: Type your note in **Note for the organizer**. Only the organizer sees it, not the other people on the poll.
+    actions:
+      - do: type
+        target: { role: textbox, name: Note for the organizer }
+        text: "{{voter.note}}"
+  - id: save
+    title: Save your availability
+    say: Save your availability. The organizer sees a note icon next to your name.
+    caption: Save your availability.
+    page_text: Select **Save availability**. The organizer sees a note icon next to your name and can read it there.
+    actions:
+      - do: click
+        target: { role: button, name: Save availability }
+        highlight: true
+      - do: expect
+        target: { text: Your response has been saved }
+validate:
+  database:
+    - name: note-saved
+      sql: "select note from participants where poll_id = 'seed-0170' and name = $1"
+      params: ["{{voter.name}}"]
+      expect: { note: "I can only stay until 4 on the Friday." }

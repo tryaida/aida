@@ -1,0 +1,81 @@
+walkthrough: suggest-times
+version: 1
+title: Suggest times, not just dates
+summary: Offer start times on each date, so people can say which time of day works too.
+for: Organizers
+section: Polls
+start:
+  signed_in_as: organizer
+  page: /new
+data:
+  poll:
+    title: Project kickoff call
+steps:
+  - id: name-it
+    chapter: Set up the poll
+    title: Name the event
+    say: Start a new poll and give it a title.
+    caption: Give the poll a title.
+    page_text: Start a new poll and type a title in **Title**.
+    actions:
+      - do: type
+        target: { label: Title }
+        text: "{{poll.title}}"
+  - id: pick-length
+    title: Choose how long it lasts
+    say: Keep a length like one hour, instead of All day. Each date you pick then gets a start time.
+    caption: Pick a length, not All day.
+    page_text: Under **Duration**, choose how long the event lasts, such as **1h**. With a length chosen instead of **All day**, each date gets a start time.
+    actions:
+      - do: click
+        target: { role: radio, name: 1h }
+        highlight: true
+  - id: pick-date
+    chapter: Add times
+    title: Pick a date
+    say: Pick a date on the calendar. It's added with a start time you can change.
+    caption: Pick a date.
+    page_text: Move to the month you want and click a date. It's added to the list with a start time.
+    actions:
+      - do: click
+        target: { role: button, name: Go to the next month }
+      - do: click
+        target: { role: button, name: "10", exact: true }
+        highlight: true
+  - id: set-time
+    title: Set the start time
+    say: Choose when it starts. The end time follows the length you picked.
+    caption: Choose the start time.
+    page_text: Select the start time and choose a new one. The end time moves with it, keeping the length you picked.
+    actions:
+      - do: select
+        target: { role: combobox, nth: 0 }
+        option: "9:00 AM"
+        highlight: true
+  - id: add-another-time
+    title: Add another time on the same day
+    say: To offer a second time on that day, add a time option.
+    caption: Add another time on the same day.
+    page_text: To offer more than one time on the same date, select **Add time option**.
+    actions:
+      - do: click
+        target: { role: button, name: Add time option }
+        highlight: true
+  - id: create
+    chapter: Create the poll
+    title: Create the poll
+    say: Create the poll. People will see each time in their own time zone.
+    caption: Create the poll.
+    page_text: Select **Create poll**. Each person sees the times in their own time zone, unless you turn on **Lock time zone**.
+    actions:
+      - do: click
+        target: { role: button, name: Create poll }
+        highlight: true
+      - do: expect
+        target: { role: dialog, name: Share }
+validate:
+  database:
+    - name: two-times
+      sql: "select count(*)::int as n from options o join polls p on p.id = o.poll_id where p.title = $1 and o.duration_minutes = 60"
+      params: ["{{poll.title}}"]
+      expect: { n: 2 }

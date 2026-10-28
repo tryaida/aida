@@ -1,0 +1,52 @@
+walkthrough: keep-answers-private
+version: 1
+title: Keep people's answers private
+summary: Hide who answered and how, so each person only sees their own answers.
+for: Organizers
+section: Polls
+start:
+  signed_in_as: organizer
+  page: /poll/seed-0559/edit
+steps:
+  - id: find-settings
+    title: Go to Settings
+    say: Edit your poll and scroll down to Settings.
+    caption: Edit the poll and find Settings.
+    page_text: On your poll, open **Manage** and select **Edit**, then scroll down to **Settings**.
+    actions:
+      - do: scrollTo
+        target: { role: heading, name: Settings }
+  - id: hide-names
+    title: Hide participant names
+    say: Turn on Hide participant names, so people can't see who else has answered.
+    caption: Turn on Hide participant names.
+    page_text: Turn on **Hide participant names**. Each participant sees only their own row; you still see everyone.
+    actions:
+      - do: click
+        target: { role: switch, name: Hide participant names }
+        highlight: true
+  - id: hide-votes
+    title: Hide votes until people answer
+    say: You can also turn on Hide votes, so nobody sees the results until they've answered themselves.
+    caption: Turn on Hide votes too, if you like.
+    page_text: To stop the results swaying anyone, turn on **Hide votes**. People see the totals only after they've answered.
+    actions:
+      - do: click
+        target: { role: switch, name: Hide votes }
+        highlight: true
+  - id: save
+    title: Save
+    say: Save your changes.
+    caption: Save your changes.
+    page_text: Select **Save changes**.
+    actions:
+      - do: click
+        target: { role: button, name: Save changes }
+        highlight: true
+      - do: waitForUrl
+        pattern: "/poll/seed-0559$"
+validate:
+  database:
+    - name: private
+      sql: "select hide_participants::text as names, hide_scores::text as votes from polls where id = 'seed-0559'"
+      expect: { names: "true", votes: "true" }
