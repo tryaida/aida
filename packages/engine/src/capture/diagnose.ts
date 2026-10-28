@@ -100,27 +100,84 @@ export function appOrigins(baseUrl: string, apiOrigins: readonly string[] = [], 
   return out;
 }
 
+/** `localhost`, `*.localhost`, `127.x.x.x` or `[::1]`: this machine. */
+function isLoopbackHost(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+  return h === "localhost" || h.endsWith(".localhost") || h === "[::1]" || h === "::1" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h);
+}
+
+/**
+ * Suffixes under which anyone can register a name, so the site is one label more: country
+ * second levels (`co.uk`, `com.au`) and the hosting platforms an app or its API commonly sits on
+ * (`vercel.app`, `supabase.co`). A short list, not the public suffix list: anything missing just
+ * makes two names on it look like one site, never an app's own name look like a third party.
+ */
+const MULTI_LABEL_SUFFIXES = new Set([
+  "co.uk", "org.uk", "ac.uk", "gov.uk", "ltd.uk", "plc.uk", "me.uk", "net.uk",
+  "com.au", "net.au", "org.au", "edu.au", "gov.au", "asn.au", "id.au",
+  "co.nz", "net.nz", "org.nz", "govt.nz", "ac.nz",
+  "co.jp", "ne.jp", "or.jp", "co.kr", "co.za", "org.za", "co.in", "net.in",
+  "com.br", "com.mx", "com.ar", "com.sg", "com.hk", "com.cn", "com.tw", "com.tr", "co.il",
+  "vercel.app", "netlify.app", "pages.dev", "workers.dev", "web.app", "firebaseapp.com", "github.io",
+  "herokuapp.com", "onrender.com", "fly.dev", "railway.app", "supabase.co", "supabase.in",
+  "azurewebsites.net", "cloudfront.net", "amazonaws.com", "appspot.com", "ngrok.io", "ngrok-free.app",
+]);
+
+/** The registrable part of `hostname` (`app.acme.co.uk` -> `acme.co.uk`), or undefined for an
+ * IP address or a single-label name. */
+export function siteOf(hostname: string): string | undefined {
+  const h = hostname.toLowerCase().replace(/\.$/, "");
+  if (h.includes(":") || /^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return undefined;
+  const labels = h.split(".").filter(Boolean);
+  if (labels.length < 2) return undefined;
+  const two = labels.slice(-2).join(".");
+  if (MULTI_LABEL_SUFFIXES.has(two)) return labels.length >= 3 ? labels.slice(-3).join(".") : undefined;
+  return two;
+}
+
+/**
+ * True when `url` (or an origin) is the app's own: one of `appOrigins`; any port on this machine
+ * when an app origin is on this machine (a dev server, its API and a Vite or Storybook server on
+ * other ports are all the app's); or the same site as an app origin (`api.acme.test` for
+ * `app.acme.test`). Calling the app's own traffic a third party hides its bugs, so the rule leans
+ * that way.
+ */
+export function isAppOrigin(url: string, appOrigins: ReadonlySet<string>): boolean {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+  if (appOrigins.has(u.origin)) return true;
+  const site = siteOf(u.hostname);
+  const loopback = isLoopbackHost(u.hostname);
+  for (const o of appOrigins) {
+    let a: URL;
+    try {
+      a = new URL(o);
+    } catch {
+      continue;
+    }
+    if (loopback && isLoopbackHost(a.hostname)) return true;
+    if (site && siteOf(a.hostname) === site) return true;
+  }
+  return false;
+}
+
 /** URLs in an error's stack, `https://x/app.js:1:2` style. */
 function stackUrls(stack: string): string[] {
   return [...stack.matchAll(/\b(https?:\/\/[^\s()]+?):\d+:\d+/g)].map((m) => m[1]);
 }
 
-/** A cross-origin script's error: the browser's opaque "Script error.", or one whose stack frames
- * all sit in scripts from origins other than `appOrigins` (an analytics or chat widget). */
+/** An error from a third party's script: one whose stack frames all sit in scripts that aren't
+ * the app's (`isAppOrigin`), e.g. an analytics or chat widget. The browser's opaque "Script
+ * error." says nothing about whose script it was, so it counts as the app's: hiding an app bug
+ * is worse than a false alarm. */
 export function isThirdPartyError(err: { message?: string; stack?: string }, appOrigins: ReadonlySet<string>): boolean {
-  const message = err?.message ?? String(err);
-  if (/^\s*Script error\.?\s*$/i.test(message)) return true;
   const urls = stackUrls(err?.stack ?? "");
-  return (
-    urls.length > 0 &&
-    urls.every((u) => {
-      try {
-        return !appOrigins.has(new URL(u).origin);
-      } catch {
-        return true;
-      }
-    })
-  );
+  return urls.length > 0 && urls.every((u) => !isAppOrigin(u, appOrigins));
 }
 
 export interface StepWatchOptions {
@@ -295,7 +352,7 @@ export class StepWatch {
 
   private isAppUrl(url: string): boolean {
     try {
-      return this.origins.has(new URL(url).origin);
+      return isAppOrigin(url, this.origins);
     } catch {
       return false;
     }
@@ -308,7 +365,7 @@ export class StepWatch {
     try {
       const u = new URL(req.url());
       if (u.protocol !== "http:" && u.protocol !== "https:") return undefined;
-      if (!this.origins.has(u.origin) || IGNORED_PATHS.has(u.pathname)) return undefined;
+      if (!isAppOrigin(u.href, this.origins) || IGNORED_PATHS.has(u.pathname)) return undefined;
       const path = stripOpaqueSegments(u.pathname);
       return u.origin === this.origin ? path : `${u.host}${path}`;
     } catch {
@@ -384,20 +441,38 @@ export class StepWatch {
  * recorded): opens the current URL again with every non-GET request blocked and looks for the
  * wait's target. True when it shows up: the save worked but the screen was stale.
  */
-export async function targetShownAfterReload(page: Page, target: Target, timeoutMs: number): Promise<boolean> {
+export async function targetShownAfterReload(page: Page, target: Target, timeoutMs: number): Promise<{ targetShown: boolean; wsSendsDropped: boolean }> {
   const block = (route: import("playwright").Route): Promise<void> =>
     route.request().method() === "GET" ? route.continue() : route.abort();
   await page.route("**/*", block);
+  // WebSocket sends too: a route never sees a socket's messages, and a live screen reconnects on
+  // the reload (a "subscribe", a presence or autosave message). The connection is allowed, so a
+  // screen that draws from what the server pushes still can, but nothing the page sends reaches
+  // the server. Page-level, so it wins over a context's own socket route (`aida inspect --after`'s
+  // replay lets writes through there), and never removed (Playwright has no
+  // `unrouteWebSocket`): the reload is the last thing a failed run does on its page. A screen
+  // that needs its "subscribe" to show anything can't show the target this way, so a dropped
+  // send is reported: the classification then can't blame the walkthrough (decision 30).
+  let wsSendsDropped = false;
+  await page.routeWebSocket(/.*/, (ws) => {
+    const server = ws.connectToServer();
+    ws.onMessage(() => {
+      wsSendsDropped = true;
+    });
+    server.onMessage((message) => ws.send(message));
+  });
+  let targetShown = false;
   try {
     await page.goto(page.url(), { waitUntil: "load", timeout: timeoutMs });
     await waitForNetworkQuiet(page, Math.min(timeoutMs, NETWORK_IDLE_CAP_MS));
     await (await locate(target, page)).waitFor({ state: "visible", timeout: timeoutMs });
-    return true;
+    targetShown = true;
   } catch {
-    return false;
+    targetShown = false;
   } finally {
     await page.unroute("**/*", block).catch(() => {});
   }
+  return { targetShown, wsSendsDropped };
 }
 
 export interface Classification {
@@ -450,6 +525,9 @@ export function classifyErrorMessage(error: string): Classification | undefined 
  *   - app: a 5xx or an uncaught page error from the app, a blank page, a save still waiting for
  *     the server, a save whose result only showed after a reload (stale screen), or a write
  *     that succeeded while the URL and the screen stayed the same and a wait timed out
+ *   - undetermined: the evidence fits both the app and the walkthrough and aida couldn't check
+ *     which (a save worked, the target never showed, and the diagnosis reload had to block the
+ *     page's WebSocket sends): for a person, never the repair skill
  *   - walkthrough: everything else, e.g. a target that was never found with no write and no
  *     server error, a 403 (wrong persona), or a 4xx answer to a save (a missing field or bad
  *     demo data)
@@ -555,6 +633,15 @@ export function classifyFailure(input: ClassifyInput): Classification {
   }
   if (/ambiguous|strict mode violation/i.test(input.error)) {
     return { category: "walkthrough", reason: "the target matched more than one thing on the page: narrow it with within/exact/nth" };
+  }
+  // The diagnosis reload had to hold back what the page sends over its live connection (writes
+  // are blocked then), and a screen that subscribes before drawing can't show anything without
+  // it: a stale screen (the app's) and a wrong target (the walkthrough's) look the same.
+  if (savedOk && c.reload && !c.reload.targetShown && c.reload.wsSendsDropped) {
+    return {
+      category: "undetermined",
+      reason: `can't tell whether this is the walkthrough or the app: the save worked (${req(savedOk)}) but the page didn't show what the walkthrough expects, and the diagnosis-only reload couldn't check it because the page needs to send over its live connection (blocked while diagnosing): a person should look`,
+    };
   }
   if (savedOk) {
     const screen = c.screenChanged === true ? " and the screen changed" : "";

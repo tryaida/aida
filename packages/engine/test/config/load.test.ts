@@ -143,10 +143,14 @@ describe("loadConfig — .ts config, real process boundary", () => {
     const walkthroughsDir = join(dir, "walkthroughs");
     writeFileSync(
       join(dir, "aida.config.ts"),
+      // TypeScript-only syntax on purpose, in a folder with no package.json (as a scaffolded help
+      // app, whose package.json has no "type"): see the adapter test below.
       `
+      interface AppSettings { baseUrl: string }
+      const app: AppSettings = { baseUrl: "http://127.0.0.1:3100" };
       const config = {
-        app: { baseUrl: "http://127.0.0.1:3100" },
-        walkthroughsDir: ${JSON.stringify(walkthroughsDir)},
+        app,
+        walkthroughsDir: ${JSON.stringify(walkthroughsDir)} as string,
       };
       export default config;
       `,
@@ -171,7 +175,7 @@ describe("loadConfig — .ts config, real process boundary", () => {
     expect(JSON.parse(out.trim())).toEqual({ baseUrl: "http://127.0.0.1:3100" });
   }, 30_000);
 
-  it("loads a .ts config from a plain (non-tsx) node process, via tsx/esm/api's register()", () => {
+  it("loads a .ts config from a plain (non-tsx) node process, via tsx's register() hooks", () => {
     const dir = tmpDir();
     const configFile = writeTsConfigFixture(dir);
     const harness = join(dir, "harness.mjs");
@@ -195,20 +199,16 @@ describe("loadConfig — .ts config, real process boundary", () => {
   // running the built dist, not vitest's module runner.
   it("loads a .mjs config whose signIn adapter is a .ts file, from a plain (non-tsx) node process", () => {
     const dir = tmpDir();
-    // Plain-JS-shaped body, like the `.ts` config fixture above: a `.ts` adapter whose own
-    // syntax needs esbuild's TS transform (type annotations, `interface`, etc.) hits a separate,
-    // pre-existing tsx/Node interaction — a dynamic `import()` of a bare `.ts` path, registered
-    // via runtime `tsx/esm/api` `register()` rather than tsx's own `--import`-started loader,
-    // can fall to Node's CJS loader (which never runs tsx's esbuild transform) when the file
-    // isn't inside a package declaring `"type": "module"`. That also affects the plain `.ts`
-    // *config* case above the same way, so it's not specific to adapter resolution — out of scope
-    // for this fix, which is only that an adapter gets tsx support *at all* (previously it never
-    // did, regardless of syntax).
+    // TypeScript-only syntax in the adapter too. A `.ts` file outside a `"type": "module"`
+    // package is CommonJS to tsx's ESM hook, so Node's CommonJS loader compiles it, and without
+    // tsx's CommonJS hook registered as well an `interface` or annotation was a syntax error
+    // (build-plan.md M37 follow-up). loadConfig registers both.
     writeFileSync(
       join(dir, "sign-in.ts"),
       `
-      export default async function signIn(_ctx) {
-        globalThis.__signedInTs = true;
+      interface Persona { name: string }
+      export default async function signIn(_ctx: unknown, persona?: Persona): Promise<void> {
+        (globalThis as { __signedInTs?: boolean }).__signedInTs = persona === undefined;
       }
       `,
     );

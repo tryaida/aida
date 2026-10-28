@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
-import { groupLibrary, relativeTime, STATUS_LABEL } from "./format";
+import { groupLibrary, healthNotes, relativeTime, STATUS_LABEL } from "./format";
 import { Icon } from "./icons";
 import type { CaptureStatus, WalkthroughSummary } from "./types";
 import { aidaCli } from "./aida-cli";
@@ -114,6 +114,7 @@ export function WalkthroughList({
 }
 
 function Row({ w, selected, onSelect }: { w: WalkthroughSummary; selected: boolean; onSelect: (id: string) => void }) {
+  const notes = healthNotes(w);
   return (
     <button
       type="button"
@@ -133,6 +134,11 @@ function Row({ w, selected, onSelect }: { w: WalkthroughSummary; selected: boole
           {w.stepCount} step{w.stepCount === 1 ? "" : "s"}
           {w.lastChecked ? ` · checked ${relativeTime(w.lastChecked)}` : w.status === "not-captured" ? " · not captured" : ""}
         </span>
+        {notes.length > 0 ? (
+          <span className={cn("mt-0.5 block truncate text-[11px]", w.failure?.category === "app" ? "text-red-700 dark:text-red-400" : "text-amber-700 dark:text-amber-400")} title={w.failure?.reason}>
+            {notes.join(" · ")}
+          </span>
+        ) : null}
       </span>
     </button>
   );

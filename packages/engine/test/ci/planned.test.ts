@@ -25,7 +25,7 @@ function project(walkthroughs: Record<string, string>): { dir: string; buildDir:
   return { dir, buildDir: join(dir, ".build") };
 }
 
-async function runPlanned(failCategory: FailureReport["category"], database?: ResolvedConfig["database"], mainOk?: boolean) {
+async function runPlanned(failCategory: FailureReport["category"], database?: ResolvedConfig["database"], mainOk?: boolean, plannedOpts?: { recordDrift?: boolean }) {
   vi.resetModules();
   const { dir, buildDir } = project({ "add-session": "leaves: [session-exists]", overbook: "needs: [session-exists]\nleaves: [session-full]", "waitlist-full": "needs: [session-full]" });
   // A stale failure.json from an earlier run, for a walkthrough that will be blocked.
@@ -34,9 +34,11 @@ async function runPlanned(failCategory: FailureReport["category"], database?: Re
   writeFileSync(join(stale, "failure.json"), JSON.stringify({ error: "from an earlier run" }));
   writeFileSync(join(stale, "validation.json"), JSON.stringify({ ok: true }));
   const runIds: (string | undefined)[] = [];
+  const recordDrift: (boolean | undefined)[] = [];
   vi.doMock("../../src/ci/capture.js", () => ({
-    captureWalkthroughForCi: vi.fn(async (file: string, _c: unknown, _u: unknown, planned: { runId?: string }) => {
+    captureWalkthroughForCi: vi.fn(async (file: string, _c: unknown, _u: unknown, planned: { runId?: string; recordDrift?: boolean }) => {
       runIds.push(planned.runId);
+      recordDrift.push(planned.recordDrift);
       const id = file.split("/").pop()!.replace(".yaml", "");
       const failure = { error: "save didn't show", category: failCategory, reason: "the save request succeeded but the screen didn't change" } as FailureReport;
       return { walkthrough: { walkthrough: id }, captureDir: join(buildDir, id, "ci", "capture"), ok: false, ...(mainOk !== undefined ? { mainOk } : {}), failure };
@@ -46,8 +48,8 @@ async function runPlanned(failCategory: FailureReport["category"], database?: Re
   const config = { app: { baseUrl: "http://localhost:3000" }, configDir: dir, walkthroughsDir: join(dir, "walkthroughs"), outDir: dir, buildDir, ...(database ? { database } : {}) } as ResolvedConfig;
   const entries = ["add-session", "overbook", "waitlist-full"].map((id) => ({ id, file: join(dir, "walkthroughs", `${id}.yaml`) }));
   const outcomes = [];
-  for await (const o of captureInPlannedOrder(config, entries as never, ["waitlist-full"], undefined)) outcomes.push(o);
-  return { outcomes, stale, runIds };
+  for await (const o of captureInPlannedOrder(config, entries as never, ["waitlist-full"], undefined, plannedOpts)) outcomes.push(o);
+  return { outcomes, stale, runIds, recordDrift };
 }
 
 describe("captureInPlannedOrder: a provider fails", () => {
@@ -65,7 +67,12 @@ describe("captureInPlannedOrder: a provider fails", () => {
     expect(outcomes.map((o) => ("blocked" in o && o.blocked ? "blocked" : "captured"))).toEqual(["captured", "captured", "captured"]);
   });
 
-  it("passes a provider's possible app bug down the chain", async () => {
+  it("records outline drift only when asked (the PR check), never by default (--publish)", async () => {
+    expect((await runPlanned("walkthrough", undefined, true)).recordDrift).toEqual([undefined, undefined, undefined]);
+    expect((await runPlanned("walkthrough", undefined, true, { recordDrift: true })).recordDrift).toEqual([true, true, true]);
+  });
+
+    it("passes a provider's possible app bug down the chain", async () => {
     const { outcomes } = await runPlanned("app");
     expect(outcomes[1]).toMatchObject({ appBugIn: ["add-session"] });
     expect(outcomes[2]).toMatchObject({ appBugIn: ["add-session"] });

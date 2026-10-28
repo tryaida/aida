@@ -116,6 +116,13 @@ export interface ProblemEntry {
   url: string;
   text?: string;
   status?: number;
+  /** A 5xx response's request method. */
+  method?: string;
+  /** The step that was running (absent during sign-in and setup). */
+  step?: string;
+  /** Not the app's own (a CDN script, an analytics or chat widget, a cross-origin script's
+   * error): listed, but it never fails the capture (capture/diagnose.ts `appOrigins`). */
+  thirdParty?: boolean;
 }
 
 export interface StepResult {
@@ -195,6 +202,8 @@ export interface ValidationResult {
     page: ProblemEntry[];
     server: ProblemEntry[];
   };
+  /** Non-fatal notes about the run, e.g. third-party 5xx or page errors that were ignored. */
+  warnings?: string[];
   /** Paths whose writes or end checks differ from this (main) run's; absent when none do
    * (decisions 34, 37). */
   pathDiffs?: PathDiff[];
@@ -208,9 +217,11 @@ export interface ValidationResult {
 /**
  * Who a capture failure probably belongs to (decision 30): the walkthrough (fix the YAML), the app
  * (a person looks at it; never worked around in the walkthrough) or the environment (the app isn't
- * running, sign-in broke, a safety check refused). Always a suspicion, worded as one.
+ * running, sign-in broke, a safety check refused). `undetermined` when the evidence fits both the
+ * app and the walkthrough and aida couldn't check which: a person looks, like `app`, and the
+ * repair skill isn't offered. Always a suspicion, worded as one.
  */
-export type FailureCategory = "walkthrough" | "app" | "environment";
+export type FailureCategory = "walkthrough" | "app" | "environment" | "undetermined";
 
 /** One request seen during the failing step: method, path without query, status (0: no response). */
 export interface FailureRequest {
@@ -256,7 +267,12 @@ export interface FailureChanges {
    * The diagnosis-only reload after a save and a missed wait (never part of the walkthrough,
    * done after the failure was recorded): whether the wait's target showed up once reloaded.
    */
-  reload?: { targetShown: boolean };
+  reload?: {
+    targetShown: boolean;
+    /** The reloaded page tried to send over a WebSocket, which the diagnosis blocks: a screen
+     * that needs that to draw can't show the target, so "not shown" proves nothing. */
+    wsSendsDropped?: boolean;
+  };
   failedAction?: FailureActionRef;
   lastOkAction?: FailureActionRef;
 }

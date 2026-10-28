@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCardHtml, buildCoverHtml, buildPageHtml, buildTocHtml } from "../../src/pdf/html.js";
+import { buildCardHtml, buildCoverHtml, buildPageHtml, buildTocHtml, cardStepsFor } from "../../src/pdf/html.js";
 import type { CardStepInput, PdfPageInput } from "../../src/pdf/types.js";
 
 function pageInput(overrides: Partial<PdfPageInput> = {}): PdfPageInput {
@@ -141,5 +141,20 @@ describe("brand in the print HTML", () => {
     expect(html).toContain("<h2><span>Payments › Fees</span>");
     expect(html).toContain("<h2><span>Office staff</span>");
     expect(html).toContain('<p class="toc-sum">Take a fee.</p>');
+  });
+});
+
+describe("cardStepsFor (M38 review)", () => {
+  it("prints plain text, with no ** markers from page_text or the words a step's actions give", () => {
+    const steps = cardStepsFor(
+      {
+        steps: [
+          { id: "a", title: "Search", actions: [{ do: "press", key: "Enter", target: { label: "Search" } }] },
+          { id: "b", title: "Save", page_text: "Select **Save**. It saves the note.", actions: [] },
+        ],
+      },
+      () => undefined,
+    );
+    expect(steps.map((s) => s.text)).toEqual(["In Search, press Enter.", "Select Save."]);
   });
 });

@@ -1,8 +1,8 @@
 import type { Page } from "playwright";
 import type { Target } from "../walkthrough/index.js";
 import { locateAll } from "./locate.js";
-import type { FailureReport } from "./types.js";
-import { capLine, PASSWORD_VALUES_SCRIPT, redactLine, redactSnapshotText, stripQueryAndHash } from "./redact.js";
+import type { FailureReport, ProblemEntry, ValidationResult } from "./types.js";
+import { capLine, PASSWORD_VALUES_SCRIPT, redactLine, redactSnapshotText, stripOpaqueSegments, stripQueryAndHash } from "./redact.js";
 import { classifyFailure, targetShownAfterReload } from "./diagnose.js";
 import type { ActionProgress, StepWatch } from "./diagnose.js";
 
@@ -81,8 +81,8 @@ export function wantsReloadCheck(f: FailureReport): boolean {
  */
 export async function recheckAfterReload(page: Page, f: FailureReport, target: Target, timeoutMs: number): Promise<FailureReport> {
   if (!wantsReloadCheck(f)) return f;
-  const targetShown = await targetShownAfterReload(page, target, timeoutMs);
-  const changes = { ...f.changes!, reload: { targetShown } };
+  const { targetShown, wsSendsDropped } = await targetShownAfterReload(page, target, timeoutMs);
+  const changes = { ...f.changes!, reload: { targetShown, ...(wsSendsDropped ? { wsSendsDropped } : {}) } };
   const { category, reason } = classifyFailure({ error: f.error, phase: "step", changes });
   return { ...f, category, reason, changes };
 }
@@ -111,6 +111,97 @@ export function runLevelFailure(
   };
 }
 
+/** The run's page errors and 5xx responses that are the app's own: third-party ones are listed in
+ * `validation.json` but never fail a capture (`ProblemEntry.thirdParty`). */
+export function appProblems(problems: Pick<ValidationResult["problems"], "page" | "server">): { page: ProblemEntry[]; server: ProblemEntry[]; count: number } {
+  const page = problems.page.filter((p) => !p.thirdParty);
+  const server = problems.server.filter((p) => !p.thirdParty);
+  return { page, server, count: page.length + server.length };
+}
+
+/** One line about the 5xx and page errors left out as third-party (`ProblemEntry.thirdParty`), or
+ * undefined when there were none: "ignored 2 third-party problems (not the app's own): 1 server
+ * error (5xx) from cdn.example.com; 1 page error". Listed in `validation.json` either way. */
+export function thirdPartyWarning(problems: Pick<ValidationResult["problems"], "page" | "server">): string | undefined {
+  const server = problems.server.filter((p) => p.thirdParty);
+  const page = problems.page.filter((p) => p.thirdParty);
+  if (server.length + page.length === 0) return undefined;
+  const hosts = [
+    ...new Set(
+      server.map((p) => {
+        try {
+          return new URL(p.url).host;
+        } catch {
+          return p.url;
+        }
+      }),
+    ),
+  ];
+  const parts = [
+    server.length > 0 ? `${server.length} server error${server.length === 1 ? "" : "s"} (5xx) from ${hosts.slice(0, 3).join(", ")}${hosts.length > 3 ? " and others" : ""}` : "",
+    page.length > 0 ? `${page.length} page error${page.length === 1 ? "" : "s"} from third-party scripts` : "",
+  ].filter(Boolean);
+  const n = server.length + page.length;
+  return `ignored ${n} third-party problem${n === 1 ? "" : "s"} (not the app's own; add the origin to capture.apiOrigins if it is): ${parts.join("; ")}`;
+}
+
+/** `POST /api/x 500`, or `host/api/x 500` for an API on another origin than `base`. */
+function serverProblemLine(p: ProblemEntry, base: string): string {
+  let where = p.url;
+  try {
+    const u = new URL(p.url);
+    where = u.origin === base ? stripOpaqueSegments(u.pathname) : `${u.host}${stripOpaqueSegments(u.pathname)}`;
+  } catch {
+    // keep the URL as recorded (already without query or fragment)
+  }
+  return `${p.method ? `${p.method} ` : ""}${where} ${p.status ?? ""}`.trim();
+}
+
+/**
+ * The report for a capture whose every step passed while the app answered a 5xx or threw an
+ * uncaught page error (its own origins only). Category `app` (decision 30): a person looks at
+ * it; the walkthrough is never changed to work around it and CI offers no repair command. The
+ * capture still doesn't pass, like any other app-category failure, so its page isn't published:
+ * `aida ci --publish` leaves the last published page as it was, while `aida build` takes the
+ * page out of the help site until a capture passes (build/index-stage.ts). `undefined` when the
+ * app had no such problem.
+ */
+export function appProblemFailure(problems: Pick<ValidationResult["problems"], "page" | "server">, url: string): FailureReport | undefined {
+  const own = appProblems(problems);
+  if (own.count === 0) return undefined;
+  let base = "";
+  try {
+    base = new URL(url).origin;
+  } catch {
+    // no page URL: every server problem is named with its host
+  }
+  const parts: string[] = [];
+  if (own.server.length > 0) {
+    const shown = own.server.slice(0, 3).map((p) => serverProblemLine(p, base));
+    const more = own.server.length > shown.length ? ` and ${own.server.length - shown.length} more` : "";
+    parts.push(`the server failed (${shown.join(", ")}${more})`);
+  }
+  if (own.page.length > 0) {
+    const first = own.page[0].text ? `: ${capLine(own.page[0].text.split("\n")[0], 200)}` : "";
+    parts.push(`the page threw ${own.page.length === 1 ? "an uncaught error" : `${own.page.length} uncaught errors`}${first}`);
+  }
+  const counts = [
+    own.server.length > 0 ? `${own.server.length} server error${own.server.length === 1 ? "" : "s"} (5xx)` : "",
+    own.page.length > 0 ? `${own.page.length} page error${own.page.length === 1 ? "" : "s"}` : "",
+  ].filter(Boolean);
+  const step = own.server[0]?.step ?? own.page[0]?.step;
+  return {
+    step,
+    action: "run",
+    category: "app",
+    reason: redactLine(`suspected app bug: every step passed, but ${parts.join(", and ")}`),
+    error: `every step passed, but the app had ${counts.join(" and ")} during the capture`,
+    url: stripQueryAndHash(url),
+    snapshot: "",
+    screenshotPath: null,
+  };
+}
+
 /** The phase `runCapture` tagged a thrown error with (`aidaPhase`), if any. */
 function phaseOf(error: unknown): "sign-in" | "setup" | "run" | undefined {
   const phase = (error as { aidaPhase?: unknown } | null)?.aidaPhase;
@@ -121,6 +212,7 @@ const CATEGORY_LABEL: Record<FailureReport["category"], string> = {
   walkthrough: "walkthrough problem",
   app: "possible app bug (not a docs problem)",
   environment: "environment problem (not the walkthrough)",
+  undetermined: "can't tell (the walkthrough or the app): a person should look",
 };
 
 /** `POST /api/x 200` for each write, or "none". */
@@ -148,7 +240,7 @@ export function failureEvidence(f: FailureReport): string | undefined {
   if (c.pageErrors.count > 0) parts.push(`page errors: ${c.pageErrors.count}`);
   if (c.blankPage) parts.push("page blank");
   if (c.screenChanged !== undefined) parts.push(c.screenChanged ? "screen changed" : "screen unchanged");
-  if (c.reload) parts.push(c.reload.targetShown ? "shown after a reload" : "not shown after a reload either");
+  if (c.reload) parts.push(c.reload.targetShown ? "shown after a reload" : `not shown after a reload either${c.reload.wsSendsDropped ? " (its WebSocket sends held back)" : ""}`);
   if (c.signedInAs) parts.push(`signed in as ${c.signedInAs}`);
   return parts.join("; ");
 }
@@ -176,7 +268,10 @@ export function formatFailureLines(f: FailureReport): string[] {
     lines.push(`  page errors: ${c.pageErrors.count}${c.pageErrors.first ? ` (first: ${c.pageErrors.first})` : ""}`);
     lines.push(`  console errors: ${c.consoleErrors.count}${c.consoleErrors.first ? ` (first: ${c.consoleErrors.first})` : ""}`);
     lines.push(`  page blank: ${c.blankPage ? "yes" : "no"}${c.screenChanged === undefined ? "" : `; screen changed after the last click: ${c.screenChanged ? "yes" : "no"}`}`);
-    if (c.reload) lines.push(`  after a diagnosis-only reload, the target ${c.reload.targetShown ? "showed up" : "still didn't show"}`);
+    if (c.reload) {
+      const held = c.reload.wsSendsDropped ? " (its WebSocket sends were held back)" : "";
+      lines.push(`  after a diagnosis-only reload${held}, the target ${c.reload.targetShown ? "showed up" : "still didn't show"}`);
+    }
     if (c.signedInAs) lines.push(`  signed in as: ${c.signedInAs}`);
   }
   if (f.screenshotPath) lines.push(`screenshot: ${f.screenshotPath}`);

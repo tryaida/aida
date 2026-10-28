@@ -1,4 +1,7 @@
 import type { Action } from "./action.js";
+import { keyProblem, normaliseKey } from "./keys.js";
+
+export { normaliseKey };
 
 /**
  * Parses a plain-words `do:` string into one or more structured Actions.
@@ -7,6 +10,11 @@ import type { Action } from "./action.js";
  *   fill "First name" with "Jordan"
  *   select "Class" option "Open"
  *   expect text "Competitor added"
+ *   expect text exactly "Saved"         (the element's whole text is "Saved")
+ *   press "Enter"                       (to whatever has focus)
+ *   press "Enter" in "Search"           (in the field labelled Search)
+ *   hover "Settings" button
+ *   focus "Email"                       (the field labelled Email; or focus "Email" textbox)
  *   go to /competitors
  *   wait for url /competitors/*
  * Throws a short, agent-readable error for anything else — write an explicit
@@ -33,10 +41,31 @@ export function parseDoString(doText: string): Action[] {
     return [{ do: "select", target: { label }, option }];
   }
 
-  m = text.match(/^expect\s+text\s+"([^"]+)"$/i);
+  m = text.match(/^expect\s+text\s+(exactly\s+)?"([^"]+)"$/i);
   if (m) {
-    const [, value] = m;
-    return [{ do: "expect", target: { text: value } }];
+    const [, exactly, value] = m;
+    return [{ do: "expect", target: exactly ? { text: value, exact: true } : { text: value } }];
+  }
+
+  m = text.match(/^press\s+"([^"\s]+)"(?:\s+in\s+"([^"]+)")?$/i);
+  if (m) {
+    const [, rawKey, label] = m;
+    const key = normaliseKey(rawKey);
+    const problem = keyProblem(key);
+    if (problem) throw new Error(`"do:" step ${JSON.stringify(text)}: ${problem}`);
+    return [label ? { do: "press", key, target: { label } } : { do: "press", key }];
+  }
+
+  m = text.match(/^(hover|focus)\s+"([^"]+)"\s+(\w+)$/i);
+  if (m) {
+    const [, verb, name, role] = m;
+    return [{ do: verb.toLowerCase() as "hover" | "focus", target: { role: role.toLowerCase(), name } }];
+  }
+
+  m = text.match(/^focus\s+"([^"]+)"$/i);
+  if (m) {
+    const [, label] = m;
+    return [{ do: "focus", target: { label } }];
   }
 
   m = text.match(/^go to\s+(\S+)$/i);
@@ -52,7 +81,7 @@ export function parseDoString(doText: string): Action[] {
   }
 
   throw new Error(
-    `unrecognised "do:" step: ${JSON.stringify(text)} — use click/fill/select/expect/"go to"/"wait for url", or an explicit actions: list`,
+    `unrecognised "do:" step: ${JSON.stringify(text)} — use click/fill/select/expect/press/hover/focus/"go to"/"wait for url", or an explicit actions: list`,
   );
 }
 

@@ -95,6 +95,7 @@ function failureLines(walkthrough: string, f: BuildFailure): string[] {
   // Decision 30: say when a capture failure looks like the app or the setup, not the walkthrough.
   if (f.category === "app") lines.push(`      possible app bug (not a docs problem): ${f.reason ?? ""}`);
   else if (f.category === "environment") lines.push(`      looks like a setup problem, not the walkthrough: ${f.reason ?? ""}`);
+  else if (f.category === "undetermined") lines.push(`      can't tell whether it's the walkthrough or the app (a person should look): ${f.reason ?? ""}`);
   return lines;
 }
 

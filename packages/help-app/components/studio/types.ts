@@ -85,6 +85,24 @@ export interface StudioManifest {
 /** Mirrors app/studio/_lib/server.ts's CaptureStatus. */
 export type CaptureStatus = "passed" | "failed" | "captured" | "not-captured";
 
+/** Mirrors the engine's studio/health.ts `LastFailure`: who the last failure looks like (decision 30). */
+export interface StudioFailure {
+  category: "walkthrough" | "app" | "environment" | "undetermined";
+  label: string;
+  reason: string;
+  step?: string;
+  error: string;
+}
+
+/** Mirrors the engine's studio/health.ts `OutlineDriftItem`. */
+export interface StudioDrift {
+  expected: string;
+  seen?: string;
+  step?: string;
+  source: "capture" | "writer";
+  text: string;
+}
+
 export interface WalkthroughSummary {
   id: string;
   file: string;
@@ -94,6 +112,8 @@ export interface WalkthroughSummary {
   summary?: string;
   status: CaptureStatus;
   lastChecked?: string;
+  failure?: StudioFailure;
+  drift?: StudioDrift[];
 }
 
 /** GET /studio/api/walkthrough's response. */
@@ -102,6 +122,10 @@ export interface WalkthroughDetail {
   manifest?: StudioManifest;
   status: CaptureStatus;
   lastChecked?: string;
+  /** The last capture's failure, when it didn't pass. */
+  failure?: StudioFailure;
+  /** Names on the outline card that differ from the screen. */
+  drift?: StudioDrift[];
   siteUrl?: string;
   hasVideo: boolean;
 }

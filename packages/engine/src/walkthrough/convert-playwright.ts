@@ -2,6 +2,7 @@ import * as YAML from "yaml";
 import type { ExtractedTest } from "./playwright/extract.js";
 import type { Action } from "./action.js";
 import type { Target } from "./target.js";
+import { keyWords } from "./describe.js";
 
 /** `extractTests`/`convertStatements`, loaded only when converting a Playwright file actually
  * runs. Both modules import the TypeScript compiler API to parse the test's AST, and `typescript`
@@ -195,7 +196,14 @@ function placeholderSay(action: Action): string {
     case "select":
       return `Choose "${action.option}" for ${targetLabel(action.target)}.`;
     case "expect":
+      if (action.text !== undefined) return `Check that ${targetLabel(action.target)} shows ${action.exact ? "exactly " : ""}"${action.text}".`;
       return `Check that ${targetLabel(action.target)} is visible.`;
+    case "press":
+      return action.target ? `In ${targetLabel(action.target)}, press ${keyWords(action.key)}.` : `Press ${keyWords(action.key)}.`;
+    case "hover":
+      return `Hover over ${targetLabel(action.target)}.`;
+    case "focus":
+      return `Click in ${targetLabel(action.target)}.`;
     case "waitForUrl":
       return "Wait for the page to navigate.";
     case "point":
@@ -209,9 +217,9 @@ function placeholderSay(action: Action): string {
 }
 
 function targetLabel(target: Target): string {
-  const text =
-    target.name ?? target.label ?? target.placeholder ?? target.text ?? target.hasText ?? target.css ?? "it";
-  return `"${text}"`;
+  const text = target.name ?? target.label ?? target.placeholder ?? target.text ?? target.hasText ?? target.css;
+  if (text === undefined && target.role) return `the ${target.role}`;
+  return `"${text ?? "it"}"`;
 }
 
 function slugify(title: string): string {

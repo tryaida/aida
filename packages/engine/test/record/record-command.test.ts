@@ -146,6 +146,41 @@ describe("aida record", () => {
     TEST_TIMEOUT,
   );
 
+  it(
+    "records Enter pressed in a field as a press in that field, not a click on the form's button (M38)",
+    async () => {
+      const { dir, config } = project();
+      const code = await runRecordCommand({
+        configPath: config,
+        id: "quick-add",
+        page: "/record-form.html",
+        headless: true,
+        json: true,
+        drive: async (page, recorder) => {
+          await page.getByLabel("First name").fill("Jordan");
+          await tick();
+          await recorder.settled();
+          await page.getByLabel("First name").press("Enter");
+          await page.waitForURL(/record-done/);
+          await tick(400);
+        },
+      });
+      const text = readFileSync(join(dir, "walkthroughs", "quick-add.yaml"), "utf8");
+      const doc = YAML.parse(text);
+      expect(doc.steps[0].actions).toEqual([
+        { do: "type", target: { label: "First name" }, text: "{{firstName}}" },
+        { do: "press", key: "Enter", target: { label: "First name" } },
+        { do: "waitForUrl", pattern: "^[^?#]*://[^/]+/record-done\\.html(?:[?#].*)?$" },
+      ]);
+      expect(doc.steps[0].say).toBe("Fill in **First name**. Then press **Enter**.");
+      expect(text).not.toContain("Enter was pressed");
+      const out = JSON.parse((console.log as unknown as { mock: { calls: string[][] } }).mock.calls.at(-1)![0]);
+      expect(out).toMatchObject({ ok: true, replay: { ok: true } });
+      expect(code).toBe(0);
+    },
+    TEST_TIMEOUT,
+  );
+
   it("refuses to overwrite an existing walkthrough, before any browser opens", async () => {
     const { dir, config } = project();
     writeFileSync(join(dir, "walkthroughs", "taken.yaml"), "walkthrough: taken\n");

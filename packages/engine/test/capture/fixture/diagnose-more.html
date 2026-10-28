@@ -20,8 +20,9 @@
       <button id="save">Save registration</button>
     </main>
     <script>
-      // Third parties live on "localhost", the app on "127.0.0.1": same server, other origin.
-      const other = "http://localhost:" + location.port;
+      // Third parties live on widgets.example.net (the test routes it to the same server), the app
+      // on 127.0.0.1. Not "localhost": every port on this machine counts as the app's.
+      const other = "http://widgets.example.net";
       const addScript = (src) => {
         const s = document.createElement("script");
         s.src = src;

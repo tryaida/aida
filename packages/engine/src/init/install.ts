@@ -25,7 +25,7 @@
 // install.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AIDA_PACKAGE, LEGACY_AIDA_PACKAGE } from "../package-name.js";
@@ -276,13 +276,32 @@ export function isRegistrySpec(spec: string): boolean {
 
 const DEP_FIELDS = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"] as const;
 
+/** Why `<helpDir>/package.json` can't be rewritten safely (it's a symbolic link, or not a regular
+ * file), or undefined when it can (or isn't there yet). Rewriting a link would change whatever
+ * file it points at, possibly outside the help app. */
+export function packageJsonWriteProblem(helpDir: string): string | undefined {
+  const file = join(helpDir, "package.json");
+  let st;
+  try {
+    st = lstatSync(file);
+  } catch {
+    return undefined;
+  }
+  if (st.isSymbolicLink()) return `${file} is a symbolic link; aida won't rewrite the file it points at. Replace it with a regular file`;
+  if (!st.isFile()) return `${file} is not a regular file`;
+  return undefined;
+}
+
 /** Points `<helpDir>/package.json`'s `aida-docs` dependency at `spec`, leaving every other field
  * (and the file's indentation) as it was. An `aida-docs` entry with a registry spec in any other
  * dependency field is removed, and so is an `aida` entry in any field: that is the engine's name
  * before the rename (its old tarball is pruned with the rest) or the unrelated registry package.
- * Returns true when the file changed. */
+ * Returns true when the file changed. Throws, writing nothing, when package.json is a symbolic
+ * link (`packageJsonWriteProblem`). */
 export function setAidaDependency(helpDir: string, spec: string): boolean {
   const file = join(helpDir, "package.json");
+  const problem = packageJsonWriteProblem(helpDir);
+  if (problem) throw new Error(problem);
   const raw = readFileSync(file, "utf8");
   const pkg = JSON.parse(raw) as Record<string, Record<string, string> | unknown>;
   const indent = raw.match(/^[ \t]+(?=")/m)?.[0] ?? "  ";

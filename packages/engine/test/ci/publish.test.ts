@@ -3,7 +3,7 @@
 // stages (each already tested on its own) so this is a fast unit test of the wiring: which
 // walkthroughs get published, which get skipped as failed, and that `runIndexStage` is called
 // with just the republished pages plus the full walkthrough id list (for pruning).
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -139,11 +139,11 @@ describe("runCiPublish", () => {
         ["add-session", "other", "overbook"].map((id) => ({ id, file: join(dir, `${id}.yaml`), manifest: undefined })),
       ),
     }));
-    const captures: { id: string; resetBefore?: boolean; runId?: string; persona: boolean }[] = [];
+    const captures: { id: string; resetBefore?: boolean; runId?: string; persona: boolean; recordDrift?: boolean }[] = [];
     vi.doMock("../../src/ci/capture.js", () => ({
-      captureWalkthroughForCi: vi.fn(async (file: string, _config: unknown, _appUrl: unknown, planned: { resetBefore?: boolean; runId?: string; personaFor?: unknown }) => {
+      captureWalkthroughForCi: vi.fn(async (file: string, _config: unknown, _appUrl: unknown, planned: { resetBefore?: boolean; runId?: string; personaFor?: unknown; recordDrift?: boolean }) => {
         const id = file.split("/").pop()!.replace(".yaml", "");
-        captures.push({ id, resetBefore: planned?.resetBefore, runId: planned?.runId, persona: typeof planned?.personaFor === "function" });
+        captures.push({ id, resetBefore: planned?.resetBefore, runId: planned?.runId, persona: typeof planned?.personaFor === "function", recordDrift: planned?.recordDrift });
         const ok = id !== "add-session" || providerOk;
         return { walkthrough: { walkthrough: id }, captureDir: `/tmp/.build/${id}/ci/capture`, ok, failure: ok ? undefined : { error: "boom" } };
       }),
@@ -175,6 +175,8 @@ describe("runCiPublish", () => {
     expect(new Set(captures.map((c) => c.runId)).size).toBe(1);
     expect(captures[0].runId).toBeTruthy();
     expect(captures.every((c) => c.persona)).toBe(true);
+    // The publish bot commits to main: it never records outline drift (M39 review).
+    expect(captures.every((c) => !c.recordDrift)).toBe(true);
     expect(result.published.sort()).toEqual(["add-session", "other", "overbook"]);
     expect(result.ok).toBe(true);
   });
@@ -187,4 +189,54 @@ describe("runCiPublish", () => {
     expect(result.published).toEqual(["other"]);
     expect(indexStageOpts.pages.map((p) => p.id)).toEqual(["other"]);
   });
+
+  // M39: a full `aida build` moves every page whose `section:` changed; `aida ci --publish` used
+  // to move only the pages it rebuilt. Real index stage, real help app content tree.
+  it("moves a page it didn't republish when its walkthrough's section changed, as aida build does", async () => {
+    vi.resetModules();
+    const dir = walkthroughsDir({ "add-entry": "", untouched: "section: Billing / Fees" });
+    const helpApp = mkdtempSync(join(tmpdir(), "aida-ci-publish-app-"));
+    dirs.push(helpApp);
+    const buildDir = join(helpApp, ".build");
+    // Published by an earlier build under the old section.
+    const oldDir = join(helpApp, "content", "docs", "how-do-i", "payments", "untouched");
+    mkdirSync(oldDir, { recursive: true });
+    writeFileSync(join(oldDir, "index.mdx"), '---\ntitle: "untouched"\nwalkthrough: "untouched"\nsection: "How do I… / Payments"\n---\n\nBody.\n');
+    vi.doMock("../../src/config/index.js", () => ({ loadConfig: vi.fn(async () => fakeConfig(dir, { helpApp, outDir: helpApp, buildDir, configDir: helpApp })) }));
+    vi.doMock("../../src/safety/index.js", () => ({ runCaptureSafetyChecks: vi.fn(async () => {}) }));
+    vi.doMock("../../src/impact/index.js", () => ({
+      computeAffected: vi.fn(async () => ({
+        base: "base",
+        head: "HEAD",
+        changedFiles: [],
+        all: false,
+        walkthroughs: [
+          { id: "add-entry", affected: true, reasons: [] },
+          { id: "untouched", affected: false, reasons: [] },
+        ],
+      })),
+    }));
+    vi.doMock("../../src/impact/walkthroughs.js", () => ({
+      listWalkthroughs: vi.fn(() => ["add-entry", "untouched"].map((id) => ({ id, file: join(dir, `${id}.yaml`), manifest: undefined }))),
+    }));
+    vi.doMock("../../src/ci/capture.js", () => ({
+      captureWalkthroughForCi: vi.fn(async (file: string) => {
+        const id = file.split("/").pop()!.replace(".yaml", "");
+        return { walkthrough: { walkthrough: id, title: id, steps: [] }, captureDir: join(buildDir, id, "ci", "capture"), ok: true };
+      }),
+    }));
+    // The republished page's own build output isn't there: the index stage leaves it as it is.
+    vi.doMock("../../src/pages/index.js", () => ({ buildPage: vi.fn(async (wt: { walkthrough: string }) => page(wt.walkthrough, true)) }));
+
+    const { runCiPublish } = await import("../../src/ci/publish.js");
+    const result = await runCiPublish({ configPath: "aida.config.ts", base: "base" });
+
+    expect(result.published).toEqual(["add-entry"]);
+    expect(existsSync(oldDir)).toBe(false);
+    const moved = join(helpApp, "content", "docs", "how-do-i", "billing", "fees", "untouched", "index.mdx");
+    expect(existsSync(moved)).toBe(true);
+    expect(readFileSync(moved, "utf8")).toContain("How do I… / Billing / Fees");
+    // Its old `/<id>` link still finds it: the help app redirects by the page's `walkthrough:`.
+    expect(readFileSync(moved, "utf8")).toMatch(/walkthrough: "?untouched"?/);
+  }, 60_000);
 });

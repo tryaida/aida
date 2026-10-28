@@ -3,6 +3,7 @@
 // build`"). Uses the same brand as the help app and the videos (config.brand, resolved by
 // render/brand.ts's `resolveArtifactBrand`): colours, fonts, logo and product name.
 import type { Walkthrough } from "../walkthrough/index.js";
+import { stepInstruction } from "../walkthrough/describe.js";
 import { NEUTRAL_COLORS, cssColor, fontStack, imageDataUrl, safeFontName, safeFontUrl, type ArtifactColors } from "../render/brand.js";
 import { escapeHtml, markdownToHtml } from "./markdown.js";
 import { guideUrl, qrSvg } from "./qr.js";
@@ -757,10 +758,12 @@ function firstSentence(text: string): string {
 
 /** Short per-step line for the quick-reference card: the step's caption, or the first sentence
  * of its page text (docs/scope.md "Printable guides": "numbered steps as short lines"). */
-export function cardStepsFor(wf: Pick<Walkthrough, "steps">, screenshotFor: (stepNumber: number) => string | undefined): CardStepInput[] {
+export function cardStepsFor(wf: Pick<Walkthrough, "steps"> & Partial<Pick<Walkthrough, "data">>, screenshotFor: (stepNumber: number) => string | undefined): CardStepInput[] {
   return wf.steps.map((step, i) => {
     const stepNumber = i + 1;
-    const raw = step.caption?.trim() || firstSentence(step.page_text?.trim() ?? "");
+    // Neither: the words its actions give (walkthrough/describe.ts), "Press **Enter**.".
+    // The card prints plain text: no `**bold**` markers from page_text or the action words.
+    const raw = stripMarkdown(step.caption?.trim() || firstSentence(stepInstruction(step, wf.data)));
     return {
       number: stepNumber,
       title: step.title ?? step.id ?? `Step ${stepNumber}`,

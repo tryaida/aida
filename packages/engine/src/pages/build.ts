@@ -8,6 +8,7 @@ import { displayWalkthrough, libraryPlacement, pathWalkthrough, type Walkthrough
 import type { CaptureManifest, ValidationResult } from "../capture/index.js";
 import { readPathCaptures, type PathCapture } from "../capture/path-files.js";
 import { redactLine } from "../capture/redact.js";
+import { appProblems } from "../capture/failure-report.js";
 import { pathClipLinks } from "../render/clips.js";
 import { annotateFrame, renderPrintFrame } from "./annotate.js";
 import { PNG } from "pngjs";
@@ -121,8 +122,10 @@ export async function buildPage(written: Walkthrough, captureDir: string, outDir
     const failed = validation.steps.filter((s) => !s.ok);
     // Redacted and capped: a step error can carry what the page showed (`Received …`).
     for (const s of failed) problems.push(redactLine(`step "${s.id ?? s.title ?? "?"}" failed: ${s.error ?? "not ok"}`));
-    if (validation.problems.page.length > 0) problems.push(`${validation.problems.page.length} page error(s) during capture`);
-    if (validation.problems.server.length > 0) problems.push(`${validation.problems.server.length} 5xx response(s) during capture`);
+    // The app's own only: third-party ones are listed in validation.json but fail nothing.
+    const own = appProblems(validation.problems);
+    if (own.page.length > 0) problems.push(`${own.page.length} page error(s) during capture`);
+    if (own.server.length > 0) problems.push(`${own.server.length} 5xx response(s) during capture`);
     if (validation.dbChecks.some((c) => !c.ok)) problems.push("one or more database checks failed");
   }
   const passed = Boolean(validation?.ok);
@@ -191,7 +194,7 @@ export async function buildPage(written: Walkthrough, captureDir: string, outDir
       blocks.push(buildChapterBlock(step.chapter, chapters.indexOf(step.chapter)));
       lastChapter = step.chapter;
     }
-    blocks.push(buildStepBlock(step, i + 1, statuses[i]));
+    blocks.push(buildStepBlock(step, i + 1, statuses[i], wf.data));
   }
 
   blocks.push(...otherWays.blocks);
@@ -356,7 +359,7 @@ async function buildOtherWays(
       const plan = plans.get(n);
       if (mStep.doc.image && plan) jobs.push(screenshotJob(p.steps[i], mStep, n, plan));
     }
-    p.steps.forEach((step, i) => out.blocks.push(buildPathStepBlock(p.id, step, i + 1, statuses[i])));
+    p.steps.forEach((step, i) => out.blocks.push(buildPathStepBlock(p.id, step, i + 1, statuses[i], wf.data)));
     // A path that runs to its own end shows all its steps and no "continue from" (decision 37).
     if (!run.alone) out.blocks.push(buildPathJoinBlock(p.id, wf.steps[run.joinIndex]!, run.joinIndex + 1));
 

@@ -227,6 +227,56 @@ describe("inspect's write block, from the first request", () => {
   );
 });
 
+// M39: the diagnosis-only reload after a failed step (capture/diagnose.ts) blocks writes; a
+// WebSocket the reloaded page opens must not send either, inspect's replay included (its gate
+// still lets writes through then).
+describe("the diagnosis-only reload during inspect --after's replay", () => {
+  it(
+    "connects the reloaded page's WebSocket but drops what it sends",
+    async () => {
+      const ws = await startWsServer();
+      try {
+        const configPath = project();
+        writeFileSync(
+          join(configPath, "..", "walkthroughs", "live-stale.yaml"),
+          `walkthrough: live-stale
+title: Save on a live screen
+start:
+  page: /reload-ws.html?ws=${encodeURIComponent(ws.url)}
+steps:
+  - id: save
+    actions:
+      - do: click
+        target:
+          role: button
+          name: Save in dialog
+      - do: waitFor
+        target:
+          text: Registration saved
+`,
+        );
+        const code = await runInspectCommand({ configPath, walkthrough: "live-stale", after: "save", maxWaitMs: 1_500 }, true);
+        expect(code).toBe(1);
+        // A screen that needs its socket can't be checked by the reload: not blamed on the
+        // walkthrough (decision 30), no repair implied.
+        const failure = payload().failure as { category: string; reason: string; changes: { reload: unknown } };
+        expect(failure.changes.reload).toEqual({ targetShown: false, wsSendsDropped: true });
+        expect(failure.category).toBe("undetermined");
+        expect(failure.reason).toMatch(/^can't tell whether this is the walkthrough or the app: the save worked \(POST \/api\/list 200\)/);
+        // The replay's save went through; the reload's own load wrote nothing.
+        expect(posts).toEqual(["/api/list"]);
+        // Connected twice (the replay's load and the reload), sent once: the reload's
+        // "subscribe" never reached the server.
+        expect(ws.upgrades()).toBe(2);
+        expect(ws.textFrames()).toBe(1);
+      } finally {
+        await ws.close();
+      }
+    },
+    TIMEOUT,
+  );
+});
+
 // Security review: what inspect prints never carries a typed secret or a URL's token.
 describe("inspect redaction", () => {
   it(

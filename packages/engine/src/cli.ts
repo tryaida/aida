@@ -657,6 +657,22 @@ program
   );
 
 program
+  .command("upgrade")
+  .description("update a scaffolded help app to this version's template, leaving your content and changed files alone, and refresh its engine tarball")
+  .option("--dir <path>", "the help app, or a repo with it in help/ (default: cwd)")
+  .option("--dry-run", "report what would change and write nothing")
+  .option("--force", "upgrade even when the help app has uncommitted changes in git")
+  .option("--no-install", "don't run npm install in the help app afterwards")
+  .option("--json", "print a single JSON object instead of a summary")
+  .action(async (opts: { dir?: string; dryRun?: boolean; force?: boolean; install: boolean; json?: boolean }) => {
+    const { runUpgrade } = await import("./commands/upgrade.js");
+    process.exitCode = await runUpgrade(
+      { dir: opts.dir, dryRun: Boolean(opts.dryRun), force: Boolean(opts.force), install: opts.install },
+      Boolean(opts.json),
+    );
+  });
+
+program
   .command("theme [dir]")
   .description("rewrite the help app's theme files (app/brand.css, lib/brand.json, public/brand/) from aida.config's brand")
   .option("--config <path>", "path to aida.config.ts/.mjs (default: <dir>/aida.config.* or <dir>/help/aida.config.*)")

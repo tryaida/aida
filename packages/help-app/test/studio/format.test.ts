@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { captionCues, describeEntry, groupLibrary, placeOf, relativeTime, undoState } from "../../components/studio/format";
+import { captionCues, describeEntry, groupLibrary, healthNotes, placeOf, relativeTime, undoState } from "../../components/studio/format";
 import type { WalkthroughSummary } from "../../components/studio/types";
 
 const wt = (id: string, section?: string): WalkthroughSummary => ({ id, file: "", title: id, stepCount: 1, section, status: "passed" });
@@ -48,5 +48,19 @@ describe("Studio display helpers", () => {
   it("counts caption cues with the renderer's 42-character wrap", () => {
     expect(captionCues("Short caption.").cues).toBe(1);
     expect(captionCues("word ".repeat(40)).cues).toBeGreaterThan(1);
+  });
+});
+
+describe("Studio list row health notes (M39)", () => {
+  const failure = (category: "walkthrough" | "app" | "environment") => ({ category, label: "", reason: "r", error: "e" });
+  it("says who a failure looks like and how many outline names differ", () => {
+    expect(healthNotes({ status: "passed" })).toEqual([]);
+    expect(healthNotes({ status: "failed", failure: failure("app") })).toEqual(["possible app bug"]);
+    expect(healthNotes({ status: "failed", failure: failure("environment") })).toEqual(["setup problem"]);
+    // A failure report left over from before a passing capture says nothing.
+    expect(healthNotes({ status: "passed", failure: failure("walkthrough") })).toEqual([]);
+    const drift = { expected: "Save", source: "capture" as const, text: "x" };
+    expect(healthNotes({ status: "passed", drift: [drift] })).toEqual(["outline: 1 name differs"]);
+    expect(healthNotes({ status: "failed", failure: failure("walkthrough"), drift: [drift, drift] })).toEqual(["walkthrough problem", "outline: 2 names differ"]);
   });
 });

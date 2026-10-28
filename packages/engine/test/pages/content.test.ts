@@ -133,6 +133,21 @@ describe("MDX-unsafe text in generated blocks", () => {
     expect(block.content).toContain("a \\< b");
     expect(block.content).toContain("**bold**");
   });
+
+  it("words a step with no page_text or caption from its actions, data filled in (M38)", () => {
+    const step = {
+      id: "s1",
+      title: "Find the order",
+      actions: [
+        { do: "press" as const, key: "Control+k" },
+        { do: "type" as const, target: { label: "Command" }, text: "{{q}}" },
+        { do: "press" as const, key: "Enter", target: { label: "Command" } },
+        { do: "hover" as const, target: { role: "row", name: "{{customer}}" } },
+      ],
+    };
+    const block = buildStepBlock(step, 1, { ok: true }, { customer: "Acme" });
+    expect(block.content).toContain("Press **Ctrl+K**. Fill in **Command**. In **Command**, press **Enter**. Hover over **Acme**.");
+  });
 });
 
 describe("buildFrontmatterBlock", () => {

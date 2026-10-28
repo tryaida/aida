@@ -11,6 +11,7 @@ import { readPathCaptures } from "../capture/path-files.js";
 import { stripMarkdown } from "../index-search/index.js";
 import { pathScreenshotFile, readerNameForRole, screenshotFile, type RoleNames } from "../pages/content.js";
 import { personaRole } from "../walkthrough/persona.js";
+import { stepInstruction } from "../walkthrough/describe.js";
 import type { BuildProceduresResult, Procedure, ProcedurePath, ProcedureStep } from "./types.js";
 
 function readJsonIfExists<T>(file: string): T | undefined {
@@ -34,11 +35,10 @@ function readSceneStarts(videoDir: string | undefined, id: string): Map<string, 
 }
 
 /** One step's plain-text instruction: `page_text` (markdown stripped) or, failing that,
- * `caption`, matching the priority the build spec gives ("page_text or caption"). */
-function instructionFor(step: Walkthrough["steps"][number]): string {
-  if (step.page_text) return stripMarkdown(step.page_text);
-  if (step.caption) return stripMarkdown(step.caption);
-  return "";
+ * `caption`, matching the priority the build spec gives ("page_text or caption"); a step with
+ * neither is described from its actions ("Press Enter.", "Hover over Settings."). */
+function instructionFor(step: Walkthrough["steps"][number], data: Walkthrough["data"]): string {
+  return stripMarkdown(stepInstruction(step, data));
 }
 
 /**
@@ -99,7 +99,7 @@ export function buildProcedure(
     steps.push({
       n,
       title: step.title ?? `Step ${n}`,
-      instruction: instructionFor(step),
+      instruction: instructionFor(step, wf.data),
       ...(screenshot ? { screenshot } : {}),
       ...(videoTimeSec !== undefined ? { videoTimeSec } : {}),
     });
@@ -168,7 +168,7 @@ function buildProcedurePaths(
         capture.manifest!.steps[i]?.doc.image && opts.publicDir && opts.pagesDir
           ? publishScreenshot(join(opts.pagesDir, wf.walkthrough, rel), wf.walkthrough, rel.replace(/^screenshots\//, ""), opts.publicDir)
           : undefined;
-      return { n, title: step.title ?? `Step ${n}`, instruction: instructionFor(step), ...(screenshot ? { screenshot } : {}) };
+      return { n, title: step.title ?? `Step ${n}`, instruction: instructionFor(step, wf.data), ...(screenshot ? { screenshot } : {}) };
     });
     const joinStep = joinsAt !== undefined ? wf.steps[run.joinIndex] : undefined;
     out.push({

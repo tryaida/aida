@@ -2,16 +2,18 @@
 // told apart by a diagnosis-only reload, a save split across steps or still waiting is named, a
 // 403 or a redirect at the start points at the persona or a missing precondition, a loading
 // skeleton isn't a blank page, and what capture writes for an agent is redacted. Real Chromium
-// against the capture fixture server; the third party is "localhost", the app "127.0.0.1".
+// against the capture fixture server; the third party is widgets.example.net (routed to the same
+// server), the app "127.0.0.1".
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { BrowserContext } from "playwright";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ResolvedConfig } from "../../src/config/types.js";
 import type { Action, Step, Walkthrough } from "../../src/walkthrough/index.js";
 import { runCapture } from "../../src/capture/runner.js";
-import { appOrigins, classifyFailure, isSignInPath, isThirdPartyError } from "../../src/capture/diagnose.js";
+import { appOrigins, classifyFailure, isAppOrigin, isSignInPath, isThirdPartyError, siteOf } from "../../src/capture/diagnose.js";
 import { runLevelFailure } from "../../src/capture/failure-report.js";
 import type { FailureChanges } from "../../src/capture/types.js";
 import { startFixtureServer, type FixtureServer } from "./fixture-server.js";
@@ -114,6 +116,17 @@ function config(extra: Partial<ResolvedConfig> = {}): ResolvedConfig {
   };
 }
 
+/** The third party's origin, answered by the fixture server's own handler. */
+const THIRD_PARTY = "http://widgets.example.net";
+
+async function routeThirdParty(context: BrowserContext): Promise<void> {
+  await context.route(`${THIRD_PARTY}/**`, async (route) => {
+    const u = new URL(route.request().url());
+    const response = await route.fetch({ url: `${server.url}${u.pathname}${u.search}` });
+    await route.fulfill({ response });
+  });
+}
+
 const click = (name: string): Action => ({ do: "click", target: { role: "button", name } });
 const waitForText = (text: string): Action => ({ do: "waitFor", target: { text } });
 
@@ -126,7 +139,7 @@ async function run(steps: Step[], opts: { page?: string; config?: ResolvedConfig
     start: { page: opts.page ?? "/diagnose-more.html", persona: { role: "admin" }, signed_in_as: "admin" },
     steps,
   };
-  const result = await runCapture({ walkthrough, config: opts.config ?? config(), outDir, maxWaitMs: MAX_WAIT_MS });
+  const result = await runCapture({ walkthrough, config: opts.config ?? config(), outDir, maxWaitMs: MAX_WAIT_MS, onContext: routeThirdParty });
   return { ...result, outDir };
 }
 
@@ -181,7 +194,7 @@ describe("third-party traffic is not the app's", () => {
       const without = await fail([click("Save to API"), waitForText("Registration saved")]);
       expect(without.changes!.writes).toEqual([]);
 
-      const apiOrigin = server.url.replace("127.0.0.1", "localhost");
+      const apiOrigin = THIRD_PARTY;
       const withApi = await fail([click("Save to API"), waitForText("Registration saved")], {
         config: config({ capture: { apiOrigins: [apiOrigin] } }),
       });
@@ -200,9 +213,34 @@ describe("third-party traffic is not the app's", () => {
     expect([...origins].sort()).toEqual(["http://127.0.0.1:3000", "https://abc.supabase.co", "https://api.example.com"]);
   });
 
-  it("isThirdPartyError: 'Script error.' and errors whose frames are all cross-origin", () => {
+  it("isAppOrigin: every port on this machine for a local app, and the app's own site (M39 review)", () => {
+    const local = new Set(["http://localhost:3000"]);
+    for (const u of ["http://localhost:8000/api", "http://127.0.0.1:3000/x", "http://[::1]:5173/src/main.ts", "http://api.localhost:4000/"]) {
+      expect(isAppOrigin(u, local)).toBe(true);
+    }
+    expect(isAppOrigin("https://cdn.example.com/x.js", local)).toBe(false);
+    const site = new Set(["https://app.acme.test"]);
+    expect(isAppOrigin("https://api.acme.test/v1", site)).toBe(true);
+    expect(isAppOrigin("https://acme.test/", site)).toBe(true);
+    expect(isAppOrigin("https://acme-cdn.test/", site)).toBe(false);
+    expect(isAppOrigin("http://localhost:3000/", site)).toBe(false);
+    // Under a shared suffix the site is one label more: another tenant is a third party.
+    expect(isAppOrigin("https://api.acme.co.uk/", new Set(["https://app.acme.co.uk"]))).toBe(true);
+    expect(isAppOrigin("https://other.co.uk/", new Set(["https://app.acme.co.uk"]))).toBe(false);
+    expect(isAppOrigin("https://someone-else.vercel.app/", new Set(["https://acme.vercel.app"]))).toBe(false);
+    // An IP address is only ever its own origin (unless both are this machine).
+    expect(isAppOrigin("http://10.0.0.6:3000/", new Set(["http://10.0.0.5:3000"]))).toBe(false);
+    expect(siteOf("app.acme.com.au")).toBe("acme.com.au");
+    expect(siteOf("10.0.0.5")).toBeUndefined();
+  });
+
+  it("isThirdPartyError: errors whose frames are all a third party's; never a local dev server's or an opaque one", () => {
+    const local = new Set(["http://localhost:3000"]);
+    // A Vite dev server on another port is the app's.
+    expect(isThirdPartyError({ message: "x", stack: "Error: x\n    at f (http://localhost:5173/src/App.tsx:1:2)" }, local)).toBe(false);
     const app = new Set(["http://127.0.0.1:3000"]);
-    expect(isThirdPartyError({ message: "Script error." }, app)).toBe(true);
+    // "Script error." says nothing about whose script it was: counted as the app's.
+    expect(isThirdPartyError({ message: "Script error." }, app)).toBe(false);
     expect(isThirdPartyError({ message: "x", stack: "Error: x\n    at f (https://cdn.example.com/w.js:1:2)" }, app)).toBe(true);
     expect(isThirdPartyError({ message: "x", stack: "Error: x\n    at f (https://cdn.example.com/w.js:1:2)\n    at g (http://127.0.0.1:3000/app.js:3:4)" }, app)).toBe(false);
     expect(isThirdPartyError({ message: "x", stack: "Error: x\n    at <anonymous>" }, app)).toBe(false);
@@ -248,6 +286,9 @@ describe("the amend case", () => {
     expect(classifyFailure({ error: timeout, phase: "step", changes: base }).reason).not.toMatch(/screen changed/);
     expect(classifyFailure({ error: timeout, phase: "step", changes: { ...base, screenChanged: true } }).reason).toMatch(/and the screen changed/);
     expect(classifyFailure({ error: timeout, phase: "step", changes: { ...base, reload: { targetShown: true } } }).category).toBe("app");
+    // The reload couldn't check (the page's socket sends were held back): neither side is blamed.
+    expect(classifyFailure({ error: timeout, phase: "step", changes: { ...base, screenChanged: true, reload: { targetShown: false, wsSendsDropped: true } } }).category).toBe("undetermined");
+    expect(classifyFailure({ error: timeout, phase: "step", changes: { ...base, screenChanged: true, reload: { targetShown: false } } }).category).toBe("walkthrough");
   });
 
   it(

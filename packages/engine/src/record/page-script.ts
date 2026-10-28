@@ -25,6 +25,7 @@ export const RECORDER_SCRIPT = `
   var hovered = null;
   var hoverTimer = null;
   var lastClickAt = 0;
+  var lastEnterAt = 0;
 
   function send(msg) {
     try {
@@ -278,6 +279,9 @@ export const RECORDER_SCRIPT = `
     // Typing is recorded as a fill, which focuses the field itself; a native select as a choice.
     if (isTextEntry(el) || el.tagName === "SELECT" || el.tagName === "OPTION") return;
     if (el.tagName === "INPUT" && (el.getAttribute("type") || "").toLowerCase() === "file") return;
+    // Enter in a form field "clicks" its default button (no pointer, so detail 0): that's the
+    // press already recorded, not a click of its own.
+    if (ev.detail === 0 && Date.now() - lastEnterAt < 400) return;
     lastClickAt = Date.now();
     send({ kind: "click", el: info(el), field: isField(el) });
   }, true);
@@ -305,7 +309,7 @@ export const RECORDER_SCRIPT = `
 
   // Enter in a field submits its form without a click on anything: say which button that was.
   window.addEventListener("submit", function (ev) {
-    if (Date.now() - lastClickAt < 400) return;
+    if (Date.now() - lastClickAt < 400 || Date.now() - lastEnterAt < 400) return;
     var submitter = ev.submitter || (ev.target && ev.target.querySelector && ev.target.querySelector("button[type=submit],input[type=submit],button:not([type])"));
     send({ kind: "submit", submitter: submitter ? info(submitter) : undefined });
   }, true);
@@ -323,7 +327,42 @@ export const RECORDER_SCRIPT = `
   }, true);
 
   window.addEventListener("keydown", function (ev) {
-    if (mode && ev.key === "Escape" && !inToolbar(ev)) { ev.preventDefault(); setMode(null); }
+    if (mode && ev.key === "Escape" && !inToolbar(ev)) { ev.preventDefault(); setMode(null); return; }
+    if (mode || inToolbar(ev) || ev.repeat || ev.isComposing) return;
+    var key = ev.key;
+    if (!key || ["Control", "Alt", "AltGraph", "Shift", "Meta", "CapsLock", "Dead", "Unidentified"].indexOf(key) >= 0) return;
+    // AltGr (Ctrl+Alt on Windows) and Option on a Mac type characters (@, ß), not shortcuts.
+    if (ev.getModifierState && ev.getModifierState("AltGraph")) return;
+    if (ev.altKey && key.length === 1) return;
+    var el = document.activeElement;
+    var inField = el && el.nodeType === 1 && isTextEntry(el);
+    var secret = inField && el.tagName === "INPUT" && (el.getAttribute("type") || "").toLowerCase() === "password";
+    var plain = !ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey;
+    // Enter in a one-line field (a search box, a form) sends it. Enter on a button is recorded as
+    // its click; in a text area it's a new line; with Shift it's usually a new line too.
+    if (key === "Enter") {
+      if (!plain || !inField || el.tagName === "TEXTAREA" || el.isContentEditable) return;
+      lastEnterAt = Date.now();
+      send({ kind: "key", key: "Enter", el: info(el) });
+      return;
+    }
+    // Nothing else typed in a password field is recorded, not even which key it was.
+    if (secret) return;
+    if (key === "Escape") {
+      if (plain) send({ kind: "key", key: "Escape" });
+      return;
+    }
+    // In a field, keys are typing (Tab moves between fields, which the fills already do).
+    if (inField || key === "Tab") return;
+    if (!ev.ctrlKey && !ev.metaKey && !ev.altKey) return;
+    // Copy, paste, cut, undo, redo and select-all are editing, not steps.
+    if (["a", "c", "v", "x", "z", "y"].indexOf(key.toLowerCase()) >= 0) return;
+    var mods = [];
+    if (ev.ctrlKey) mods.push("Control");
+    if (ev.altKey) mods.push("Alt");
+    if (ev.shiftKey) mods.push("Shift");
+    if (ev.metaKey) mods.push("Meta");
+    send({ kind: "key", key: mods.join("+") + "+" + (key === " " ? "Space" : key) });
   }, true);
 
   // --- toolbar ----------------------------------------------------------------------------

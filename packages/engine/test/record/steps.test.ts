@@ -11,6 +11,31 @@ const at = (target: Target, verified = true): ResolvedTarget => ({
 });
 
 describe("buildSteps", () => {
+  it("ends a fill with Enter pressed in it, drops Tab between fields, and gives Escape and shortcuts a step (M38)", () => {
+    const built = buildSteps([
+      { kind: "type", at: at({ label: "First name" }), text: "Jordan", secret: false },
+      { kind: "press", key: "Tab" },
+      { kind: "type", at: at({ label: "Search" }), text: "ORD-1001", secret: false },
+      { kind: "press", key: "Enter", at: at({ label: "Search" }) },
+      { kind: "navigate", path: "/orders", byAction: true },
+      { kind: "type", at: at({ label: "Note" }), text: "Call back", secret: false },
+      { kind: "press", key: "Control+k" },
+      { kind: "press", key: "Escape" },
+    ]);
+    expect(built.steps.map((s) => [s.title, s.say])).toEqual([
+      ["Fill in First name and Search", "Fill in **First name** and **Search**. Then press **Enter**."],
+      ["Fill in Note", "Fill in **Note**."],
+      ["Press Ctrl+K", "Press **Ctrl+K**."],
+      ["Press Esc", "Press **Esc**."],
+    ]);
+    expect(built.steps[0].actions).toEqual([
+      { do: "type", target: { label: "First name" }, text: "{{firstName}}" },
+      { do: "type", target: { label: "Search" }, text: "{{search}}" },
+      { do: "press", key: "Enter", target: { label: "Search" } },
+      { do: "waitForUrl", pattern: urlPattern("/orders") },
+    ]);
+  });
+
   it("gathers field fills into one step and gives every other click its own", () => {
     const recorded: RecordedAction[] = [
       { kind: "click", at: at({ role: "link", name: "Competitors" }), field: false },

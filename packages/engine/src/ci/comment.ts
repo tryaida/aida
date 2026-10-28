@@ -8,6 +8,24 @@ import { claudeDraftCommentFor, claudeRepairCommentFor } from "./tiers.js";
 
 export const COMMENT_MARKER = "<!-- aida-ci-comment -->";
 
+const ZWSP = "\u200b";
+
+/**
+ * Text that came from the app or a walkthrough (a failure reason, a page error, an on-screen
+ * name), made safe to put in the PR comment as plain words: one line, markdown that could make a
+ * link, image, HTML or table cell shown literally, and `@name`, `#123` and bare `https://` links
+ * broken with an invisible space so they never notify anyone, reference an issue or link off.
+ */
+export function commentText(text: string): string {
+  return text
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[\\`*_[\]<>|~]/g, (c) => `\\${c}`)
+    .replace(/([@#])(?=[\p{L}\p{N}_-])/gu, `$1${ZWSP}`)
+    .replace(/:\/\//g, `:${ZWSP}//`)
+    .replace(/\bwww\./gi, (w) => `${w.slice(0, 3)}${ZWSP}.`);
+}
+
 export interface CommentImageUrls {
   /** Resolves a `ChangedStep`'s absolute `before`/`after`/`diff` path to a URL usable in the
    * comment (a `raw.githubusercontent.com` URL at the preview commit sha, or a local file:// /
@@ -41,10 +59,10 @@ function appBugSection(result: CiWalkthroughResult): string {
   const lines = [`### \`${result.walkthrough}\` — possible app bug`];
   if (result.failure) {
     lines.push("");
-    lines.push(`> ${result.failure.reason ?? result.failure.summary}`);
+    lines.push(`> ${commentText(result.failure.reason ?? result.failure.summary)}`);
     lines.push("");
-    lines.push(`- failed at: ${result.failure.summary}`);
-    if (result.failure.evidence) lines.push(`- evidence: ${result.failure.evidence}`);
+    lines.push(`- failed at: ${commentText(result.failure.summary)}`);
+    if (result.failure.evidence) lines.push(`- evidence: ${commentText(result.failure.evidence)}`);
   }
   lines.push("");
   lines.push("Please check this in the app. The walkthrough is left as it is: docs aren't changed to work around an app bug.");
@@ -57,11 +75,16 @@ function walkthroughSection(result: CiWalkthroughResult, images: CommentImageUrl
 
   if (result.tier === "broken" && result.failure) {
     lines.push("");
-    lines.push(`> ${result.failure.summary}`);
+    lines.push(`> ${commentText(result.failure.summary)}`);
     // Only say who it looks like when it isn't the walkthrough itself (sign-in, setup, unreachable app).
     if (result.failure.category === "environment" && result.failure.reason) {
       lines.push("");
-      lines.push(`Looks like a setup problem, not the walkthrough: ${result.failure.reason}.`);
+      lines.push(`Looks like a setup problem, not the walkthrough: ${commentText(result.failure.reason)}.`);
+    }
+    if (result.failure.category === "undetermined") {
+      lines.push("");
+      lines.push(`Couldn't tell whether this is the walkthrough or the app${result.failure.reason ? `: ${commentText(result.failure.reason)}` : ""}. A person should look; the walkthrough isn't repaired around it.`);
+      if (result.failure.evidence) lines.push(`- evidence: ${commentText(result.failure.evidence)}`);
     }
     if (!result.failure.repairCommand) return lines.join("\n");
     lines.push("");
@@ -155,6 +178,19 @@ export function buildCommentMarkdown(result: CiResult, images: CommentImageUrls,
 
   for (const route of newRoutes) {
     lines.push(newRouteSection(route, opts));
+    lines.push("");
+  }
+
+  const drifted = result.results.filter((r) => r.outlineDrift);
+  if (drifted.length > 0) {
+    lines.push(`**Outline drift: ${drifted.length} card${drifted.length === 1 ? "" : "s"}** (names on the outline card that differ from the screen; check \`outline.yaml\`)`);
+    lines.push("");
+    for (const r of drifted) {
+      const card = r.outlineDrift!.card;
+      // Card ids are kebab-case (outline schema); anything else is shown as plain words.
+      const name = /^[a-z0-9-]+$/.test(card) ? `\`${card}\`` : commentText(card);
+      lines.push(`- ${name}: ${r.outlineDrift!.differences.map(commentText).join("; ")}`);
+    }
     lines.push("");
   }
 

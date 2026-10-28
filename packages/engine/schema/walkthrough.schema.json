@@ -465,6 +465,15 @@
                         },
                         "highlight": {
                           "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/actions/items/anyOf/0/properties/highlight"
+                        },
+                        "text": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "The target's text must contain this; with exact: true it must equal it. \"/pattern/\" (or \"/pattern/i\" to ignore case) is a regular expression."
+                        },
+                        "exact": {
+                          "type": "boolean",
+                          "description": "With text: the target's whole text must equal text (whitespace collapsed), not just contain it."
                         }
                       },
                       "required": [
@@ -472,6 +481,73 @@
                         "target"
                       ],
                       "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "do": {
+                          "type": "string",
+                          "const": "press"
+                        },
+                        "key": {
+                          "type": "string",
+                          "description": "A key or chord, in Playwright key names: \"Enter\", \"Escape\", \"Tab\", \"ArrowDown\", \"Control+K\", \"ControlOrMeta+K\"."
+                        },
+                        "target": {
+                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus",
+                          "description": "Focus this element first and press the key in it; without it, the key goes to whatever has focus."
+                        },
+                        "highlight": {
+                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/actions/items/anyOf/0/properties/highlight"
+                        }
+                      },
+                      "required": [
+                        "do",
+                        "key"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "do": {
+                          "type": "string",
+                          "const": "hover"
+                        },
+                        "target": {
+                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                        },
+                        "highlight": {
+                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/actions/items/anyOf/0/properties/highlight"
+                        }
+                      },
+                      "required": [
+                        "do",
+                        "target"
+                      ],
+                      "additionalProperties": false,
+                      "description": "Moves the pointer over the target without clicking."
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "do": {
+                          "type": "string",
+                          "const": "focus"
+                        },
+                        "target": {
+                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                        },
+                        "highlight": {
+                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/actions/items/anyOf/0/properties/highlight"
+                        }
+                      },
+                      "required": [
+                        "do",
+                        "target"
+                      ],
+                      "additionalProperties": false,
+                      "description": "Puts keyboard focus on the target without clicking it."
                     },
                     {
                       "type": "object",

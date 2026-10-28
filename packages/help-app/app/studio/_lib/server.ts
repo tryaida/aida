@@ -11,6 +11,14 @@ import { extname, isAbsolute, join, relative, resolve } from "node:path";
 // the barrel. Importing the specific submodules this file needs avoids that entirely.
 import { loadWalkthroughFile, type Walkthrough } from "aida-docs/dist/walkthrough/index.js";
 import type { CaptureManifest, ValidationResult } from "aida-docs/dist/capture/types.js";
+import {
+  configLiteral,
+  outlineDriftIndex,
+  outlinePath,
+  walkthroughHealth,
+  type LastFailure,
+  type OutlineDriftItem,
+} from "aida-docs/dist/studio/health.js";
 
 /** The help app root — route handlers run with cwd at the help app root in both `next dev` and
  * `next start`. */
@@ -65,6 +73,10 @@ export interface WalkthroughSummary {
   summary?: string;
   status: CaptureStatus;
   lastChecked?: string;
+  /** The last capture's failure report (suspected owner and reason), when it didn't pass. */
+  failure?: LastFailure;
+  /** Names on its outline card that differ from the screen (M29); absent when none do. */
+  drift?: OutlineDriftItem[];
 }
 
 /** The walkthrough's optional `section:` (Contract 3). Read loosely: the engine's schema gains the
@@ -95,6 +107,8 @@ function scanWalkthroughs(): { file: string; wt: Walkthrough }[] {
 /** Every walkthrough, with what the Studio's library needs: title, step count, section
  * (Contract 3) and the last capture's pass/fail + when it was checked. */
 export function listWalkthroughs(): WalkthroughSummary[] {
+  // The outline is read once for the whole list, not once per row.
+  const drift = outlineDriftIndex(outlineFile());
   return scanWalkthroughs()
     .map(({ file, wt }) => ({
       id: wt.walkthrough,
@@ -103,7 +117,7 @@ export function listWalkthroughs(): WalkthroughSummary[] {
       stepCount: wt.steps.length,
       section: sectionOf(wt),
       summary: wt.summary,
-      ...(isSlug(wt.walkthrough) ? captureStatus(wt.walkthrough) : { status: "not-captured" as const }),
+      ...(isSlug(wt.walkthrough) ? { ...captureStatus(wt.walkthrough), ...healthFor(wt.walkthrough, drift) } : { status: "not-captured" as const }),
     }))
     .sort((a, b) => a.title.localeCompare(b.title));
 }
@@ -152,6 +166,13 @@ export function readPageText(id: string): { file?: string; text?: string } {
 // — at the cost of only understanding a literal string (no template/computed path), which is
 // what every `aida init`-generated config and the documented config shape both already use.
 function configuredBuildDir(): string {
+  return configuredPath("buildDir") ?? ".build";
+}
+
+/** A config field written as a plain string at the top level of the config object (`buildDir`,
+ * `outline`), read by the engine from the config file's text (`configLiteral`: comments and
+ * nested keys never count). */
+function configuredPath(key: "buildDir" | "outline"): string | undefined {
   for (const name of ["aida.config.ts", "aida.config.mjs", "aida.config.js"]) {
     const file = join(helpRoot(), name);
     // Same reasoning render/edit/page.js's own `resolve(opts.pagesDir)` already carries this
@@ -159,12 +180,27 @@ function configuredBuildDir(): string {
     // `name` above is one of three hardcoded literals), Turbopack's static tracer just can't see
     // that through `helpRoot()`'s indirection.
     if (!existsSync(/* turbopackIgnore: true */ file)) continue;
-    const text = readFileSync(/* turbopackIgnore: true */ file, "utf8");
-    const m = text.match(/buildDir\s*:\s*["'`]([^"'`]+)["'`]/);
-    if (m) return m[1];
-    break;
+    return configLiteral(readFileSync(/* turbopackIgnore: true */ file, "utf8"), key);
   }
-  return ".build";
+  return undefined;
+}
+
+/** The outline cards file (`aida outline`), resolved by the engine's own `outlinePath`: config
+ * `outline` (relative to the config, which sits at the help app root), else `outline.yaml` next
+ * to the walkthroughs dir. */
+export function outlineFile(): string {
+  const outline = configuredPath("outline");
+  return outlinePath({ configDir: helpRoot(), walkthroughsDir: walkthroughsDir(), ...(outline ? { outline } : {}) });
+}
+
+/** The last capture's failure category and reason (only when it didn't pass) and the outline
+ * card's drift, read by the engine (`aida-docs` studio/health). `drift`: the outline already
+ * read for a whole list. */
+export function healthFor(id: string, drift?: Map<string, OutlineDriftItem[]>): { failure?: LastFailure; drift?: OutlineDriftItem[] } {
+  assertSlug(id);
+  const health = walkthroughHealth(captureDirFor(id), drift ?? outlineFile(), id);
+  const passed = captureStatus(id).status === "passed";
+  return { ...(health.failure && !passed ? { failure: health.failure } : {}), ...(health.drift.length > 0 ? { drift: health.drift } : {}) };
 }
 
 /** `<config.buildDir>/<id>/capture` (default `.build`, same as `config/load.ts`'s own default)

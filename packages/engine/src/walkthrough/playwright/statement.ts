@@ -2,6 +2,8 @@ import ts from "typescript";
 import type { Action } from "../action.js";
 import type { Target } from "../target.js";
 import { describeTarget, resolveLocatorExpr, type LocatorVars } from "./locator.js";
+import { keyProblem, normaliseKey } from "../keys.js";
+import { literalPattern, textPattern, textPatternProblem } from "../text-pattern.js";
 
 export interface StepDraft {
   actions: Action[];
@@ -136,10 +138,32 @@ function convertOne(
       }
     }
 
+    // page.keyboard.press("Control+K") — a key to whatever has focus.
+    if (method === "press" && ts.isPropertyAccessExpression(callee.expression) && callee.expression.name.text === "keyboard") {
+      const base = resolveLocatorExpr(callee.expression.expression, vars, pageNames);
+      const raw = stringArg(expr.arguments[0]);
+      const key = raw === undefined ? undefined : normaliseKey(raw);
+      if (base?.root && key !== undefined && !keyProblem(key) && optionsOnly(expr.arguments[1], new Set(["delay"]))) {
+        mapped({ do: "press", key }, result);
+        return;
+      }
+    }
+
     if (ACTION_METHODS.has(method)) {
       const base = resolveLocatorExpr(callee.expression, vars, pageNames);
       if (base && !base.root) {
         const action = buildActionFromMethod(method, base.target, expr.arguments, result.data);
+        if (action) {
+          mapped(action, result);
+          return;
+        }
+      }
+      // The older page-level form, page.click(selector, ...): the selector is the target. A
+      // Playwright selector ("text=Save", "#id", "role=button[name=Save]") works as `css`, which
+      // capture hands to page.locator() as written.
+      const selector = stringArg(expr.arguments[0]);
+      if (base?.root && selector !== undefined) {
+        const action = buildActionFromMethod(method, { css: selector }, expr.arguments.slice(1), result.data);
         if (action) {
           mapped(action, result);
           return;
@@ -187,6 +211,10 @@ function buildActionFromMethod(
   args: readonly ts.Expression[],
   data: Record<string, string>,
 ): Action | undefined {
+  // Options that change what the call does (a right click, a modifier held, `trial`) have no
+  // walkthrough equivalent: leave the call as a TODO rather than import a different action.
+  const optionsAt = method === "fill" || method === "selectOption" || method === "press" ? 1 : 0;
+  if (!optionsOnly(args[optionsAt], HARMLESS_ACTION_OPTIONS)) return undefined;
   switch (method) {
     case "click":
     case "check":
@@ -203,10 +231,61 @@ function buildActionFromMethod(
       if (option === undefined) return undefined;
       return { do: "select", target, option };
     }
-    // press/focus/hover have no equivalent Action — handled as a TODO by the caller returning undefined.
+    case "press": {
+      const raw = stringArg(args[0]);
+      const key = raw === undefined ? undefined : normaliseKey(raw);
+      return key === undefined || keyProblem(key) ? undefined : { do: "press", key, target };
+    }
+    case "hover":
+      return { do: "hover", target };
+    case "focus":
+      return { do: "focus", target };
     default:
       return undefined;
   }
+}
+
+/** Options an action call may carry and still mean the same action. */
+const HARMLESS_ACTION_OPTIONS = new Set(["timeout", "force", "noWaitAfter", "delay"]);
+
+/** True when `expr` is absent, or an object literal naming only `allowed` keys. */
+function optionsOnly(expr: ts.Expression | undefined, allowed: ReadonlySet<string>): boolean {
+  if (!expr) return true;
+  if (!ts.isObjectLiteralExpression(expr)) return false;
+  return expr.properties.every(
+    (p) => ts.isPropertyAssignment(p) && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) && allowed.has(p.name.text),
+  );
+}
+
+/** `ignoreCase: true` in an object literal. */
+function ignoreCaseOption(expr: ts.Expression | undefined): boolean {
+  if (!expr || !ts.isObjectLiteralExpression(expr)) return false;
+  return expr.properties.some(
+    (p) => ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) && p.name.text === "ignoreCase" && p.initializer.kind === ts.SyntaxKind.TrueKeyword,
+  );
+}
+
+/**
+ * A text matcher's expected value as an expect's `text`: a RegExp literal (no flags, or `i`) as
+ * `/source/flags`; a string as itself, or as an escaped pattern when it would otherwise read as
+ * one ("/orders/") or `ignoreCase` is set. Undefined (a TODO) for anything else, or a pattern the
+ * schema would reject. `isPattern`: the value is searched for, whichever matcher it came from.
+ */
+function expectedText(expr: ts.Expression | undefined, ignoreCase: boolean): { text: string; isPattern: boolean } | undefined {
+  let text: string | undefined;
+  let isPattern = false;
+  if (expr && ts.isRegularExpressionLiteral(expr)) {
+    const m = expr.text.match(/^\/(.*)\/([a-z]*)$/s);
+    if (!m) return undefined;
+    const flags = ignoreCase && !m[2].includes("i") ? `${m[2]}i` : m[2];
+    text = `/${m[1]}/${flags}`;
+    isPattern = true;
+  } else {
+    const str = stringArg(expr);
+    if (str === undefined) return undefined;
+    text = ignoreCase || textPattern(str) ? literalPattern(str, ignoreCase) : str;
+  }
+  return textPatternProblem(text) ? undefined : { text, isPattern };
 }
 
 function selectOptionValue(expr: ts.Expression | undefined): string | undefined {
@@ -263,11 +342,20 @@ function tryConvertExpect(
   if (!resolved || resolved.root) return "todo";
   const target = resolved.target;
 
-  if (matcherName === "toBeVisible") return { do: "expect", target };
+  if (matcherName === "toBeVisible") {
+    // toBeVisible({ visible: false }) is the opposite check.
+    return optionsOnly(expr.arguments[0], new Set(["timeout"])) ? { do: "expect", target } : "todo";
+  }
+  // toHaveText: the whole text equals it (whitespace collapsed); toContainText: contains it.
+  // Both read textContent, as capture does; useInnerText has no equivalent.
   if (matcherName === "toHaveText" || matcherName === "toContainText") {
-    const value = stringArg(expr.arguments[0]);
+    const opts = expr.arguments[1];
+    if (!optionsOnly(opts, new Set(["timeout", "ignoreCase"]))) return "todo";
+    const value = expectedText(expr.arguments[0], ignoreCaseOption(opts));
     if (value === undefined) return "todo";
-    return { do: "expect", target: { ...target, hasText: value } };
+    // A RegExp is searched for by both matchers, so only a string toHaveText is `exact`.
+    const exact = matcherName === "toHaveText" && !value.isPattern;
+    return exact ? { do: "expect", target, text: value.text, exact: true } : { do: "expect", target, text: value.text };
   }
   // toHaveCount/toBeChecked/toBeEnabled/toBeDisabled have no Target-level equivalent.
   void data;

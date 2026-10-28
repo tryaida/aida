@@ -11,14 +11,15 @@ import type { PrepareOptions, PrepareReport } from "../states/prepare.js";
 import type { ResolvedConfig } from "../config/types.js";
 import { resolveCaptureSettings } from "../config/types.js";
 import { boxOf, center, locate } from "./locate.js";
+import { waitForText } from "./text-check.js";
 import { paint, settle, smoothScrollTo } from "./settle.js";
 import { applyMasks, clearMasks, type MaskOptions } from "./mask.js";
 import { resetProfile, profileAsync } from "./profile.js";
 import { HIDE_NEXT_PORTAL_SCRIPT, NAME_SHIM_SCRIPT } from "./init-scripts.js";
 import { assertLocalDatabase, assertWritesAllowed } from "./write-guard.js";
-import { buildFailureReport, recheckAfterReload, runLevelFailure } from "./failure-report.js";
+import { appProblemFailure, appProblems, buildFailureReport, recheckAfterReload, runLevelFailure, thirdPartyWarning } from "./failure-report.js";
 import { redactErrorMessage, redactLine, stripQueryAndHash } from "./redact.js";
-import { StepWatch, isSignInPath, type ActionProgress } from "./diagnose.js";
+import { StepWatch, appOrigins, isAppOrigin, isSignInPath, isThirdPartyError, type ActionProgress } from "./diagnose.js";
 import { accessibleName, pageHeadings, seenField } from "./seen.js";
 import { ImpactTracker } from "./impact.js";
 import { gotoReady } from "./page-ready.js";
@@ -38,7 +39,8 @@ import type {
 } from "./types.js";
 
 const IGNORED_CONSOLE = [/fonts\.googleapis\.com/];
-const WRITE_ACTIONS = new Set(["click", "type", "select"]);
+// `press` counts: Enter in a form field submits it.
+const WRITE_ACTIONS = new Set(["click", "type", "select", "press"]);
 
 export interface CaptureOptions {
   walkthrough: Walkthrough;
@@ -215,11 +217,18 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
       const text = m.text();
       if (!IGNORED_CONSOLE.some((re) => re.test(text))) problems.console.push({ url: stripQueryAndHash(page.url()), text: redactLine(text, 500) });
     });
+    // Every page error and 5xx is listed; only the app's own (its origins, as StepWatch counts
+    // them) fail the run. `step`: the step that was running, for the passed-but-broken report.
+    const ownOrigins = appOrigins(baseUrl, resolveCaptureSettings(config.capture).apiOrigins);
+    let problemStep: string | undefined;
+    const tagged = (thirdParty: boolean) => ({ ...(problemStep ? { step: problemStep } : {}), ...(thirdParty ? { thirdParty: true } : {}) });
     page.on("pageerror", (e) => {
-      if (!diagnosing) problems.page.push({ url: stripQueryAndHash(page.url()), text: redactLine(String(e), 500) });
+      if (!diagnosing) problems.page.push({ url: stripQueryAndHash(page.url()), text: redactLine(String(e), 500), ...tagged(isThirdPartyError(e, ownOrigins)) });
     });
     page.on("response", (r) => {
-      if (!diagnosing && r.status() >= 500) problems.server.push({ url: stripQueryAndHash(r.url()), status: r.status() });
+      if (diagnosing || r.status() < 500) return;
+      const own = isAppOrigin(r.url(), ownOrigins);
+      problems.server.push({ url: stripQueryAndHash(r.url()), status: r.status(), method: r.request().method(), ...tagged(!own) });
     });
 
     const doSignIn = async (): Promise<void> => {
@@ -369,6 +378,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
       const progress: ActionProgress = {};
       const seen: (string | undefined)[] = [];
       watch.start();
+      problemStep = step.id;
 
       try {
         const acts = step.actions;
@@ -521,11 +531,22 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
       ranAt: capturedAt,
       baseUrl,
       database: dbUrl ? redactDbUrl(dbUrl) : undefined,
-      ok: allStepsOk && dbChecks.every((c) => c.ok) && problems.page.length === 0 && problems.server.length === 0,
+      ok: allStepsOk && dbChecks.every((c) => c.ok) && appProblems(problems).count === 0,
       steps: results,
       dbChecks,
       problems,
     };
+    // Third-party 5xx and page errors fail nothing, but are never silent either.
+    const ignored = thirdPartyWarning(problems);
+    if (ignored) {
+      validation.warnings = [ignored];
+      log("  warning:", ignored);
+    }
+    const allWarnings = ignored ? [...warnings, ignored] : warnings;
+    // Every step passed but the app answered a 5xx or threw a page error: a suspected app bug
+    // (decision 30), reported like one, never a walkthrough to repair. Not for `inspect --after`'s
+    // stop, which scans the page instead.
+    if (!failure && allStepsOk && !stopped) failure = appProblemFailure(problems, page.url());
 
     // Persist the trimmed failure report into the capture dir itself (not just the in-memory
     // result) so an agent — or the build pipeline, which calls `runCapture` directly without
@@ -547,7 +568,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
       framesDir,
       failure,
       ...(setupReport ? { setup: setupReport } : {}),
-      ...(warnings.length > 0 ? { warnings } : {}),
+      ...(allWarnings.length > 0 ? { warnings: allWarnings } : {}),
       ...(stopped ? { stopped } : {}),
     };
   } finally {
@@ -685,24 +706,58 @@ export async function comboboxShowsOption(trigger: ElementHandle<Element>, optio
     .catch(() => false);
 }
 
+/**
+ * Runs the `waitFor`/`waitForUrl` actions straight after a click or key press as part of it, then
+ * shows the settled result. Returns the index of the last action consumed.
+ */
+async function runFollowingWaits({ page, step, acts, ai, events, shot, stepResult, highlightState, watch, progress, waitCap }: RunActionArgs): Promise<number> {
+  let i = ai;
+  while (acts[i + 1] && (acts[i + 1].do === "waitFor" || acts[i + 1].do === "waitForUrl")) {
+    const w = acts[++i];
+    progress.lastOk = { index: i, do: acts[i - 1].do };
+    progress.current = { index: i + 1, do: w.do, ...(w.do === "waitFor" ? { target: w.target } : {}) };
+    if (w.do === "waitFor") {
+      await (await locate(w.target, page)).waitFor({ state: "visible", timeout: waitCap(60_000) });
+    } else if (w.do === "waitForUrl") {
+      await page.waitForURL(new RegExp(w.pattern), { timeout: waitCap(60_000) });
+    }
+    watch.waitPassed();
+    if (w.do === "waitFor") pushCheck(stepResult, { waitFor: w.target, ok: true });
+    else if (w.do === "waitForUrl") pushCheck(stepResult, { waitForUrl: w.pattern, ok: true });
+    if (w.do === "waitFor" && w.snapshot) {
+      await paint(page);
+      events.push({ type: "clearHighlight" }, { type: "frame", image: await shot("state", step.mask), transition: "fade" });
+      const wb = await highlightBox(page, w.highlight, w.target);
+      if (wb) {
+        events.push({ type: "highlight", box: wb });
+        highlightState.target = highlightTargetOf(w.highlight, w.target);
+      }
+      events.push({ type: "hold", seconds: 0.9 });
+    }
+  }
+  await settle(page);
+  events.push({ type: "clearHighlight" }, { type: "frame", image: await shot("state", step.mask), transition: "fade" });
+  highlightState.target = null;
+  return i;
+}
+
 /** Executes one action, mutating `events`/`stepResult`. Returns the action index to resume from. */
-async function runAction({
-  page,
-  step,
-  a,
-  acts,
-  ai,
-  events,
-  shot,
-  stepResult,
-  baseOrigin,
-  maxTypeMs,
-  highlightState,
-  watch,
-  progress,
-  waitCap,
-  seen,
-}: RunActionArgs): Promise<number> {
+async function runAction(args: RunActionArgs): Promise<number> {
+  const {
+    page,
+    step,
+    a,
+    ai,
+    events,
+    shot,
+    stepResult,
+    baseOrigin,
+    maxTypeMs,
+    highlightState,
+    watch,
+    waitCap,
+    seen,
+  } = args;
   const viewportWidth = page.viewportSize()?.width ?? 1440;
 
   // Writes must never land on a page that has drifted off-origin (an
@@ -717,9 +772,12 @@ async function runAction({
 
   switch (a.do) {
     case "expect": {
-      await (await locate(a.target, page)).waitFor({ state: "visible", timeout: waitCap(20_000) });
+      const loc = await locate(a.target, page);
+      await loc.waitFor({ state: "visible", timeout: waitCap(20_000) });
+      // `text`: the element's text contains it, or with `exact` equals it (M38).
+      const shown = a.text !== undefined ? await waitForText(loc, a.text, a.exact ?? false, waitCap(20_000)) : undefined;
       watch.waitPassed();
-      pushCheck(stepResult, { expect: a.target, ok: true });
+      pushCheck(stepResult, { expect: a.target, ...(a.text !== undefined ? { text: a.text, exact: a.exact ?? false, shown } : {}), ok: true });
       if (a.highlight) await smoothScrollTo(page, a.highlight === true ? a.target : a.highlight, events, shot, { margin: 24 }, step.mask);
       const hb = await highlightBox(page, a.highlight, a.target);
       if (hb) {
@@ -766,8 +824,9 @@ async function runAction({
       return ai;
     }
     case "point":
+    case "hover":
     case "click": {
-      await smoothScrollTo(page, a.target, events, shot, { margin: a.do === "point" ? 24 : 60 }, step.mask);
+      await smoothScrollTo(page, a.target, events, shot, { margin: a.do === "click" ? 60 : 24 }, step.mask);
       const loc = await locate(a.target, page);
       await loc.waitFor({ state: "visible" });
       seen.push(await accessibleName(loc));
@@ -799,6 +858,15 @@ async function runAction({
         pushCheck(stepResult, { point: a.target, ok: true });
         return ai;
       }
+      if (a.do === "hover") {
+        // The pointer already rests on it; Playwright's own hover makes sure the element got it
+        // (scrolled, unobscured), then whatever opens on hover (a menu, a tooltip) is shown.
+        await loc.hover({ position: { x: pt.x - box.x, y: pt.y - box.y } });
+        await settle(page);
+        events.push({ type: "frame", image: await shot("state", step.mask), transition: "cut" }, { type: "hold", seconds: 0.6 });
+        pushCheck(stepResult, { hover: a.target, ok: true });
+        return ai;
+      }
       events.push({ type: "click", at: pt });
       await watch.beforeClick();
       await loc.click({ position: { x: pt.x - box.x, y: pt.y - box.y } });
@@ -811,34 +879,58 @@ async function runAction({
       highlightState.target = null;
 
       // Consume the waits that belong to this click before showing the result.
-      let i = ai;
-      while (acts[i + 1] && (acts[i + 1].do === "waitFor" || acts[i + 1].do === "waitForUrl")) {
-        const w = acts[++i];
-        progress.lastOk = { index: i, do: acts[i - 1].do };
-        progress.current = { index: i + 1, do: w.do, ...(w.do === "waitFor" ? { target: w.target } : {}) };
-        if (w.do === "waitFor") {
-          await (await locate(w.target, page)).waitFor({ state: "visible", timeout: waitCap(60_000) });
-        } else if (w.do === "waitForUrl") {
-          await page.waitForURL(new RegExp(w.pattern), { timeout: waitCap(60_000) });
+      return runFollowingWaits(args);
+    }
+    case "press": {
+      // With a target, the key goes to that element (focused first, the way a person clicks into a
+      // field before pressing Enter); without, to whatever has focus. No pointer: it's the keyboard.
+      let loc: Locator | undefined;
+      if (a.target) {
+        await smoothScrollTo(page, a.target, events, shot, { margin: 60 }, step.mask);
+        loc = await locate(a.target, page);
+        await loc.waitFor({ state: "visible" });
+        seen.push(await accessibleName(loc));
+        const hasFocus = () => loc!.evaluate((el) => el === document.activeElement || el.contains(document.activeElement)).catch(() => false);
+        if (!(await hasFocus())) await loc.focus();
+        // A target that can't take focus would send the key to the page instead: say so.
+        if (!(await hasFocus())) {
+          pushCheck(stepResult, { press: a.key, target: a.target, ok: false });
+          throw new Error(`press: ${JSON.stringify(a.target)} did not take keyboard focus, so ${a.key} would go to the page instead (press it in a field, button or link, or leave out the target)`);
         }
-        watch.waitPassed();
-        if (w.do === "waitFor") pushCheck(stepResult, { waitFor: w.target, ok: true });
-        else if (w.do === "waitForUrl") pushCheck(stepResult, { waitForUrl: w.pattern, ok: true });
-        if (w.do === "waitFor" && w.snapshot) {
-          await paint(page);
-          events.push({ type: "clearHighlight" }, { type: "frame", image: await shot("state", step.mask), transition: "fade" });
-          const wb = await highlightBox(page, w.highlight, w.target);
-          if (wb) {
-            events.push({ type: "highlight", box: wb });
-            highlightState.target = highlightTargetOf(w.highlight, w.target);
-          }
-          events.push({ type: "hold", seconds: 0.9 });
+        await paint(page);
+        events.push({ type: "frame", image: await shot("hover", step.mask), transition: "cut" });
+        const hb = await highlightBox(page, a.highlight, a.target);
+        if (hb) {
+          events.push({ type: "highlight", box: hb }, { type: "hold", seconds: 0.4 });
+          highlightState.target = highlightTargetOf(a.highlight, a.target);
         }
       }
-      await settle(page);
-      events.push({ type: "clearHighlight" }, { type: "frame", image: await shot("state", step.mask), transition: "fade" });
+      await watch.beforeClick();
+      if (loc) await loc.press(a.key);
+      else await page.keyboard.press(a.key);
+      pushCheck(stepResult, { press: a.key, ...(a.target ? { target: a.target } : {}), ok: true });
+      // A key may submit or navigate, like a click: drop the highlight and show the result after
+      // the waits that belong to it.
       highlightState.target = null;
-      return i;
+      return runFollowingWaits(args);
+    }
+    case "focus": {
+      await smoothScrollTo(page, a.target, events, shot, { margin: 60 }, step.mask);
+      const loc = await locate(a.target, page);
+      await loc.waitFor({ state: "visible" });
+      seen.push(await accessibleName(loc));
+      await loc.focus();
+      await paint(page);
+      events.push({ type: "frame", image: await shot("state", step.mask), transition: "cut" });
+      const hb = await highlightBox(page, a.highlight, a.target);
+      if (hb) {
+        events.push({ type: "highlight", box: hb });
+        highlightState.target = highlightTargetOf(a.highlight, a.target);
+      }
+      const focused = await loc.evaluate((el) => el === document.activeElement || el.contains(document.activeElement)).catch(() => false);
+      pushCheck(stepResult, { focus: a.target, ok: focused });
+      if (!focused) throw new Error(`focus: ${JSON.stringify(a.target)} did not take keyboard focus (is it a field, button or link?)`);
+      return ai;
     }
     case "select": {
       // Native <select> and custom combobox widgets need different drivers (see action.ts): a

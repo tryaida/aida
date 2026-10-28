@@ -2,6 +2,7 @@
 // start", the numbered steps (with their screenshot), "good to know", and the last-checked line.
 import type { Walkthrough, Step } from "../walkthrough/index.js";
 import { personaRole } from "../walkthrough/persona.js";
+import { stepInstruction } from "../walkthrough/describe.js";
 import type { AidaConfig } from "../config/types.js";
 import { FRONTMATTER_KEY, type GeneratedBlock } from "./markers.js";
 
@@ -176,10 +177,12 @@ export function stepBlockKey(step: Step, stepNumber: number): string {
   return step.id ? `step-${step.id}` : `step-${stepNumber}`;
 }
 
-export function buildStepBlock(step: Step, stepNumber: number, status: StepStatus): GeneratedBlock {
+/** `data` fills `{{placeholders}}` in the words a step without `page_text`/`caption` gets from its
+ * actions ("Press **Enter**."; walkthrough/describe.ts). */
+export function buildStepBlock(step: Step, stepNumber: number, status: StepStatus, data?: Record<string, unknown>): GeneratedBlock {
   const rawTitle = step.title ?? step.id ?? `Step ${stepNumber}`;
   const title = escapeMdxText(rawTitle);
-  const text = escapeMdxText(step.page_text?.trim() || step.caption?.trim() || "");
+  const text = escapeMdxText(stepInstruction(step, data));
   const lines = [`#### ${stepNumber}. ${title}`, ""];
   if (!status.ok) {
     lines.push(`> **Not verified.** ${status.problem ?? "this step did not pass the last capture."}`, "");
@@ -227,8 +230,8 @@ export function buildPathBlock(
 }
 
 /** One opening step of a path: the same block as a main step, keyed under the path. */
-export function buildPathStepBlock(pathId: string, step: Step, stepNumber: number, status: StepStatus): GeneratedBlock {
-  const block = buildStepBlock(step, stepNumber, status);
+export function buildPathStepBlock(pathId: string, step: Step, stepNumber: number, status: StepStatus, data?: Record<string, unknown>): GeneratedBlock {
+  const block = buildStepBlock(step, stepNumber, status, data);
   return { ...block, key: `path-${pathId}-${stepBlockKey(step, stepNumber)}` };
 }
 

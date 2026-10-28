@@ -73,12 +73,99 @@ describe("convertPlaywrightFile", () => {
     expect(drafts[0].yaml).toMatch(/sign-in: handled by the configured sign-in adapter/);
   });
 
-  it("leaves unmapped calls (press, toBeChecked) as TODO comments and counts them", async () => {
+  it("leaves unmapped calls (toBeChecked) as TODO comments and counts them", async () => {
     const { drafts } = await convertPlaywrightFile(text, fixture);
     const products = drafts[0];
-    expect(products.unmapped).toBeGreaterThanOrEqual(2);
-    expect(products.yaml).toMatch(/TODO from test:.*press\('Enter'\)/);
+    expect(products.unmapped).toBeGreaterThanOrEqual(1);
     expect(products.yaml).toMatch(/TODO from test:.*toBeChecked/);
+    expect(products.yaml).not.toMatch(/TODO from test:.*press\('Enter'\)/);
+  });
+
+  it("maps locator.press to a press in that field, and toHaveText to an exact text check", async () => {
+    const { drafts } = await convertPlaywrightFile(text, fixture);
+    const actions = YAML.parse(drafts[0].yaml).steps.flatMap((s: { actions?: unknown[] }) => s.actions ?? []);
+    expect(actions).toContainEqual({ do: "press", key: "Enter", target: { label: "/^SKU/" } });
+    expect(actions).toContainEqual({ do: "expect", target: { role: "heading" }, text: "Product list", exact: true });
+  });
+});
+
+describe("convertPlaywrightFile: keyboard, hover, focus and text checks (M38)", () => {
+  const ordersFixture = join(here, "../fixtures/playwright/orders.e2e.ts");
+  const ordersText = readFileSync(ordersFixture, "utf8");
+
+  async function ordersActions() {
+    const { drafts } = await convertPlaywrightFile(ordersText, ordersFixture);
+    const raw = YAML.parse(drafts[0].yaml);
+    WalkthroughDocSchema.parse(raw);
+    return { draft: drafts[0], raw, actions: raw.steps.flatMap((s: { actions?: unknown[] }) => s.actions ?? []) };
+  }
+
+  it("maps page.keyboard.press, locator.press, hover and focus", async () => {
+    const { actions } = await ordersActions();
+    expect(actions).toContainEqual({ do: "focus", target: { placeholder: "Search orders" } });
+    expect(actions).toContainEqual({ do: "press", key: "Enter", target: { placeholder: "Search orders" } });
+    expect(actions).toContainEqual({ do: "hover", target: { role: "button", name: "Actions" } });
+    expect(actions).toContainEqual({ do: "press", key: "Control+K" });
+    expect(actions).toContainEqual({ do: "press", key: "Escape" });
+  });
+
+  it("maps toHaveText to an exact check, toContainText and a regex toHaveText to a contains check", async () => {
+    const { actions } = await ordersActions();
+    expect(actions).toContainEqual({ do: "expect", target: { role: "status" }, text: "1 order found", exact: true });
+    expect(actions).toContainEqual({ do: "expect", target: { role: "row", name: "/ORD-1001/" }, text: "Acme Garden Supplies" });
+    expect(actions).toContainEqual({ do: "expect", target: { role: "heading" }, text: "/Order ORD-1001/" });
+    expect(actions).toContainEqual({ do: "expect", target: { text: "Saved", exact: true } });
+  });
+
+  it("leaves only the call it has no form for (toBeDisabled) as a TODO", async () => {
+    const { draft } = await ordersActions();
+    expect(draft.unmapped).toBe(1);
+    expect(draft.mapped).toBe(14);
+    expect(draft.yaml).toMatch(/TODO from test:.*toBeDisabled/);
+  });
+
+  it("leaves calls whose options change what they do as TODOs, and keeps text literal (M38 review)", async () => {
+    const spec = `
+import { expect, test } from '@playwright/test';
+test('options', async ({ page }) => {
+  await page.click('#row-menu', { button: 'right' });
+  await page.getByRole('button', { name: 'Save' }).click({ modifiers: ['Shift'] });
+  await page.getByRole('button', { name: 'Save' }).click({ timeout: 5000 });
+  await page.click('text=Open');
+  await expect(page.getByRole('status')).toHaveText('/orders/');
+  await expect(page.getByRole('status')).toHaveText('Saved', { ignoreCase: true });
+  await expect(page.getByRole('status')).toContainText(/saved/i);
+  await expect(page.getByRole('status')).toHaveText(/saved/g);
+  await expect(page.getByRole('status')).toHaveText('Saved', { useInnerText: true });
+  await expect(page.getByRole('dialog')).toBeVisible({ visible: false });
+  await page.keyboard.press('Entr');
+  await page.getByLabel('Search').press('ctrl+k');
+});`;
+    const { drafts } = await convertPlaywrightFile(spec, "options.spec.ts");
+    const raw = YAML.parse(drafts[0].yaml);
+    WalkthroughDocSchema.parse(raw);
+    const actions = raw.steps.flatMap((s: { actions?: unknown[] }) => s.actions ?? []);
+    expect(actions).toEqual([
+      { do: "click", target: { role: "button", name: "Save" } },
+      { do: "click", target: { css: "text=Open" } },
+      { do: "expect", target: { role: "status" }, text: "/\\/orders\\//", exact: true },
+      { do: "expect", target: { role: "status" }, text: "/Saved/i", exact: true },
+      { do: "expect", target: { role: "status" }, text: "/saved/i" },
+      { do: "press", key: "Control+k", target: { label: "Search" } },
+    ]);
+    expect(drafts[0].unmapped).toBe(6);
+    for (const call of ["button: 'right'", "modifiers", "/saved/g", "useInnerText", "visible: false", "Entr"]) {
+      expect(drafts[0].yaml).toContain(call);
+    }
+  });
+
+  it("writes placeholder narration for the new actions", async () => {
+    const { raw } = await ordersActions();
+    const says = raw.steps.map((s: { say: string }) => s.say);
+    expect(says).toContain('Hover over "Actions".');
+    expect(says).toContain("Press Ctrl+K.");
+    expect(says).toContain('In "Search orders", press Enter.');
+    expect(says).toContain('Check that the status shows exactly "1 order found".');
   });
 
   it("carries a draft banner naming the source file and test title", async () => {

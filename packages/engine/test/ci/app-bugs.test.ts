@@ -79,4 +79,27 @@ describe("ci: possible app bugs", () => {
     expect(md).toContain("Looks like a setup problem, not the walkthrough: signing in failed, so no step ran.");
     expect(md).toContain("claude -p repair broken-one");
   });
+
+  it("an undetermined failure gets no repair command, and says a person should look (M39 review)", async () => {
+    const { failureSummaryFor } = await import("../../src/ci/run.js");
+    const failure = failureSummaryFor("live", "aida.config.ts", "locator.waitFor: Timeout", "save", {
+      step: "save",
+      action: "waitFor",
+      category: "undetermined",
+      reason: "can't tell whether this is the walkthrough or the app",
+      error: "locator.waitFor: Timeout",
+      url: "",
+      snapshot: "",
+      screenshotPath: null,
+    });
+    expect(failure.repairCommand).toBeUndefined();
+    const md = buildCommentMarkdown(
+      { ...result, results: [{ walkthrough: "live", status: "failed", tier: tierForStatus("failed", failure.category), changedSteps: [], failure }] },
+      images,
+      { claudeActionInstalled: true },
+    );
+    expect(md).toContain("Couldn't tell whether this is the walkthrough or the app");
+    expect(md).not.toContain("aida-repair");
+    expect(md).not.toContain("@claude");
+  });
 });

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Registrations</title>
+  </head>
+  <body>
+    <main>
+      <h1>Registrations</h1>
+      <p id="ws-state">connecting</p>
+    </main>
+    <div role="dialog" aria-label="Add registration">
+      <button id="save">Save in dialog</button>
+    </div>
+    <script>
+      // A live screen: on load it opens a WebSocket and sends a message (a "subscribe", or a
+      // presence write). Saving closes the dialog but never shows "Registration saved", so a
+      // walkthrough waiting for it fails after a 2xx save, which earns the diagnosis-only reload.
+      const wsUrl = new URLSearchParams(location.search).get("ws");
+      if (wsUrl) {
+        const ws = new WebSocket(wsUrl);
+        ws.onopen = () => {
+          ws.send("subscribe");
+          document.getElementById("ws-state").textContent = "live";
+        };
+      }
+      document.getElementById("save").onclick = async () => {
+        await fetch("/api/list", { method: "POST", body: "{}" });
+        document.querySelector("[role=dialog]").hidden = true;
+      };
+    </script>
+  </body>
+</html>

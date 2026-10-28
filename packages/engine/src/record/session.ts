@@ -13,8 +13,10 @@ import type { ElementInfo, PageMessage, RecordedAction, RecorderStatus, Resolved
 
 /** A navigation this soon after something the person did is taken to be caused by it. */
 const CAUSED_NAVIGATION_MS = 10_000;
-/** Working out one target gives up after this, and uses the page's own description instead. */
-const RESOLVE_DEADLINE_MS = 5_000;
+/** Working out one target gives up after this, and uses the page's own description instead. Long
+ * enough for two tries on a busy machine (each check inside allows 1-2 s): an element already gone
+ * fails fast anyway, so the wait only ever costs time when the page is slow. */
+const RESOLVE_DEADLINE_MS = 15_000;
 /** Any one Playwright call while recording: an element that's gone isn't coming back. */
 const RECORDING_TIMEOUT_MS = 2_000;
 
@@ -23,10 +25,13 @@ type Pending =
   | { kind: "type"; at: Promise<ResolvedTarget>; marker: string; text: string; secret: boolean }
   | { kind: "select"; at: Promise<ResolvedTarget>; option: string }
   | { kind: "point" | "expect"; at: Promise<ResolvedTarget> }
-  | Exclude<RecordedAction, { at: ResolvedTarget }>;
+  | { kind: "press"; key: string; at?: Promise<ResolvedTarget> }
+  | Exclude<RecordedAction, { at: ResolvedTarget } | { kind: "press" }>;
 
 export interface RecorderOptions {
   log?: (line: string) => void;
+  /** Works out a target for an element (default `resolveTarget`); for tests. */
+  resolveTarget?: typeof resolveTarget;
 }
 
 export class Recorder {
@@ -42,6 +47,8 @@ export class Recorder {
   private constructor(
     private readonly page: Page,
     private readonly opts: RecorderOptions,
+    /** `resolveTarget`; replaceable so a test can make a check time out once. */
+    private readonly resolve: typeof resolveTarget = opts.resolveTarget ?? resolveTarget,
   ) {
     this.lastPath = pathOf(page.url());
     this.origin = originOf(page.url());
@@ -118,6 +125,9 @@ export class Recorder {
         case "expect":
           out.push({ kind: item.kind, at: await item.at });
           break;
+        case "press":
+          out.push({ kind: "press", key: item.key, ...(item.at ? { at: await item.at } : {}) });
+          break;
         default:
           out.push(item);
       }
@@ -127,7 +137,7 @@ export class Recorder {
 
   /** How many actions (not notes or waits) have been recorded. */
   get count(): number {
-    return this.items.filter((i) => ["click", "type", "select", "point", "expect"].includes(i.kind) || (i.kind === "navigate" && !i.byAction)).length;
+    return this.items.filter((i) => ["click", "type", "select", "point", "expect", "press"].includes(i.kind) || (i.kind === "navigate" && !i.byAction)).length;
   }
 
   private target(el: ElementInfo, kind: "act" | "see"): Promise<ResolvedTarget> {
@@ -135,8 +145,12 @@ export class Recorder {
     let p = this.cache.get(key);
     if (!p) {
       const fallback = unverifiedTarget(el, kind);
+      const attempt = (): Promise<ResolvedTarget> => this.resolve(this.page, el, kind).catch(() => fallback);
       p = Promise.race([
-        resolveTarget(this.page, el, kind).catch(() => fallback),
+        // One more try when the first couldn't confirm it: on a slow page a check can time out
+        // while the element is still there (the likely cause of an unverified "First name" seen
+        // once when the whole test suite ran at once). An element that's gone comes back fast.
+        attempt().then((r) => (r.verified ? r : attempt())),
         new Promise<ResolvedTarget>((resolve) => setTimeout(() => resolve(fallback), RESOLVE_DEADLINE_MS).unref()),
       ]);
       this.cache.set(key, p);
@@ -197,6 +211,10 @@ export class Recorder {
         }
         this.items.push({ kind: "todo", text: "Enter was pressed to send a form that has no button to click; add the step that sends it" });
         return this.status(this.say("press Enter (no button to record)"));
+      case "key":
+        this.lastActionAt = Date.now();
+        this.items.push({ kind: "press", key: msg.key, ...(msg.el ? { at: this.target(msg.el, "act") } : {}) });
+        return this.status(this.say(msg.el ? `press ${msg.key} in "${words(msg.el)}"` : `press ${msg.key}`));
       case "note":
         this.items.push({ kind: "note", text: msg.text });
         return this.status(this.say(`note "${msg.text}"`));

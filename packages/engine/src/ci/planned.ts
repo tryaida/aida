@@ -34,6 +34,8 @@ export async function* captureInPlannedOrder(
   entries: WalkthroughEntry[],
   ids: string[],
   appUrl: string | undefined,
+  /** `recordDrift`: outline drift on each card, for the PR check only (see `CiCaptureOptions`). */
+  opts: { recordDrift?: boolean } = {},
 ): AsyncGenerator<PlannedCiCapture> {
   const run = planRunFromFiles(
     config,
@@ -62,6 +64,7 @@ export async function* captureInPlannedOrder(
       resetBefore: item.resetBefore,
       runId: run.runId,
       personaFor: run.personaFor,
+      ...(opts.recordDrift ? { recordDrift: true } : {}),
     });
     // Dependants wait on the main run only: a failed path doesn't take their data away.
     run.tracker.record(id, captured.mainOk ?? captured.ok, { category: captured.failure?.category });

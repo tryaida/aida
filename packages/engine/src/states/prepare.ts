@@ -14,12 +14,13 @@ import { personaRole, resolveTemplatesDeep, withRunValues } from "../walkthrough
 import type { ResolvedConfig, ResolvedStateConfig, StateHookContext } from "../config/types.js";
 import { locate } from "../capture/locate.js";
 import { settle } from "../capture/settle.js";
+import { waitForText } from "../capture/text-check.js";
 import { isSignInPath } from "../capture/diagnose.js";
 import { NAME_SHIM_SCRIPT } from "../capture/init-scripts.js";
 import { gotoReady } from "../capture/page-ready.js";
 import { loadRunWalkthroughs } from "./run.js";
 
-const WRITE_ACTIONS = new Set(["click", "type", "select"]);
+const WRITE_ACTIONS = new Set(["click", "type", "select", "press"]);
 
 /** A need or setup step that couldn't be made true. Capture reports it as a setup failure. */
 export class WalkthroughSetupError extends Error {
@@ -305,9 +306,25 @@ async function runSetupAction(page: Page, a: Action, baseOrigin: string): Promis
     throw new Error(`refusing to ${a.do} on off-origin page ${page.url()} (walkthrough origin is ${baseOrigin})`);
   }
   switch (a.do) {
-    case "expect":
+    case "expect": {
+      const loc = await locate(a.target, page);
+      await loc.waitFor({ state: "visible", timeout: 20_000 });
+      if (a.text !== undefined) await waitForText(loc, a.text, a.exact ?? false, 20_000);
+      return;
+    }
     case "point":
       await (await locate(a.target, page)).waitFor({ state: "visible", timeout: 20_000 });
+      return;
+    case "hover":
+      await (await locate(a.target, page)).hover();
+      return;
+    case "focus":
+      await (await locate(a.target, page)).focus();
+      return;
+    case "press":
+      if (a.target) await (await locate(a.target, page)).press(a.key);
+      else await page.keyboard.press(a.key);
+      await settle(page);
       return;
     case "waitFor":
       await (await locate(a.target, page)).waitFor({ state: "visible", timeout: 60_000 });

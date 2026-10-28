@@ -57,6 +57,17 @@ export interface CiWalkthroughResult {
   tier: ChangeTier;
   changedSteps: ChangedStep[];
   failure?: FailureSummary;
+  /** Names on this walkthrough's outline card that differ from the screen this capture saw (M29);
+   * absent when the card matches, or there's no outline card. */
+  outlineDrift?: OutlineDriftSummary;
+}
+
+/** One outline card's drift after this run's capture. */
+export interface OutlineDriftSummary {
+  card: string;
+  /** One line per difference (outline/drift.ts `describeDrift`), e.g. `"Save session" (saw "Add
+   * session" at step add)`. */
+  differences: string[];
 }
 
 /**

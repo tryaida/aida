@@ -14,13 +14,15 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
 import { detectFramework } from "../init/detect.js";
 import { extractBrand, rebaseBrandPaths } from "../init/brand.js";
-import { copyTemplate } from "../init/copy-template.js";
+import { copyTemplate, TEMPLATE_DIR } from "../init/copy-template.js";
+import { manifestWriteProblem, recordTemplateManifest } from "../init/template-manifest.js";
 import { writeAidaConfig } from "../init/write-config.js";
 import { writeCiWorkflow, writeClaudeRepairWorkflow } from "../init/ci.js";
 import {
   defaultCommandRunner,
   ensureEngineBuilt,
   installDependencies,
+  packageJsonWriteProblem,
   packEngine,
   pruneOldTarballs,
   setAidaDependency,
@@ -139,7 +141,12 @@ export function runInitCommand(options: InitOptions): InitResult {
   const runner = options.runner ?? defaultCommandRunner;
   // Checked before anything is written, so a bad --tunnel-host doesn't leave a half-done scaffold.
   const tunnelHostsInput = (options.tunnelHosts ?? []).map(normalizeTunnelHost);
+  // Refused before anything is written: both files are rewritten later, never through a link.
+  const linkProblem = packageJsonWriteProblem(destDir) ?? manifestWriteProblem(destDir);
+  if (linkProblem) throw new Error(linkProblem);
   const { copied, skipped } = copyTemplate(destDir);
+  // What `aida upgrade` later compares against (.aida/template.json, build-plan.md M37).
+  recordTemplateManifest(destDir, TEMPLATE_DIR, { packageJsonCopied: copied.includes("package.json") });
   const appTsconfig = excludeHelpFromAppTsconfig(detected.appRoot ?? appRepoDir, destDir);
 
   let signInFile: { file: string; written: boolean } | undefined;

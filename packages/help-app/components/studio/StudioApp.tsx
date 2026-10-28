@@ -10,6 +10,7 @@ import { ScreenshotEditor } from "./ScreenshotEditor";
 import { StepEditor, type StepField } from "./StepEditor";
 import { StepTimeline } from "./StepTimeline";
 import { StudioHeader } from "./StudioHeader";
+import { HealthNotes } from "./HealthNotes";
 import { ToastStack, useToasts } from "./Toasts";
 import { WalkthroughList } from "./WalkthroughList";
 import type { HistoryEntry, PageData, WalkthroughDetail, WalkthroughSummary } from "./types";
@@ -277,6 +278,7 @@ export function StudioApp({ studioToken }: { studioToken: string }) {
                   </div>
                   <h2 className="mt-1 text-xl font-semibold tracking-tight studio-heading">{wt.walkthrough.title}</h2>
                   {wt.walkthrough.summary ? <p className="mt-0.5 max-w-3xl text-[13px] text-fd-muted-foreground">{wt.walkthrough.summary}</p> : null}
+                  <HealthNotes status={wt.status} failure={wt.failure} drift={wt.drift} />
                 </div>
                 <StepTimeline
                   walkthroughId={wt.walkthrough.walkthrough}

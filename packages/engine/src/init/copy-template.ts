@@ -7,7 +7,7 @@
 // the published package, bundled there at pack time by scripts/prepack.mjs using
 // `listTemplateFiles` below (so the package ships exactly what this copies). See package-root.ts
 // for why a clone always uses the live `packages/help-app`.
-import { existsSync, mkdirSync, readdirSync, copyFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, copyFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { ENGINE_ROOT, findResource, resourceCandidates } from "../package-root.js";
 
@@ -36,9 +36,10 @@ export function templateDestPath(rel: string): string {
 }
 
 // `aida.config.ts` is deliberately excluded from the plain copy: `write-config.ts` is the sole
-// writer of that file, since it needs to fill in the detected app URL and brand per-repo.
+// writer of that file, since it needs to fill in the detected app URL and brand per-repo. `.aida`
+// is a help app's own Studio history, locks and template record, never the template's.
 const SKIP_NAMES = new Set([
-  "node_modules", ".next", ".build", ".aida-session", ".source", "next-env.d.ts", "aida.config.ts", "vendor", "out",
+  "node_modules", ".next", ".build", ".aida-session", ".aida", ".source", "next-env.d.ts", "aida.config.ts", "vendor", "out",
 ]);
 // Machine-local files a developer's own checkout of the template may hold: build caches, and env
 // files that can carry API keys (never copy a key into another repo).
@@ -79,6 +80,15 @@ export function listTemplateFiles(templateDir: string): string[] {
   return files;
 }
 
+function lexists(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Copies every file under `templateDir` into `destDir`, creating directories as needed. Existing files at the destination are reported as skipped, never overwritten. */
 export function copyTemplate(destDir: string, templateDir: string = TEMPLATE_DIR): CopyTemplateResult {
   if (!existsSync(templateDir)) {
@@ -93,7 +103,9 @@ export function copyTemplate(destDir: string, templateDir: string = TEMPLATE_DIR
     const src = join(templateDir, rel);
     const destRel = templateDestPath(rel);
     const dest = join(destDir, destRel);
-    if (existsSync(dest)) {
+    // lstat, not existsSync: a dangling symbolic link isn't "missing", and copying onto it would
+    // write wherever it points.
+    if (lexists(dest)) {
       skipped.push(destRel);
       continue;
     }

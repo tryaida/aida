@@ -1,7 +1,7 @@
 // Trimmed-down shape of a real app's product-list e2e spec, used to test the Playwright
 // importer against something close to a real spec: a helper sign-in call, beforeEach, chained
 // locators (within/filter/nth), a checkbox, a select, an email fill (masked), a bare `test()`
-// with no describe, and a couple of calls the importer can't map (press, toBeChecked).
+// with no describe, a key press, and a call the importer can't map (toBeChecked).
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 
 async function signInAs(context: BrowserContext, person: string): Promise<void> {

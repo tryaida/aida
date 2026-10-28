@@ -5,7 +5,7 @@ export { paint, settle, smoothScrollTo } from "./settle.js";
 export { applyMasks, applyPersonalDataMask, clearMasks, maskTargets } from "./mask.js";
 export type { MaskOptions } from "./mask.js";
 export { assertWritesAllowed, assertLocalDatabase, isLocalBaseUrl } from "./write-guard.js";
-export { buildFailureReport, recheckAfterReload, runLevelFailure, formatFailureLines, failureEvidence } from "./failure-report.js";
+export { buildFailureReport, recheckAfterReload, runLevelFailure, formatFailureLines, failureEvidence, appProblems, appProblemFailure, thirdPartyWarning } from "./failure-report.js";
 export { classifyFailure, classifyErrorMessage, isSignInPath, StepWatch } from "./diagnose.js";
 export type { ClassifyInput, Classification } from "./diagnose.js";
 export { ImpactTracker, graphqlOperation, isGraphqlRequest, serverActionSaved } from "./impact.js";

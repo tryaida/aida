@@ -40,8 +40,8 @@ aida init <app-dir>                        # scaffold <app-dir>/help and install
   help/aida.config.ts`); the config's `import ... from "aida-docs"` always loads the AIDA you're
   running, never an `aida-docs` in `node_modules` (an import of the old name `aida` is refused).
   Commit `help/vendor/` with the help app (CI installs `help/` from its lockfile and refuses a
-  registry `aida-docs` or `aida`). Run `init` again after updating AIDA: it replaces the tarball
-  and the dependency and leaves your other edits alone. `--no-install` skips the install (then run
+  registry `aida-docs` or `aida`). After updating AIDA, run `aida upgrade` (see
+  [Upgrade the help app](#upgrade-the-help-app)). `--no-install` skips the install (then run
   `npm install` in `help/` yourself).
 - **Keeps your app's build clean.** It adds `help` to the app's `tsconfig.json` `exclude`, so
   the app's own `next build` doesn't typecheck the help app. Comments and formatting are kept;
@@ -104,12 +104,46 @@ aida build --config <cfg> --draft          # capture, voice, render, pages, PDFs
 aida publish --to static --dry-run         # see what would deploy
 ```
 
+## Upgrade the help app
+
+```bash
+aida upgrade --dir <app-dir>/help --dry-run   # see what would change
+aida upgrade --dir <app-dir>/help             # update it, refresh the engine tarball, npm install
+```
+
+`init` records the template it copied in `help/.aida/template.json` (the AIDA version and a
+fingerprint of each file); commit it with the help app. After updating AIDA, `upgrade` compares
+each help app file with that record and the new template:
+
+- a file you never changed is replaced with the new version, a new template file is added, and
+  one the template dropped is deleted;
+- a file you changed is left alone. If the template changed it too, the new version is written
+  beside it as `<file>.aida-new`: compare the two, bring over what you want, then delete the
+  `.aida-new` file (an earlier, different `.aida-new` is replaced, and the summary says so). A
+  dropped file you changed is kept and listed, and a file you deleted isn't added back. Symbolic
+  links are never written through: a linked file counts as yours, and files in a linked folder are
+  left alone and listed;
+- `package.json` gets the template's dependency versions and scripts where yours are still the
+  template's; anything you added is kept, and an entry you changed (or, with no record, any entry
+  that differs, so a newer version you chose is never downgraded) is kept and listed;
+- your pages (`content/`), walkthroughs, `aida.config.ts`, the theme files (`app/brand.css`,
+  `lib/brand.json`, `public/brand/`), env files and `vendor/` are never touched. Then, as `init`
+  does, it packs this engine into `help/vendor/`, points `aida-docs` at it and runs `npm install`
+  (`--no-install` skips that).
+
+A help app made before AIDA kept this record counts files that match the new template as the
+template's and every other file as yours, so the first upgrade may write more `.aida-new` files.
+It refuses to run while the help app has uncommitted changes in git, or isn't in a git repository
+at all, so the upgrade's own changes are easy to review and undo (`--dry-run` still works;
+`--force` runs it anyway). `--dir` also takes the app repo
+(the help app in `help/`); the default is the current folder. `--json` prints one JSON object.
 
 ## Commands
 
 | Command | Does |
 | --- | --- |
 | `init` | Scaffold and install the help app into `<dir>/help` (engine tarball in `help/vendor/`), with brand colours (light and dark), fonts and logos read from the app; an Auth.js sign-in adapter when the app uses Auth.js; `--tunnel-host` for the Studio, `--no-install` |
+| `upgrade` | Update the help app to this AIDA's template: unchanged files replaced, changed ones kept with the new version beside them as `.aida-new`, `package.json` merged, content, config and theme untouched; then refresh the engine tarball. `--dry-run`, `--force` (allow uncommitted changes), `--no-install`, `--dir` |
 | `theme` | Rewrite the help app's theme from the config's `brand`; `--detect` prints a fresh brand block from the app repo; `--from-app` reads the running app signed in and read-only (`--page`, `--as`): button and nav colours, loaded fonts, radius, shadow, density, the logo as drawn and an icon, saved to `brand/from-app.json` beside the config and merged under `brand` (values you set win; `init` does this too when the app answers). `brand.style` (`minimal`, `friendly`, `bold`; default from the app's corners and shadows) or `brand.md`'s `style:` sets the look of videos, covers and screenshot frames |
 | `proof` | One proof sheet of the brand on every output (video intro and step frames, help site page, printed page, card) in `<buildDir>/proof/`, also in the Studio's **Proof sheet**; approve it at checkpoint 1 |
 | `doctor` | Check the machine and the app before capturing; one fix per problem |

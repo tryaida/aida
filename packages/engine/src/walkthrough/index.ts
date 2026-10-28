@@ -22,6 +22,7 @@ export type {
 export { TargetSchema, HighlightSchema, BoxSchema } from "./target.js";
 export { ActionSchema } from "./action.js";
 export { parseDoString } from "./parse-do.js";
+export { describeAction, describeActions, keyWords, stepInstruction, targetWords } from "./describe.js";
 export {
   resolveTemplate,
   resolveTemplatesDeep,

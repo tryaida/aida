@@ -29,7 +29,7 @@ import { resolveCaptureSettings } from "../config/types.js";
 import { runCapture } from "./runner.js";
 import { withFrameStabilization } from "./frame-diff.js";
 import { assertLocalDatabase } from "./write-guard.js";
-import { runLevelFailure } from "./failure-report.js";
+import { appProblems, runLevelFailure } from "./failure-report.js";
 import { markNotCaptured } from "./not-captured.js";
 import { actionIds, comparePathWrites, countFrames, endChecks, pathCaptureDir, readPathCaptures, writeKeys, type EndChecks } from "./path-files.js";
 import type { CaptureManifest, FailureReport, FrameDiffSummary, ManifestStep, PathCheckResult, PathDiff, ValidationResult } from "./types.js";
@@ -190,8 +190,7 @@ function pathRunOk(validation: ValidationResult, totalSteps: number): boolean {
   return (
     validation.steps.length === totalSteps &&
     validation.steps.every((s) => s.ok) &&
-    validation.problems.page.length === 0 &&
-    validation.problems.server.length === 0
+    appProblems(validation.problems).count === 0
   );
 }
 

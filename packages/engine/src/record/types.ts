@@ -42,6 +42,9 @@ export type PageMessage =
   | { kind: "point" | "expect"; el: ElementInfo }
   | { kind: "file"; el: ElementInfo }
   | { kind: "submit"; submitter?: ElementInfo }
+  /** A key or chord in Playwright's names ("Enter", "Escape", "Control+k"); `el` is the field
+   * it was pressed in, sent for Enter only (a global shortcut or Escape goes to whatever has focus). */
+  | { kind: "key"; key: string; el?: ElementInfo }
   | { kind: "note"; text: string }
   | { kind: "step"; title?: string }
   | { kind: "undo" }
@@ -75,6 +78,8 @@ export type RecordedAction =
   | { kind: "select"; at: ResolvedTarget; option: string }
   | { kind: "point"; at: ResolvedTarget }
   | { kind: "expect"; at: ResolvedTarget }
+  /** A key press: Enter in a field, Escape, Tab or a shortcut. `at` is the field, for Enter. */
+  | { kind: "press"; key: string; at?: ResolvedTarget }
   /** The page moved to `path`; `byAction` when something the person did caused it. */
   | { kind: "navigate"; path: string; byAction: boolean }
   /** The person's own words for the step they just did. */

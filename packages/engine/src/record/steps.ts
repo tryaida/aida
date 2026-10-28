@@ -7,9 +7,13 @@
 // - Every other click (a button, link, tab, menu item) is its own step. The page it leads to,
 //   when it navigated, is waited for in the same step.
 // - "Check shown" adds an `expect` to the step just done; "Point at" is a step of its own.
+// - Enter in a field being filled in ends that step ("type the name and press Enter"). Tab is
+//   moving between fields, which the fills and clicks already do, so it's never a step. Escape and
+//   shortcuts are steps of their own.
 // - "New step" starts a step; "Note" becomes the `say` of the step just done.
 // Typed values go into `data`, with anything email- or phone-shaped swapped for a safe value.
 import type { Action, Target } from "../walkthrough/index.js";
+import { keyWords } from "../walkthrough/index.js";
 import { isOpaqueSegment } from "../capture/redact.js";
 import { safeValue } from "./safe-values.js";
 import type { RecordedAction, ResolvedTarget } from "./types.js";
@@ -44,6 +48,8 @@ interface Open {
   comments: string[];
   /** Words for the title, from the first action. */
   words: string[];
+  /** A fill step that Enter sent: the next field starts a new step. */
+  sent?: boolean;
 }
 
 export interface BuildStepsOptions {
@@ -78,7 +84,7 @@ export function buildSteps(recorded: RecordedAction[], opts: BuildStepsOptions =
       case "select":
       case "click": {
         const fill = r.kind !== "click" || r.field;
-        const step = fill ? (current?.kind === "fill" ? current : open("fill")) : open("do");
+        const step = fill ? (current?.kind === "fill" && !current.sent ? current : open("fill")) : open("do");
         note(r.at, step);
         if (r.kind === "click") {
           step.actions.push({ do: "click", target: r.at.target });
@@ -99,6 +105,21 @@ export function buildSteps(recorded: RecordedAction[], opts: BuildStepsOptions =
           step.actions.push({ do: "type", target: r.at.target, text: `{{${key}}}` });
           step.words.push(r.at.words);
         }
+        break;
+      }
+      case "press": {
+        if (r.key === "Tab" || r.key === "Shift+Tab") break;
+        const action: Action = r.at ? { do: "press", key: r.key, target: r.at.target } : { do: "press", key: r.key };
+        if (r.key === "Enter" && current?.kind === "fill" && !current.sent) {
+          if (r.at) note(r.at, current);
+          current.actions.push(action);
+          current.sent = true;
+          break;
+        }
+        const step = open("do");
+        if (r.at) note(r.at, step);
+        step.actions.push(action);
+        step.words.push(r.at?.words ?? keyWords(r.key));
         break;
       }
       case "point": {
@@ -185,6 +206,8 @@ function titleFor(s: Open): string {
       return `Look at ${words}`;
     case "expect":
       return `Check ${words}`;
+    case "press":
+      return `Press ${keyWords(a.key)}`;
     case "click":
       if (s.kind === "fill") return fillTitle(s.words);
       return `${a.target.role === "link" ? "Open" : "Click"} ${words}`;
@@ -208,9 +231,16 @@ const bold = (t: Target): string => `**${t.name ?? t.label ?? t.placeholder ?? t
 /** Placeholder narration in the style guide's voice, for the person or aida-write to rewrite. */
 function sayFor(s: Open): string {
   const a = first(s);
+  // A fill ended with Enter: say the fill, then the key.
+  const last = s.actions.filter((x) => x.do !== "expect" && x.do !== "waitForUrl").pop();
+  if (a.do !== "press" && last?.do === "press") {
+    return `${sayFor({ ...s, kind: "fill", actions: s.actions.filter((x) => x !== last) })} Then press **${keyWords(last.key)}**.`;
+  }
   switch (a.do) {
     case "goto":
       return `Go to ${a.path}.`;
+    case "press":
+      return a.target ? `In ${bold(a.target)}, press **${keyWords(a.key)}**.` : `Press **${keyWords(a.key)}**.`;
     case "point":
       return `This is ${bold(a.target)}.`;
     case "expect":
@@ -225,7 +255,7 @@ function sayFor(s: Open): string {
       if (s.actions.length === 1) return `Fill in ${bold(a.target)}.`;
       break;
   }
-  const fields = [...new Set(s.actions.filter((x) => x.do !== "expect" && x.do !== "waitForUrl").map((x) => ("target" in x ? bold(x.target) : "")))].filter(Boolean);
+  const fields = [...new Set(s.actions.filter((x) => x.do !== "expect" && x.do !== "waitForUrl").map((x) => ("target" in x && x.target ? bold(x.target) : "")))].filter(Boolean);
   return `Fill in ${fields.length > 1 ? `${fields.slice(0, -1).join(", ")} and ${fields[fields.length - 1]}` : fields[0]}.`;
 }
 

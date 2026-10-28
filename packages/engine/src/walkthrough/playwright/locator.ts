@@ -103,12 +103,12 @@ function buildFinderTarget(method: string, args: readonly ts.Expression[]): Targ
     case "getByLabel": {
       const label = readStringOrRegex(args[0]);
       if (label === undefined) return undefined;
-      return { label };
+      return withExact({ label }, args[1]);
     }
     case "getByText": {
       const text = readStringOrRegex(args[0]);
       if (text === undefined) return undefined;
-      return { text };
+      return withExact({ text }, args[1]);
     }
     case "getByPlaceholder": {
       const placeholder = readStringOrRegex(args[0]);
@@ -128,6 +128,13 @@ function buildFinderTarget(method: string, args: readonly ts.Expression[]): Targ
     default:
       return undefined;
   }
+}
+
+/** `target` with `exact` from a `{ exact: true }` options argument, when there is one. */
+function withExact(target: Target, opts: ts.Expression | undefined): Target {
+  if (!opts || !ts.isObjectLiteralExpression(opts)) return target;
+  const exact = readBoolProp(opts, "exact");
+  return exact === undefined ? target : { ...target, exact };
 }
 
 /** A string literal, or a `/.../` regex literal turned into our `"/source/"` convention. */

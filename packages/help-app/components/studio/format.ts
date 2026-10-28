@@ -1,6 +1,6 @@
 // Pure display helpers for the Studio (no React) — unit-tested in test/studio/format.test.ts.
 import { wrapCaption } from "aida-docs/dist/render/captions.js";
-import type { CaptureStatus, HistoryEntry, WalkthroughSummary } from "./types";
+import type { CaptureStatus, HistoryEntry, StudioDrift, StudioFailure, WalkthroughSummary } from "./types";
 
 /** "just now", "5 min ago", "3 hours ago", "yesterday", "4 days ago", else a short date. */
 export function relativeTime(iso: string | number | undefined, now: number = Date.now()): string {
@@ -25,6 +25,24 @@ export const STATUS_LABEL: Record<CaptureStatus, string> = {
   captured: "Captured, not checked",
   "not-captured": "Not captured yet",
 };
+
+/** Short words for who the last failure looks like (decision 30), for a list row. */
+export const FAILURE_SHORT: Record<StudioFailure["category"], string> = {
+  walkthrough: "walkthrough problem",
+  app: "possible app bug",
+  environment: "setup problem",
+  undetermined: "walkthrough or app? check",
+};
+
+/** The list row's extra notes: who the last failure looks like, and how many names on the
+ * outline card differ from the screen. Empty when there's nothing to say. */
+export function healthNotes(w: { status: CaptureStatus; failure?: StudioFailure; drift?: StudioDrift[] }): string[] {
+  const notes: string[] = [];
+  if (w.status === "failed" && w.failure) notes.push(FAILURE_SHORT[w.failure.category]);
+  const n = w.drift?.length ?? 0;
+  if (n > 0) notes.push(`outline: ${n} name${n === 1 ? "" : "s"} differ${n === 1 ? "s" : ""}`);
+  return notes;
+}
 
 // Contract 3's top-level help library categories, in site order. A walkthrough's `section`
 // whose first segment names one (title or slug, case-insensitive) sits there; any other section

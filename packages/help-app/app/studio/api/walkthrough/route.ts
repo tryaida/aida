@@ -3,6 +3,7 @@ import { devOnlyGuard } from "../../_lib/dev-only";
 import { assertStudioRequest } from "../../_lib/security";
 import {
   captureStatus,
+  healthFor,
   isSlug,
   loadWalkthroughById,
   readManifest,
@@ -44,6 +45,9 @@ export async function GET(request: Request) {
       file,
       manifest,
       ...captureStatus(id),
+      // Why the last capture failed (who it looks like: walkthrough, app or setup) and the
+      // outline card's drift — read by the engine.
+      ...healthFor(id),
       siteUrl: siteUrlFor(id),
       hasVideo: Boolean(videoFileFor(id, "mp4")),
     });

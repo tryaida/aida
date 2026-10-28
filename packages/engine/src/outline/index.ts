@@ -45,6 +45,7 @@ export {
 export { parseMarkdownCards } from "./import.js";
 export {
   recordCaptureDrift,
+  recordCaptureDriftResult,
   checkOutline,
   noteCard,
   noteOutline,
@@ -53,6 +54,7 @@ export {
   driftLine,
   type NoteResult,
   type CaptureDriftInput,
+  type CaptureDriftRecord,
   type CheckedCard,
   type CheckState,
   type NoteOptions,

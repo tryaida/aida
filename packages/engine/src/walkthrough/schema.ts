@@ -473,9 +473,9 @@ export function rawStepToStep(raw: RawStep): Step {
 }
 
 function parseCheck(checkText: string) {
-  const m = checkText.trim().match(/^text\s+"([^"]+)"\s+is\s+visible$/i);
+  const m = checkText.trim().match(/^text\s+(exactly\s+)?"([^"]+)"\s+is\s+visible$/i);
   if (m) {
-    return [{ do: "expect" as const, target: { text: m[1] } }];
+    return [{ do: "expect" as const, target: m[1] ? { text: m[2], exact: true } : { text: m[2] } }];
   }
   // Fall back to the same grammar as `do:` (e.g. `check: expect text "..."`).
   return parseDoString(checkText);

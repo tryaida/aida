@@ -38,6 +38,10 @@ page HTML, console log, video, or the rest of the app.
      the screen, no looser check. Report to the person: walkthrough, step, `reason` and the
      `changes` evidence, as a suspected app bug. If the snapshot shows the classification is
      wrong, say what you saw and still let the person decide.
+   - **`undetermined`** (the save worked but the target never showed, and the diagnosis-only
+     reload couldn't check because the page needs to send over its live connection): treat it
+     like `app`: **stop** and report it to the person with the `changes` evidence; don't edit the
+     walkthrough unless they say it's the walkthrough's.
    - **`environment`** (app unreachable, browser won't start, sign-in, a setup hook, a safety
      refusal): fix the setup, not the steps. Run `aida doctor`; a sign-in failure is the
      sign-in adapter or the persona's demo account; a failing `setup:` step in this file is

@@ -8,8 +8,8 @@ import type { WalkthroughEntry } from "../impact/walkthroughs.js";
 import type { FailureCategory } from "../capture/types.js";
 import type { ChangeTier, NewRouteResult, WalkthroughCiStatus } from "./types.js";
 
-/** "failed" -> broken, flagged with the repair command, or "app" when the failure looks like the
- * app misbehaving (decision 30: reported to a person, never repaired around); everything else
+/** "failed" -> broken, flagged with the repair command (none for "undetermined": it could be the
+ * app's, so a person looks), or "app" when the failure looks like the app misbehaving (decision 30: reported to a person, never repaired around); everything else
  * (capture passed, whether or not the screenshot changed, including a first-time capture with no
  * baseline yet) -> cosmetic, refreshed and published on merge without asking anyone (decisions #8). */
 export function tierForStatus(status: WalkthroughCiStatus, category?: FailureCategory): ChangeTier {

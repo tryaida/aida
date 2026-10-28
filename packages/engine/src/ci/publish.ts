@@ -12,7 +12,8 @@ import { listWalkthroughs } from "../impact/walkthroughs.js";
 import { buildPage } from "../pages/index.js";
 import type { BuildPageResult } from "../pages/index.js";
 import { runIndexStage } from "../build/index-stage.js";
-import type { Walkthrough } from "../walkthrough/index.js";
+import { loadWalkthroughFile, type Walkthrough } from "../walkthrough/index.js";
+import { briefForBuild, briefPath } from "../brief/consumers.js";
 import { captureInPlannedOrder } from "./planned.js";
 import { runCaptureSafetyChecks } from "../safety/index.js";
 
@@ -97,6 +98,25 @@ export async function runCiPublish(opts: RunCiPublishOptions): Promise<CiPublish
     published.push(id);
   }
 
+  // Every walkthrough on disk, loaded, as `aida build` passes them (build/pipeline.ts): each page
+  // is placed by its `section:`, so a page this push didn't republish still moves when its
+  // section changed (the help app sends its old `/<id>` link on to the new place), and the
+  // library and home page are built from the whole set, not just this push's pages. A file that
+  // doesn't load is skipped: its page stays where it is.
+  const captured = new Map(procedureSources.map((s) => [s.walkthrough.walkthrough, s.walkthrough]));
+  const allWalkthroughs = walkthroughEntries.flatMap((w) => {
+    const done = captured.get(w.id);
+    if (done) return [done];
+    try {
+      return [loadWalkthroughFile(w.file)];
+    } catch {
+      return [];
+    }
+  });
+  // The app brief, as `aida build` publishes it; without it the index stage would drop the
+  // agent connector's app overview and the home page's intro on every merge.
+  const brief = briefForBuild(briefPath(config));
+
   const index = runIndexStage({
     pagesDir: pagesOutDir,
     outDir: config.outDir,
@@ -107,6 +127,9 @@ export async function runCiPublish(opts: RunCiPublishOptions): Promise<CiPublish
     // public/screenshots, so leaving it out made every later PR diff against stale images.
     procedureSources,
     readerNames: { readers: config.readers, roles: config.roles },
+    walkthroughs: allWalkthroughs,
+    productName: config.brand?.name,
+    appBrief: brief.artifacts,
   });
 
   return { published, failed, all: affected.all, copiedToHelpApp: index.copiedToHelpApp, ok: failed.length === 0 };

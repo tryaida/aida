@@ -81,19 +81,31 @@ export interface CaptureDriftInput {
  * never fail a capture.
  */
 export function recordCaptureDrift(input: CaptureDriftInput): string | null {
+  return recordCaptureDriftResult(input).line;
+}
+
+/** What `recordCaptureDriftResult` did: the one line to print (as `recordCaptureDrift`), and the
+ * card's drift after this capture when there was a card to update (`aida ci`'s PR comment). */
+export interface CaptureDriftRecord {
+  line: string | null;
+  card?: { id: string; drift: DriftEntry[]; cleared: number };
+}
+
+/** `recordCaptureDrift`, also returning the card's drift as data. Never throws. */
+export function recordCaptureDriftResult(input: CaptureDriftInput): CaptureDriftRecord {
   try {
-    if (!stepsPassed(input.walkthrough, input.validation)) return null;
+    if (!stepsPassed(input.walkthrough, input.validation)) return { line: null };
     // Read, change and write under the outline lock, so a capture never overwrites a writer's
     // `outline note` made at the same moment (or the other way round).
-    return updateOutline(outlinePath(input.config), (loaded) => {
-      if (!loaded) return null;
+    return updateOutline(outlinePath(input.config), (loaded): CaptureDriftRecord => {
+      if (!loaded) return { line: null };
       const card = findCard(loaded.outline, input.walkthrough.walkthrough);
-      if (!card || card.status === "dropped") return null;
+      if (!card || card.status === "dropped") return { line: null };
       const { result } = applyCapture(loaded, card, input.manifest, input.walkthrough, (input.now ?? new Date()).toISOString(), input.pathManifests);
-      return driftLine(card.id, result);
+      return { line: driftLine(card.id, result), card: { id: card.id, drift: result.drift, cleared: result.cleared.length } };
     });
   } catch (err) {
-    return `outline: not updated: ${((err as Error).message ?? String(err)).split("\n")[0]}`;
+    return { line: `outline: not updated: ${((err as Error).message ?? String(err)).split("\n")[0]}` };
   }
 }
 

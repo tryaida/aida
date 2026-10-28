@@ -16,7 +16,9 @@ import { runCaptureSafetyChecks } from "../safety/index.js";
 import { diffAgainstBaseline } from "./diff.js";
 import { resolveBaselineLookup, diskBaselineSource, gitBaselineSource, type BaselineSource } from "./baseline.js";
 import { tierForStatus, repairCommandFor, findNewUncoveredRoutes } from "./tiers.js";
-import type { CiResult, CiWalkthroughResult, FailureSummary } from "./types.js";
+import type { CiResult, CiWalkthroughResult, FailureSummary, OutlineDriftSummary } from "./types.js";
+import type { CiCaptureResult } from "./capture.js";
+import { describeDrift } from "../outline/drift.js";
 import { failureEvidence } from "../capture/failure-report.js";
 import { redactLine } from "../capture/redact.js";
 import type { FailureReport } from "../capture/types.js";
@@ -63,8 +65,9 @@ export function failureSummaryFor(
   if (!report) return { summary, repairCommand: repairCommandFor(id, configPath) };
   const evidence = failureEvidence(report);
   const diagnosis = { category: report.category, reason: report.reason, ...(evidence ? { evidence } : {}) };
-  // A suspected app bug goes to a person, never to the repair skill (decision 30).
-  if (report.category === "app") return { summary, ...diagnosis };
+  // A suspected app bug goes to a person, never to the repair skill (decision 30); so does a
+  // failure that could be the app's as easily as the walkthrough's.
+  if (report.category === "app" || report.category === "undetermined") return { summary, ...diagnosis };
   return { summary, repairCommand: repairCommandFor(id, configPath), ...diagnosis };
 }
 
@@ -79,6 +82,13 @@ export function blockedFailureSummary(outcome: { blocked: string; blockedBy: str
     return { summary: outcome.blocked, category: "app", reason: appBugBlockReason(outcome.appBugIn), ...blockedBy };
   }
   return { summary: outcome.blocked, ...blockedBy };
+}
+
+/** The PR comment's outline drift for one capture: only when its card differs from the screen. */
+export function outlineDriftSummary(captured: Pick<CiCaptureResult, "outline"> | undefined): OutlineDriftSummary | undefined {
+  const outline = captured?.outline;
+  if (!outline || outline.drift.length === 0) return undefined;
+  return { card: outline.card, differences: outline.drift.map((d) => redactLine(describeDrift(d))) };
 }
 
 export async function runCi(opts: RunCiOptions): Promise<CiResult> {
@@ -111,11 +121,13 @@ export async function runCi(opts: RunCiOptions): Promise<CiResult> {
   if (idsToCheck.length > 0) await runCaptureSafetyChecks(config);
 
   const results: CiWalkthroughResult[] = [];
+  const outlineDrift = new Map<string, OutlineDriftSummary>();
   const pagesOutDir = join(config.buildDir, "ci", "pages");
 
   // Affected walkthroughs plus those that leave the data they need, in one capture order shared
   // with `aida ci --publish` (ci/planned.ts; decision 28).
-  for await (const outcome of captureInPlannedOrder(config, walkthroughEntries, idsToCheck, opts.appUrl)) {
+  // Outline drift is recorded here (the PR check), never by `--publish` (ci/publish.ts).
+  for await (const outcome of captureInPlannedOrder(config, walkthroughEntries, idsToCheck, opts.appUrl, { recordDrift: true })) {
     const id = outcome.id;
     // No order works for it (a need nothing provides, a cycle), or a provider failed this run.
     if (outcome.blocked !== undefined) {
@@ -125,6 +137,9 @@ export async function runCi(opts: RunCiOptions): Promise<CiResult> {
     }
 
     const captured = outcome.captured;
+    const drift = outlineDriftSummary(captured);
+    if (drift) outlineDrift.set(id, drift);
+    if (captured.outlineNote) console.error(captured.outlineNote);
     if (!captured.ok) {
       results.push({
         walkthrough: id,
@@ -176,6 +191,12 @@ export async function runCi(opts: RunCiOptions): Promise<CiResult> {
     } else {
       results.push({ walkthrough: id, status: "changed", tier: tierForStatus("changed"), changedSteps });
     }
+  }
+
+  // Outline drift (M29) from each capture, whatever its tier.
+  for (const r of results) {
+    const drift = outlineDrift.get(r.walkthrough);
+    if (drift) r.outlineDrift = drift;
   }
 
   const currentIds = new Set(walkthroughEntries.map((w) => w.id));

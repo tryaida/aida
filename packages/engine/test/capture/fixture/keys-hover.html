@@ -1,0 +1,45 @@
+<!doctype html>
+<html><head><title>Orders</title>
+<style>
+  #menu { display: none; }
+  #actions-wrap:hover #menu { display: block; }
+  dialog { padding: 16px; }
+</style></head>
+<body>
+  <main>
+    <h1>Orders</h1>
+    <form id="search-form">
+      <label for="q">Search</label>
+      <input id="q" name="q">
+    </form>
+    <p role="status" id="status">  </p>
+    <label for="email">Email</label>
+    <input id="email" type="email">
+    <p id="focus-note"></p>
+    <p id="shout" style="text-transform: uppercase">Saved<span hidden> as draft</span></p>
+    <div id="actions-wrap">
+      <button type="button">Actions</button>
+      <div id="menu" role="menu"><div role="menuitem">Open</div></div>
+    </div>
+    <dialog id="palette" aria-label="Command palette"><p>Type a command</p></dialog>
+  </main>
+  <script>
+    document.getElementById("search-form").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var q = document.getElementById("q").value;
+      setTimeout(function () {
+        document.getElementById("status").textContent = q === "ORD-1001" ? " 1 order\n   found " : "No orders found";
+      }, 150);
+    });
+    document.getElementById("email").addEventListener("focus", function () {
+      document.getElementById("focus-note").textContent = "Email has focus";
+    });
+    window.addEventListener("keydown", function (ev) {
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "k") {
+        ev.preventDefault();
+        document.getElementById("palette").show();
+      }
+      if (ev.key === "Escape") document.getElementById("palette").close();
+    });
+  </script>
+</body></html>

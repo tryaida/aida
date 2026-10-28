@@ -171,7 +171,7 @@ area (the menu item a reader clicks), and reuse the same value across walkthroug
   actions: [ ... ]
 ```
 
-## Actions (each has `do` + a target, except `waitForUrl`/`goto`)
+## Actions (each has `do` + a target, except `waitForUrl`/`goto`; `press`'s target is optional)
 
 | `do` | Needs | Notes |
 | --- | --- | --- |
@@ -179,7 +179,10 @@ area (the menu item a reader clicks), and reuse the same value across walkthroug
 | `type` | `target`, `text` | `text` may use `{{data.path}}` |
 | `select` | `target`, `option` | native `<select>` — runs as Playwright's `selectOption`, not a click |
 | `point` | `target`, optional `highlight` | no interaction, just calls out something |
-| `expect` | `target`, optional `highlight` | assertion; capture fails if not visible |
+| `expect` | `target`, optional `text`, `exact`, `highlight` | assertion; capture fails if not visible. `text`: the target's text must contain it (Playwright `toContainText`); with `exact: true` equal it, whitespace collapsed (`toHaveText`); reads the element's `textContent`, so CSS upper-casing doesn't count. `"/pattern/"` (or `"/pattern/i"`, ignore case) is a regular expression, checked at validate; escape a literal `/` as `\/` |
+| `press` | `key`, optional `target`, `highlight` | Playwright key names: `Enter`, `Escape`, `Tab`, `ArrowDown`, `F2`, one character, chords like `Control+K`, `ControlOrMeta+K` (any case; `ctrl`/`cmd`/`esc` accepted and stored as Playwright's names; unknown names fail validate). The target must take focus (a field, button or link). With `target` the key goes to that element (focused first), else to whatever has focus. Waits right after it run as part of it, like a click |
+| `hover` | `target`, optional `highlight` | moves the pointer over it without clicking (menus, tooltips that open on hover) |
+| `focus` | `target`, optional `highlight` | keyboard focus without a click; fails if the element can't take focus |
 | `waitFor` | `target`, optional `snapshot`, `highlight` | pauses until visible |
 | `waitForUrl` | `pattern` | regex string |
 | `scrollTo` | `target` | |
@@ -192,6 +195,11 @@ do: click "Add competitor" button
 do: fill "First name" with "{{competitor.firstName}}"
 do: select "Class" option "Open"          # native <select> only — see `select` above
 check: text "Competitor added" is visible
+check: text exactly "Saved" is visible     # whole text is "Saved" (same as do: expect text exactly "Saved")
+do: press "Enter"                          # to whatever has focus; key names any case: "enter", "ctrl+k"
+do: press "Enter" in "Search"              # in the field labelled Search
+do: hover "Settings" button
+do: focus "Email"                          # the field labelled Email (or: focus "Email" textbox)
 do: go to /competitors
 do: wait for url /competitors/*
 ```
@@ -213,6 +221,10 @@ target: { role: row, hasText: "...", within: { css: "main" } }
 target: { role: button, name: "Delete", within: { role: group, name: "Riverbend entry" } }
 target: { role: button, name: "Delete", nth: 1 }
 ```
+
+`exact: true` on a target makes its name, label or text match whole (`{ text: "Saved", exact: true }`
+won't match "Saved 2 drafts"). To check what a found element *says*, use the expect's own
+`text`/`exact` instead: `{ do: expect, target: { role: status }, text: "1 order found", exact: true }`.
 
 `role` + `text` isn't a second way to name the element — `text` filters the role/name match down
 to elements whose text contains it (same as the explicit `hasText` field), useful when a role+name

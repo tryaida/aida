@@ -13,6 +13,8 @@ import { assertLocalDatabase } from "../capture/write-guard.js";
 import type { CaptureRunResult } from "../capture/runner.js";
 import type { FailureReport } from "../capture/types.js";
 import { markNotCaptured } from "../capture/not-captured.js";
+import { recordCaptureDriftResult, type CaptureDriftRecord } from "../outline/record.js";
+import type { DriftEntry } from "../outline/schema.js";
 
 function storageStateKey(baseUrl: string, walkthrough: Walkthrough, config: Pick<ResolvedConfig, "signIn" | "signInHash">): string {
   return sessionKey(baseUrl, walkthrough.start?.persona, config); // persona normalised at load: always an object
@@ -27,6 +29,11 @@ export interface CiCaptureResult {
    * callers' results (then `ok`). */
   mainOk?: boolean;
   failure?: FailureReport;
+  /** Outline drift (M29) recorded on this walkthrough's outline card after a capture whose steps
+   * all passed, as `aida capture` does; absent with no outline file, no card, or a failed capture. */
+  outline?: { card: string; drift: DriftEntry[] };
+  /** "outline: not updated: …" when the outline file couldn't be read or written. */
+  outlineNote?: string;
 }
 
 /** Where this walkthrough sits in a planned run (decision 28; states/order.ts). */
@@ -36,6 +43,9 @@ export interface CiCaptureOptions {
   /** `{{run.id}}`, shared by every walkthrough in the run. */
   runId?: string;
   personaFor?: (role: string) => Persona | undefined;
+  /** Record outline drift on the walkthrough's card (M29). On for the PR check (`aida ci`), off
+   * for `aida ci --publish`: its bot commits to main, and an outline edit there isn't a person's. */
+  recordDrift?: boolean;
 }
 
 /** Loads `file`, runs capture into `<buildDir>/<id>/ci/capture`, and returns the outcome without
@@ -106,8 +116,21 @@ export async function captureWalkthroughForCi(
       const failed = pathRun.paths.find((p) => !p.ok && p.skipped === undefined);
       if (failed?.failure) pathFailure = { ...failed.failure, step: `path ${failed.path}: ${failed.failure.step ?? "?"}` };
     }
+    // Outline drift (M29), as `aida capture` records it, in the PR check only: quiet without an
+    // outline file, never fails the capture. A label may be on any passing path's screens too
+    // (decision 34).
+    const drift: CaptureDriftRecord = planned.recordDrift
+      ? recordCaptureDriftResult({
+          config,
+          walkthrough,
+          manifest: result.manifest,
+          validation: result.validation,
+          pathManifests: Object.values(pathRun?.manifests ?? {}),
+        })
+      : { line: null };
+    const outline = drift.card ? { outline: { card: drift.card.id, drift: drift.card.drift } } : drift.line ? { outlineNote: drift.line } : {};
     const mainOk = result.validation.ok;
-    return { walkthrough, captureDir, ok: mainOk && pathsPassed(pathRun?.paths), mainOk, failure: result.failure ?? pathFailure };
+    return { walkthrough, captureDir, ok: mainOk && pathsPassed(pathRun?.paths), mainOk, failure: result.failure ?? pathFailure, ...outline };
   } catch (err) {
     const failure: FailureReport = runLevelFailure(err);
     // failure.json for this run, and validation.json saying it wasn't captured (no older passing

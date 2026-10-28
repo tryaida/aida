@@ -47,8 +47,14 @@ export function runningUnderTsx(): boolean {
 export async function ensureTsxForFile(file: string): Promise<void> {
   if (!/\.(ts|mts|cts)$/.test(file)) return;
   if (tsxRegistered || runningUnderTsx()) return;
-  const { register } = await import("tsx/esm/api");
-  register();
+  // Both hooks, as `tsx <script>` registers them. A `.ts` file outside a `"type": "module"`
+  // package (a scaffolded help app's package.json has no `type`) is CommonJS to tsx's ESM hook,
+  // so Node hands it to its CommonJS loader, which (Node 22+) compiles an `import` statement as
+  // ESM straight from the raw source: without tsx's CommonJS hook too, an `interface` or a type
+  // annotation there is a syntax error under the built CLI.
+  const [{ register: registerEsm }, { register: registerCjs }] = await Promise.all([import("tsx/esm/api"), import("tsx/cjs/api")]);
+  registerEsm();
+  registerCjs();
   tsxRegistered = true;
 }
 
