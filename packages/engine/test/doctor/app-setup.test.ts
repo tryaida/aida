@@ -10,6 +10,7 @@ import {
   checkStandaloneOutput,
   findStandaloneOutput,
   isDemoEmailDomain,
+  PLACEHOLDER_LOCAL_PART,
   otherLoopback,
   runDoctor,
   sampleDemoEmails,
@@ -144,5 +145,14 @@ describe("demo emails", () => {
     expect(byId["demo-emails"].detail).toContain("acme.co");
     expect(byId["app-address"]).toMatchObject({ status: "warn" });
     expect(byId["app-address"].fix).toContain("http://127.0.0.1:3000");
+  });
+});
+
+describe("guest placeholder addresses", () => {
+  it("skips app-made placeholders, keeps real-looking addresses", () => {
+    expect(PLACEHOLDER_LOCAL_PART.test("temp-3f9a2c71b04d@acme.co")).toBe(true);
+    expect(PLACEHOLDER_LOCAL_PART.test("guest_abcdef1234@acme.co")).toBe(true);
+    expect(PLACEHOLDER_LOCAL_PART.test("tempest@acme.co")).toBe(false);
+    expect(PLACEHOLDER_LOCAL_PART.test("sam.lee@acme.co")).toBe(false);
   });
 });

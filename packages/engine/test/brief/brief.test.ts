@@ -386,7 +386,7 @@ describe("briefPages", () => {
     const pages = briefPages(parseBrief(briefText));
     const by = Object.fromEntries(pages.map((p) => [p.slug, p]));
     expect(by.glossary).toMatchObject({ category: "words-we-use", title: "Words Acme Events uses" });
-    expect(by.glossary.body).toContain("## Booking\n\nOne attendee's seats at one event.\n\nNot to be confused with: Ticket (the printed pass)");
+    expect(by.glossary.body).toContain("## Booking\n\nOne attendee's seats at one event. *Not the same as Ticket (the printed pass)");
     expect(by["good-to-know"]).toMatchObject({ category: "troubleshooting-and-faq", title: "Good to know" });
     expect(by["good-to-know"].body).toBe("- A refunded payment can't be changed back, so check the amount before refunding.");
     expect(by["what-acme-events-is-for"]).toMatchObject({ category: "getting-started", first: true });

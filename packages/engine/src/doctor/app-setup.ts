@@ -109,6 +109,11 @@ export function checkLoopback(baseUrl: string, primary: FetchResult, other: { ur
   };
 }
 
+/** Placeholder addresses an app makes for guests and never shows (better-auth's anonymous users are
+ * `temp-<id>@<app domain>`): a prefix like temp/anon/guest and a long random id before the `@`. */
+export const PLACEHOLDER_LOCAL_PART = /^(temp|tmp|anon|anonymous|guest|placeholder)[-_.+][a-z0-9-]{8,}@/i;
+const PLACEHOLDER_LOCAL_PART_SQL = `'^(temp|tmp|anon|anonymous|guest|placeholder)[-_.+][a-z0-9-]{8,}@'`;
+
 /** Email domains fine for demo data: reserved for examples and testing (RFC 2606, RFC 6761). */
 export function isDemoEmailDomain(domain: string): boolean {
   const d = domain.trim().toLowerCase().replace(/\.$/, "");
@@ -163,7 +168,8 @@ export async function sampleDemoEmails(adapter: Pick<DatabaseAdapter, "query">, 
     try {
       rows = (await adapter.query(
         `select lower(split_part(c, '@', 2)) as domain, count(*)::int as n
-         from (select ${ident(column)}::text as c from ${ident(table)} where ${ident(column)}::text like '%@%' limit ${EMAIL_SAMPLE_ROWS}) s
+         from (select ${ident(column)}::text as c from ${ident(table)} where ${ident(column)}::text like '%@%'
+           and ${ident(column)}::text !~* ${PLACEHOLDER_LOCAL_PART_SQL} limit ${EMAIL_SAMPLE_ROWS}) s
          group by 1 order by 2 desc`,
         [],
         { url },

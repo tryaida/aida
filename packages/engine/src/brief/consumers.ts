@@ -184,6 +184,12 @@ function sentence(s: string): string {
   return /[.!?:)]$/.test(t) ? t : `${t}.`;
 }
 
+/** "A survey or vote" -> "a survey or vote": only a leading article or pronoun, so the app's own
+ * words ("Close", "Yes", "Pro") keep their capitals. */
+function lowerFirst(text: string): string {
+  return /^(A|An|The|Any|Each|Every|One|Someone|Something)\b/.test(text) ? text.charAt(0).toLowerCase() + text.slice(1) : text;
+}
+
 /**
  * Help-site pages from the brief's published sections ("Open questions" never): a glossary in
  * Words we use, the rules in Troubleshooting and FAQ as "Good to know", and "What <app> is for"
@@ -197,9 +203,10 @@ export function briefPages(brief: ParsedBrief): BriefPage[] {
   if (words.length > 0) {
     const body = words
       .map((w) => {
-        const lines = [`## ${escapeMdxText(w.term)}`, "", sentence(escapeMdxText(w.meaning))];
-        if (w.notConfusedWith) lines.push("", `Not to be confused with: ${sentence(escapeMdxText(w.notConfusedWith))}`);
-        return lines.join("\n");
+        // One short block per term: the meaning, then what it isn't, in the same paragraph.
+        const meaning = sentence(escapeMdxText(w.meaning));
+        const not = w.notConfusedWith ? ` *Not the same as ${lowerFirst(sentence(escapeMdxText(w.notConfusedWith)))}*` : "";
+        return `## ${escapeMdxText(w.term)}\n\n${meaning}${not}`;
       })
       .join("\n\n");
     pages.push({
