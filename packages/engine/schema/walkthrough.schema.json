@@ -625,6 +625,55 @@
                         "path"
                       ],
                       "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "do": {
+                          "type": "string",
+                          "const": "showEmail"
+                        },
+                        "to": {
+                          "type": "string"
+                        },
+                        "subject": {
+                          "type": "string"
+                        },
+                        "mock": {
+                          "type": "object",
+                          "properties": {
+                            "from": {
+                              "type": "string"
+                            },
+                            "to": {
+                              "type": "string"
+                            },
+                            "subject": {
+                              "type": "string"
+                            },
+                            "text": {
+                              "type": "string"
+                            },
+                            "html": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "from",
+                            "to",
+                            "subject"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "highlight": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "do"
+                      ],
+                      "additionalProperties": false,
+                      "description": "Shows an email on screen: one the app sent (caught locally, matched by to/subject) or an emulated `mock`."
                     }
                   ]
                 }

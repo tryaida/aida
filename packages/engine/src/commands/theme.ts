@@ -103,26 +103,30 @@ function appRepoFor(config: ResolvedConfig, explicit?: string): string | undefin
 }
 
 /** The walkthroughs' start pages (first two, signed in as `role` when given), else `/`. */
-function startPages(walkthroughsDir: string, role: string | undefined): string[] {
-  const pages: string[] = [];
+export function startPages(walkthroughsDir: string, role: string | undefined): string[] {
   let files: string[] = [];
   try {
     files = readdirSync(walkthroughsDir).filter((f) => /\.ya?ml$/i.test(f)).sort();
   } catch {
     return ["/"];
   }
+  // The role's own walkthroughs first (what it sees signed in), then signed-out ones.
+  const mine: string[] = [];
+  const signedOut: string[] = [];
   for (const f of files) {
     try {
       const wf = loadWalkthroughFile(join(walkthroughsDir, f));
       const page = wf.start?.page;
       if (!page || !page.startsWith("/")) continue;
-      if (role && wf.start?.persona?.role && wf.start.persona.role !== role) continue;
-      if (!pages.includes(page)) pages.push(page);
-      if (pages.length >= 2) break;
+      const own = wf.start?.persona?.role;
+      if (own && role && own !== role) continue;
+      const list = own || !role ? mine : signedOut;
+      if (!list.includes(page)) list.push(page);
     } catch {
       // an unreadable walkthrough just isn't a source of pages
     }
   }
+  const pages = [...mine, ...signedOut.filter((p) => !mine.includes(p))].slice(0, 2);
   return pages.length > 0 ? pages : ["/"];
 }
 

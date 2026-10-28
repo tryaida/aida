@@ -25,7 +25,8 @@ export const aidaPageSchema = pageSchema.extend({
   pdfCard: z.string().optional(),
   // Library hierarchy (engine index stage): what the page is, where it sits, and what its cards
   // show. `placeholder` marks a template page aida may replace; the site hides a placeholder
-  // section that has no pages yet (lib/tree.ts).
+  // section that has no pages yet (lib/tree.ts). `brief` marks a page written from the app brief
+  // (glossary, rules, what the app is for).
   kind: z.enum(["home", "section", "walkthrough"]).optional(),
   section: z.string().optional(),
   steps: z.number().optional(),
@@ -33,6 +34,7 @@ export const aidaPageSchema = pageSchema.extend({
   chapters: z.string().optional(),
   placeholder: z.boolean().optional(),
   generated: z.boolean().optional(),
+  brief: z.boolean().optional(),
 });
 
 const docs = defineDocs({

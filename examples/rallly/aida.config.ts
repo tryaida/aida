@@ -18,6 +18,9 @@ export default defineConfig({
   // better-auth database sessions: inserts a session row and sets the signed cookie.
   signIn: "./adapters/sign-in.mjs",
   database: "./adapters/database.mjs",
+  // Rallly's SMTP settings point at 127.0.0.1:1025: capture catches its email there (never sent),
+  // and showEmail actions put it on screen.
+  mail: { port: 1025 },
   // Who readers are, by the role ids walkthroughs sign in as.
   roles: { organizer: "an organizer" },
   walkthroughsDir: "./walkthroughs",

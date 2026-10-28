@@ -187,6 +187,7 @@ area (the menu item a reader clicks), and reuse the same value across walkthroug
 | `waitForUrl` | `pattern` | regex string |
 | `scrollTo` | `target` | |
 | `goto` | `path` | direct navigation |
+| `showEmail` | `to` and/or `subject`, or `mock`, optional `highlight` | shows an email over the app, drawn as an inbox, until the next action. `to`/`subject` (text it contains, or `"/pattern/"`) find the newest email the app sent this run, caught locally (config `mail: { port: 1025 }` with the app's SMTP pointed at 127.0.0.1:1025; nothing is ever sent). `mock: { from, to, subject, text \| html }` draws an emulated email instead, for mail capture can't receive |
 
 ## Plain-words `do:`/`check:` (a step may use these instead of, or alongside, `actions:`)
 

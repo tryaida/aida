@@ -77,7 +77,11 @@ Then:
 1. **Check the machine and the app:** `aida doctor --config help/aida.config.ts` checks Node,
    ffmpeg, Playwright's Chromium and its libraries, disk, the app's address and database, email
    and payment settings, the dev-server cache and the help app install, and prints the fix for
-   each problem.
+   each problem. It also warns when a Next.js app builds with `output: "standalone"` (which `next
+   start` doesn't serve; it prints the `server.js` command), when the app answers on `localhost`
+   but not `127.0.0.1` or the other way round, and when the demo data (read through the config's
+   `database` adapter, read-only, Postgres) holds email addresses outside example.com and the
+   other reserved example domains. It names the domains and columns, never an address.
 2. **Capture against a production build of the app**, not the dev server: `next build && next
    start` in the app. The dev server's cache grows to gigabytes over a capture run.
 3. **Open the help site and the Studio:** `npm run dev` in `help/` (add `-- -p 3001` if the app is
@@ -115,6 +119,23 @@ aida order --config <cfg>                  # capture order the walkthroughs' dat
 aida build --config <cfg> --draft          # capture, voice, render, pages, PDFs, index, checks
 aida publish --to static --dry-run         # see what would deploy
 ```
+
+## Emails in walkthroughs
+
+A walkthrough can show the email a reader gets (an invitation, a booking confirmation) with a
+`showEmail` action. Two ways:
+
+- **The real email, caught locally.** Add `mail: { port: 1025 }` to the config and point the app's
+  own SMTP settings at `127.0.0.1:1025` with no TLS. During capture AIDA runs a small mail catcher
+  there: it accepts any login, keeps the messages in memory for the run and never relays anything.
+  `- do: showEmail` with `to:` and/or `subject:` (text it contains, or `"/pattern/"`) shows the
+  newest matching message, waiting up to 30 s for it.
+- **An emulated email.** `- do: showEmail` with `mock: { from, to, subject, text }` (or `html`)
+  draws an email written in the walkthrough, for mail capture can't receive (a provider's API, a
+  text message).
+
+The email is drawn over the app as an inbox card, its body in a sandboxed frame, and stays on
+screen until the next action.
 
 ## Upgrade the help app
 
@@ -161,7 +182,7 @@ at all, so the upgrade's own changes are easy to review and undo (`--dry-run` st
 | `doctor` | Check the machine and the app before capturing; one fix per problem |
 | `digest` | Compact map of an app's routes, roles and on-screen labels (monorepos via `--app`, detail via `--area`) |
 | `domain` | The app's domain model read from its schema (Drizzle, else Prisma, else SQL migrations; never a database connection): one line per entity with key columns, states and links; `--entity` for one in full, `--source` to pick a schema |
-| `brief` | The app brief, `app-brief.md` beside the config (config `brief` moves it): `sources` lists the app's own docs worth reading (paths and headings only), `init` writes the skeleton from the schema, `check` validates sections, glossary and personal data, `show [--section]` prints it. Once it passes `check` with no personal data or prompts left, `build` passes its opening sections to the help chat, an overview to the agent connector's `get_app_overview`, and its first paragraph to the home page |
+| `brief` | The app brief, `app-brief.md` beside the config (config `brief` moves it): `sources` lists the app's own docs worth reading (paths and headings only), `init` writes the skeleton from the schema, `check` validates sections, glossary and personal data, `show [--section]` prints it. Once it passes `check` with no personal data or prompts left, `build` passes its opening sections to the help chat, an overview to the agent connector's `get_app_overview`, its first paragraph to the home page, and three pages to the help site: the glossary (**Words we use**), the rules as **Good to know** (**Troubleshooting and FAQ**) and **What <app> is for** at the top of **Getting started**. They're marked `brief: true, generated: true` and rewritten every build; remove `generated: true` to take one over by hand. "Open questions" is never published. Within a section, pages follow `outline.yaml`'s card order, then go from creating things to deleting them |
 | `outline` | Outline cards in `outline.yaml` (`add`, `import`, `list`, `note`, `check`, `status`); capture records where the screen differs from a card |
 | `inspect` | Open one page signed in and list its interactive elements, read-only (`--click` repeatable; `--as <role>` takes a walkthrough's persona, or a role the config's `roles`/`readers` name before any walkthrough uses it; 80 lines at a time, `--skip <n>` for the next window, `--lines 0` for all); `--walkthrough <id> --after <step>` replays the steps (writes, like capture) and maps the page they leave; `--after <pathId>/<stepId>` replays a path from its own start page through its opening steps (or on to a shared main step after it joins), with the same safety checks |
 | `record` | "Show me": open the app in a browser window, signed in (`--as`), with `--needs` states set up, and turn one click-through into a draft walkthrough. A toolbar adds **Point at**, **Check shown**, **Note** (the step's narration), **New step**, **Undo** and **Finish**. Targets use on-screen names and are checked against the page as they're recorded; typed emails, phone numbers and card numbers become safe demo values; passwords are never kept. Same safety checks as capture; the draft is replayed once afterwards (`--no-replay` skips it, since a replay saves the same things again) |

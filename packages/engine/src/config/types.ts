@@ -433,6 +433,11 @@ export interface AidaConfig {
   buildDir?: string;
   viewport?: Viewport;
   deviceScaleFactor?: number;
+  /**
+   * A local mail catcher for capture: the app's outgoing email (pointed at 127.0.0.1:`port` in
+   * its own SMTP settings) is caught in memory, never sent, and `showEmail` actions show it.
+   */
+  mail?: { port?: number };
   /** The capture browser's locale (dates, numbers). Default `DEFAULT_CAPTURE_LOCALE` ("en-US"). */
   locale?: string;
   /** The capture browser's IANA time zone. Default `DEFAULT_CAPTURE_TIMEZONE` ("UTC"): fixed, so

@@ -1,0 +1,52 @@
+walkthrough: invite-people-by-email
+version: 1
+title: Invite people by email
+summary: Send someone an email invitation to your poll, so they can answer straight from their inbox.
+for: Organizers
+section: Polls
+start:
+  signed_in_as: organizer
+  page: /poll/seed-0248
+data:
+  guest:
+    email: robin.ng@example.com
+steps:
+  - id: open-share
+    title: Open Share
+    say: On your poll, open Share.
+    caption: Open Share.
+    page_text: On your poll's page, select **Share**.
+    actions:
+      - do: click
+        target: { role: button, name: Share }
+        highlight: true
+  - id: enter-email
+    title: Enter their email address
+    say: Type the email address of the person you're inviting.
+    caption: Type their email address.
+    page_text: In **Email address**, type the address of the person you're inviting.
+    actions:
+      - do: type
+        target: { role: textbox, name: Email address }
+        text: "{{guest.email}}"
+  - id: send
+    title: Send the invite
+    say: Send the invite. They're added to the list, so you can see when they open it and answer.
+    caption: Send the invite.
+    page_text: Select **Send invite**. They're added to the list below, where you can see whether they've opened the invite and answered.
+    actions:
+      - do: click
+        target: { role: button, name: Send invite }
+        highlight: true
+      - do: expect
+        target: { text: "{{guest.email}}", within: { role: dialog, name: Share } }
+        highlight: true
+  - id: their-email
+    title: What they receive
+    say: Here's the email they get. One click on the button takes them straight to your poll.
+    caption: The invitation they receive.
+    page_text: They get an email inviting them to your poll, with a button that opens it so they can answer.
+    actions:
+      - do: showEmail
+        to: "{{guest.email}}"
+        highlight: true

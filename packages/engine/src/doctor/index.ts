@@ -23,10 +23,22 @@ import {
   APP_REACHABLE_TIMEOUT_MS,
 } from "./checks.js";
 import type { DoctorCheck } from "./checks.js";
+import { assertLocalDatabase } from "../capture/write-guard.js";
+import {
+  checkDemoEmails,
+  checkLoopback,
+  checkStandaloneOutput,
+  findStandaloneOutput,
+  LOOPBACK_PROBE_TIMEOUT_MS,
+  otherLoopback,
+  sampleDemoEmails,
+} from "./app-setup.js";
+import type { DemoEmailSample } from "./app-setup.js";
 import { realProbes } from "./probes.js";
 import type { DoctorProbes } from "./probes.js";
 
 export * from "./checks.js";
+export * from "./app-setup.js";
 export { realProbes } from "./probes.js";
 export type { DoctorProbes } from "./probes.js";
 
@@ -88,10 +100,14 @@ export async function runDoctor(opts: RunDoctorOptions = {}): Promise<DoctorResu
     probes.playwright(),
   ]);
   const canLaunch = Boolean(playwright?.chromiumInstalled);
-  const [launch, nextSize, fetched] = await Promise.all([
+  // The other spelling of this machine's address (localhost <-> 127.0.0.1), probed alongside the
+  // app fetch with a short cap, so it never makes doctor slower.
+  const otherUrl = config ? otherLoopback(config.app.baseUrl) : undefined;
+  const [launch, nextSize, fetched, otherFetched] = await Promise.all([
     canLaunch ? probes.launchChromium() : Promise.resolve(undefined),
     appDir ? probes.dirSize(join(appDir, ".next"), GB) : Promise.resolve(undefined),
     config ? probes.fetchStatus(config.app.baseUrl, APP_REACHABLE_TIMEOUT_MS) : Promise.resolve(undefined),
+    otherUrl ? probes.fetchStatus(otherUrl, LOOPBACK_PROBE_TIMEOUT_MS) : Promise.resolve(undefined),
   ]);
 
   const checks: DoctorCheck[] = [
@@ -106,9 +122,19 @@ export async function runDoctor(opts: RunDoctorOptions = {}): Promise<DoctorResu
 
   if (config) {
     checks.push(checkNextCache(appDir, nextSize));
+    const standalone = appDir ? findStandaloneOutput(appDir) : undefined;
+    const standaloneCheck = checkStandaloneOutput(appDir, standalone, config.app.baseUrl);
+    if (standaloneCheck) checks.push(standaloneCheck);
     if (fetched) checks.push(checkBaseUrl(config.app.baseUrl, fetched));
+    if (fetched && otherUrl && otherFetched) {
+      const address = checkLoopback(config.app.baseUrl, fetched, { url: otherUrl, result: otherFetched }, Boolean(standalone));
+      if (address) checks.push(address);
+    }
+    let dbLocal = false;
     try {
-      checks.push(checkDatabase(await checkAppDatabase({ config, env: opts.env })));
+      const dbCheck = await checkAppDatabase({ config, env: opts.env });
+      dbLocal = !dbCheck.refuse && (dbCheck.status === "local" || dbCheck.status === "throwaway");
+      checks.push(checkDatabase(dbCheck));
     } catch (err) {
       checks.push({
         id: "database",
@@ -117,11 +143,33 @@ export async function runDoctor(opts: RunDoctorOptions = {}): Promise<DoctorResu
         detail: err instanceof Error ? err.message : String(err),
       });
     }
+    checks.push(await demoEmailsCheck(config, dbLocal));
     checks.push(checkOutboundSenders(checkOutbound({ config, env: opts.env })));
     checks.push(checkHelpApp(config.helpApp ? probes.helpApp(config.helpApp) : undefined));
   }
 
   return { ok: !checks.some((c) => c.status === "fail"), checks };
+}
+
+/** Samples the demo data's email columns through the config's database adapter, only when the
+ * app's database is local and the adapter's own URL is too (the same refusal capture uses). */
+async function demoEmailsCheck(config: ResolvedConfig, dbLocal: boolean): Promise<DoctorCheck> {
+  if (!config.database) return checkDemoEmails(undefined, "no database adapter in aida.config");
+  if (!dbLocal) return checkDemoEmails(undefined, "the app's database isn't confirmed local");
+  let url: string;
+  try {
+    url = await config.database.url();
+    assertLocalDatabase(url);
+  } catch (err) {
+    return checkDemoEmails(undefined, err instanceof Error ? err.message.split("\n")[0] : String(err));
+  }
+  let sample: DemoEmailSample;
+  try {
+    sample = await sampleDemoEmails(config.database, url);
+  } catch (err) {
+    sample = { ok: false, columns: [], error: err instanceof Error ? err.message.split("\n")[0] : String(err) };
+  }
+  return checkDemoEmails(sample);
 }
 
 /** Human summary: one line per check, its fix indented under it. */

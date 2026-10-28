@@ -94,4 +94,18 @@ export function guidesUnder(node: Root | Folder): { item: Item; data: PageData }
     .filter((g): g is { item: Item; data: PageData } => g.data?.kind === "walkthrough" || Boolean(g.data?.walkthrough));
 }
 
+/** Pages written from the app brief (glossary, rules, what the app is for) under `node`. */
+export function articlesUnder(node: Root | Folder): { item: Item; data: PageData }[] {
+  return pagesUnder(node)
+    .map((item) => ({ item, data: pageData(item) }))
+    .filter((g): g is { item: Item; data: PageData } => g.data?.brief === true);
+}
+
+/** Every page a reader would open under `node`, guides and brief pages, in sidebar order. */
+export function readablePagesUnder(node: Root | Folder): { item: Item; data: PageData }[] {
+  return pagesUnder(node)
+    .map((item) => ({ item, data: pageData(item) }))
+    .filter((g): g is { item: Item; data: PageData } => g.data?.brief === true || g.data?.kind === "walkthrough" || Boolean(g.data?.walkthrough));
+}
+
 export { pageData };

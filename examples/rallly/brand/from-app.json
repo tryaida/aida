@@ -3,18 +3,24 @@
   "source": {
     "baseUrl": "http://localhost:3210",
     "pages": [
-      "/polls"
+      "/settings/profile",
+      "/poll/seed-0461"
     ]
   },
   "brand": {
+    "primaryColor": "hsl(243 75.4% 58.6%)",
     "colors": {
+      "primaryForeground": "hsl(0 0% 100%)",
       "background": "hsl(0 0% 98%)",
       "foreground": "hsl(240 3.7% 15.9%)",
-      "border": "hsl(240 5.9% 90%)"
+      "border": "hsl(240 5.9% 90%)",
+      "card": "hsl(0 0% 100%)"
     },
     "font": "Inter",
+    "radius": "16px",
+    "shadow": "none",
     "density": "regular",
-    "name": "Polls"
+    "name": "Profile"
   },
   "replaces": {}
 }

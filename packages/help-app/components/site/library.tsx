@@ -2,7 +2,7 @@
 // the topics + guides on the home page. Server components — no client JS.
 import type { Folder, Root } from "fumadocs-core/page-tree";
 import type { ReactNode } from "react";
-import { guidesUnder, pageData } from "@/lib/tree";
+import { articlesUnder, guidesUnder, pageData, readablePagesUnder } from "@/lib/tree";
 import { CardGrid, GuideCard, SectionCard } from "./cards";
 
 function guideCards(folder: Root | Folder, limit?: number) {
@@ -30,7 +30,7 @@ function sectionCard(folder: Folder, fallbackIcon?: ReactNode) {
       title={folder.name}
       description={data?.description}
       icon={folder.icon ?? fallbackIcon}
-      guides={guidesUnder(folder).map(({ item }) => ({ url: item.url, title: item.name }))}
+      guides={readablePagesUnder(folder).map(({ item }) => ({ url: item.url, title: item.name }))}
     />
   );
 }
@@ -39,8 +39,19 @@ function sectionCard(folder: Folder, fallbackIcon?: ReactNode) {
 export function SectionLibrary({ folder }: { folder: Folder }) {
   const subsections = folder.children.filter((c): c is Folder => c.type === "folder");
   const guides = guideCards(folder);
+  const articles = articlesUnder(folder).map(({ item, data }) => (
+    <GuideCard key={item.url} url={item.url} title={item.name} description={data.description} />
+  ));
   return (
     <div className="mb-10 flex flex-col gap-10">
+      {articles.length > 0 ? (
+        <section>
+          {guides.length > 0 || subsections.length > 0 ? (
+            <h2 className="mb-4 font-heading text-lg font-semibold">Read first</h2>
+          ) : null}
+          <CardGrid>{articles}</CardGrid>
+        </section>
+      ) : null}
       {subsections.length > 0 ? (
         <section>
           <h2 className="mb-4 font-heading text-lg font-semibold">Topics</h2>
@@ -55,7 +66,7 @@ export function SectionLibrary({ folder }: { folder: Folder }) {
           <CardGrid>{guides}</CardGrid>
         </section>
       ) : null}
-      {subsections.length === 0 && guides.length === 0 ? (
+      {subsections.length === 0 && guides.length === 0 && articles.length === 0 ? (
         <p className="text-fd-muted-foreground">There are no guides here yet.</p>
       ) : null}
     </div>

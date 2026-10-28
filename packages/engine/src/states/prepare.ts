@@ -345,6 +345,9 @@ async function runSetupAction(page: Page, a: Action, baseOrigin: string): Promis
     case "scrollTo":
       await (await locate(a.target, page)).scrollIntoViewIfNeeded();
       return;
+    case "showEmail":
+      // Setup isn't filmed: there's no one to show an email to.
+      return;
     case "click": {
       await (await locate(a.target, page)).click();
       await settle(page);

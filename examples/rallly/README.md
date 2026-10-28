@@ -2,14 +2,15 @@
 
 [Rallly](https://github.com/lukevella/rallly) is an open-source meeting scheduler (Next.js App
 Router, better-auth, Prisma, pnpm workspace). This folder is the AIDA help app's own files from a
-run against it: config, adapters, the app brief, 13 walkthroughs and the pages they built. Videos and PDFs are
+run against it: config, adapters, the app brief, 14 walkthroughs and the pages they built. Videos and PDFs are
 build outputs and aren't committed; rebuild them with `aida build`.
 
 | Walkthrough | For | Steps | What it does |
 | --- | --- | --- | --- |
 | `create-a-poll` | Organizers | 6 | Names an event, picks all-day dates next month, creates the poll |
 | `edit-a-poll` | Organizers | 5 | Changes the location and a setting, keeps the answers |
-| `pick-the-final-date` | Organizers | 4 | Finalizes a poll and chooses who gets the calendar invite |
+| `pick-the-final-date` | Organizers | 5 | Finalizes a poll, chooses who gets the calendar invite, shows that email |
+| `invite-people-by-email` | Organizers | 4 | Sends an email invite, then shows the email they receive |
 | `close-a-poll` | Organizers | 3 | Stops new answers, shows where to reopen |
 | `duplicate-a-poll` | Organizers | 4 | Copies a poll under a new title |
 | `delete-a-poll` | Organizers | 3 | Deletes a poll after the warning |
@@ -21,7 +22,7 @@ build outputs and aren't committed; rebuild them with `aida build`.
 | `change-your-answers` | Participants (signed out) | 4 | Edits an earlier answer (set up unrecorded first) |
 | `add-a-comment` | Participants (signed out) | 3 | Leaves a comment on a poll |
 
-All 13 pass capture against a production build with the seeded demo data, and each one that
+All 14 pass capture against a production build with the seeded demo data, and each one that
 saves data checks the database afterwards (`validate.database`). `app-brief.md` is the brief the
 help chat answers from, written from Rallly's own `apps/docs`. `proof.png` is the brand proof
 sheet.
@@ -142,6 +143,11 @@ Fixed in a third pass, while writing the other nine walkthroughs:
   now start on the walkthrough's start page.
 - `type` appended to a field that already had a value (the time zone combobox showed "New
   YorkLondon"). It now selects what's there first, so the typed text replaces it.
+
+Emails: Rallly's SMTP settings point at `127.0.0.1:1025` and the config sets `mail: { port: 1025 }`,
+so capture catches the app's real email there (never sent) and `showEmail` puts it on screen: the
+invitation in `invite-people-by-email` and the "Date booked" email in `pick-the-final-date`. The
+brief also publishes "Words Rallly uses", "Good to know" and "What Rallly is for" pages.
 
 Worth knowing when writing walkthroughs for an app like this: new invitees land on a poll with
 their own row already open, and finalizing opens a chain of dialogs. Both were found from failure

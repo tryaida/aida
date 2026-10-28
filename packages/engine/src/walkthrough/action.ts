@@ -40,7 +40,25 @@ export type Action =
   | { do: "waitFor"; target: Target; snapshot?: boolean | string; highlight?: Highlight }
   | { do: "waitForUrl"; pattern: string }
   | { do: "scrollTo"; target: Target }
-  | { do: "goto"; path: string };
+  | { do: "goto"; path: string }
+  /**
+   * Shows an email on screen, drawn as a mail client over the app, until the next action. Either
+   * one the app sent during this capture, caught by the local mail catcher (config `mail.port`)
+   * and matched by `to` and/or `subject` (text it contains, or a `"/pattern/"`), or an emulated
+   * one written out in `mock`, for mail capture can't receive.
+   */
+  | { do: "showEmail"; to?: string; subject?: string; mock?: MockEmail; highlight?: boolean };
+
+/** An emulated email for `showEmail`: written in the walkthrough, never sent. */
+export interface MockEmail {
+  from: string;
+  to: string;
+  subject: string;
+  /** Plain text body; blank lines separate paragraphs. */
+  text?: string;
+  /** HTML body, drawn in a sandbox (no scripts). */
+  html?: string;
+}
 
 const base = { target: TargetSchema, highlight: HighlightSchema.optional() };
 
@@ -98,7 +116,35 @@ export const ActionSchema: z.ZodType<Action> = z.discriminatedUnion("do", [
   z.object({ do: z.literal("waitForUrl"), pattern: z.string() }).strict(),
   z.object({ do: z.literal("scrollTo"), target: TargetSchema }).strict(),
   z.object({ do: z.literal("goto"), path: z.string() }).strict(),
+  z
+    .object({
+      do: z.literal("showEmail"),
+      to: z.string().optional(),
+      subject: z.string().optional(),
+      mock: z
+        .object({ from: z.string(), to: z.string(), subject: z.string(), text: z.string().optional(), html: z.string().optional() })
+        .strict()
+        .optional(),
+      highlight: z.boolean().optional(),
+    })
+    .strict()
+    .describe("Shows an email on screen: one the app sent (caught locally, matched by to/subject) or an emulated `mock`."),
 ]).superRefine((a, ctx) => {
+  if (a.do === "showEmail") {
+    if (a.mock && (a.to !== undefined || a.subject !== undefined)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["mock"], message: "showEmail takes either `mock` (an emulated email) or `to`/`subject` (one the app sent), not both" });
+    }
+    if (!a.mock && a.to === undefined && a.subject === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["do"], message: "showEmail needs `to` and/or `subject` to find the email the app sent, or a `mock` email" });
+    }
+    if (a.mock && a.mock.text === undefined && a.mock.html === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["mock"], message: "a mock email needs `text` or `html`" });
+    }
+    if (a.subject !== undefined) {
+      const problem = textPatternProblem(a.subject);
+      if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["subject"], message: problem });
+    }
+  }
   if (a.do === "expect" && a.text !== undefined) {
     const problem = textPatternProblem(a.text);
     if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["text"], message: problem });

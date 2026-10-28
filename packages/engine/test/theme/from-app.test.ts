@@ -85,6 +85,12 @@ beforeAll(async () => {
       res.end('<!doctype html><html><head><title>Plain · Acme Events</title><link rel="icon" href="/mark.svg"></head><body><main><button style="background:#4f46e5;color:#fff;height:36px">Go</button></main></body></html>');
       return;
     }
+    if (req.url === "/wrapped") {
+      // shadcn's layout: a full-page "sidebar-wrapper" around the sidebar and the page.
+      res.setHeader("content-type", "text/html");
+      res.end('<!doctype html><html><head><title>Acme Events</title></head><body style="margin:0"><div class="group/sidebar-wrapper" style="display:flex;min-height:100vh"><aside style="width:220px">Menu</aside><main><button style="background:#0d9488;color:#fff;height:36px;padding:0 16px">New order</button></main></div></body></html>');
+      return;
+    }
     if (req.url === "/menu-only" || req.url === "/covered") {
       // No logo: only a menu item that links home with an icon. "/covered" also has the real
       // logo, but under a dialog's overlay.
@@ -215,6 +221,13 @@ describe("logo pick", () => {
   it("skips a logo covered by an overlay", async () => {
     const r = await readBrandFromApp({ baseUrl, pages: ["/covered"], assetsDir: mkdtempSync(join(tmpdir(), "aida-covered-")) });
     expect(r.assets.logo).toBeUndefined();
+  }, 60_000);
+});
+
+describe("layout wrappers", () => {
+  it("doesn't take a page-sized sidebar wrapper for the nav, so its buttons still count", async () => {
+    const r = await readBrandFromApp({ baseUrl, pages: ["/wrapped"], assetsDir: mkdtempSync(join(tmpdir(), "aida-wrapped-")) });
+    expect(r.brand.primaryColor).toBeDefined();
   }, 60_000);
 });
 

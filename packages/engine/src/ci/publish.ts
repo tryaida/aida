@@ -14,6 +14,7 @@ import type { BuildPageResult } from "../pages/index.js";
 import { runIndexStage } from "../build/index-stage.js";
 import { loadWalkthroughFile, type Walkthrough } from "../walkthrough/index.js";
 import { briefForBuild, briefPath } from "../brief/consumers.js";
+import { outlinePath, readOutline } from "../outline/file.js";
 import { captureInPlannedOrder } from "./planned.js";
 import { runCaptureSafetyChecks } from "../safety/index.js";
 
@@ -130,7 +131,18 @@ export async function runCiPublish(opts: RunCiPublishOptions): Promise<CiPublish
     walkthroughs: allWalkthroughs,
     productName: config.brand?.name,
     appBrief: brief.artifacts,
+    outlineOrder: outlineOrder(config),
   });
 
   return { published, failed, all: affected.all, copiedToHelpApp: index.copiedToHelpApp, ok: failed.length === 0 };
+}
+
+/** Walkthrough ids in outline.yaml card order, for the help site's page order; none without an
+ * outline (or with one that doesn't parse — the outline commands report that). */
+function outlineOrder(config: Parameters<typeof outlinePath>[0]): string[] | undefined {
+  try {
+    return readOutline(outlinePath(config))?.outline.cards.map((c) => c.id);
+  } catch {
+    return undefined;
+  }
 }

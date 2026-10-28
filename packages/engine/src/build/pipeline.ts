@@ -9,7 +9,6 @@ import type { Walkthrough } from "../walkthrough/index.js";
 import * as captureModule from "../capture/index.js";
 import { capturePaths, comparePathRuns, readPathCaptures, markPathsNotCaptured, prunePathDirs, recordPathDiffs, runCapture, runLevelFailure, withFrameStabilization } from "../capture/index.js";
 import { markNotCaptured, notCapturedReason } from "../capture/not-captured.js";
-import { assertLocalDatabase } from "../capture/write-guard.js";
 import { AppDatabaseRefusedError, runCaptureSafetyChecks } from "../safety/index.js";
 import { planRunFromFiles } from "../states/index.js";
 import type { PlannedRun, PlannedWalkthrough } from "../states/index.js";
@@ -36,6 +35,7 @@ import type { PdfBuildResult } from "../pdf/index.js";
 import type { Browser } from "playwright";
 import { resolveChatConfig } from "../chat/index.js";
 import { briefForBuild, briefPath } from "../brief/consumers.js";
+import { outlinePath, readOutline } from "../outline/file.js";
 import { cpSync, rmSync } from "node:fs";
 import { runIndexStage } from "./index-stage.js";
 import { writeHelpAppTheme } from "../theme/index.js";
@@ -49,6 +49,7 @@ import { mapLimit } from "./pool.js";
 import type { BuildOptions, BuildStageName, StageResult, WalkthroughBuildResult } from "./types.js";
 import { ALL_STAGES } from "./types.js";
 import { voiceCostUsd } from "../usage/prices.js";
+import { resetDatabase } from "../capture/reset.js";
 import { recordCaptureDrift } from "../outline/index.js";
 
 function ok(detail?: string): StageResult {
@@ -232,9 +233,7 @@ async function runCaptureStage(
     }
 
     if (!opts.noReset && needsDbReset && config.database) {
-      const dbUrl = await config.database.url();
-      assertLocalDatabase(dbUrl);
-      await config.database.reset?.();
+      await resetDatabase(config);
     }
 
     const captureSettings = resolveCaptureSettings(config.capture);
@@ -895,6 +894,7 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
         walkthroughs: allWalkthroughs,
         productName: config.brand?.name,
         appBrief: brief.artifacts,
+        outlineOrder: outlineOrder(config),
       });
       indexResult = { ...result, ms: Date.now() - started };
       indexStage = ok(`${result.pageCount} page(s) indexed -> ${result.searchIndexFile}`);
@@ -926,4 +926,14 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
   });
 
   return { walkthroughs, index: indexResult, indexStage, runStartedAt };
+}
+
+/** Walkthrough ids in outline.yaml card order, for the help site's page order; none without an
+ * outline (or with one that doesn't parse — the outline commands report that). */
+function outlineOrder(config: Parameters<typeof outlinePath>[0]): string[] | undefined {
+  try {
+    return readOutline(outlinePath(config))?.outline.cards.map((c) => c.id);
+  } catch {
+    return undefined;
+  }
 }

@@ -77,7 +77,11 @@ export const APP_STYLE_SCRIPT = String.raw`(() => {
   // Nav / sidebar: the biggest visible landmark hugging the left or top edge.
   const navs = [...document.querySelectorAll('nav, aside, header, [role=navigation], [data-sidebar], [class*="sidebar" i]')]
     .filter(visible).map((el) => ({ el, r: el.getBoundingClientRect() }))
-    .filter(({ r }) => r.left < 40 || r.top < 40).sort((a, b) => b.r.width * b.r.height - a.r.width * a.r.height);
+    .filter(({ r }) => r.left < 40 || r.top < 40)
+    // A sidebar is narrow and a header is short: a match covering most of the screen is a layout
+    // wrapper (shadcn's "sidebar-wrapper"), and treating it as the nav would hide every button.
+    .filter(({ r }) => r.width < innerWidth * 0.6 || r.height < innerHeight * 0.4)
+    .sort((a, b) => b.r.width * b.r.height - a.r.width * a.r.height);
   if (navs[0]) {
     const el = navs[0].el;
     const active = el.querySelector('[aria-current="page"], [aria-current="true"], [data-active="true"], [data-state="active"], .active');

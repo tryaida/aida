@@ -4,6 +4,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { briefNotPublishableReason, checkBrief } from "./check.js";
+import { escapeMdxText } from "../pages/content.js";
 import { briefAppName, briefReaders, normalizeHeading, parseBrief, sectionText, type BriefSection, type BriefSectionName, type ParsedBrief } from "./format.js";
 
 export const DEFAULT_BRIEF_FILE = "app-brief.md";
@@ -92,11 +93,28 @@ export interface BriefArtifacts {
   chat?: string;
   overview?: string;
   intro?: string;
+  /** Help-site pages built from the brief (`briefPages`): the glossary, the rules, what the app
+   * is for. Ready-to-write MDX bodies, so the index stage only places them. */
+  pages?: BriefPage[];
+}
+
+/** One help-site page built from the brief. `category` is a library category slug
+ * (`words-we-use`, ...); the page goes to `<category>/<slug>/index.mdx`. */
+export interface BriefPage {
+  category: string;
+  slug: string;
+  title: string;
+  description: string;
+  /** MDX body (no frontmatter), already escaped. */
+  body: string;
+  /** Sorts before the category's other pages (an overview page). */
+  first?: boolean;
 }
 
 export function briefArtifacts(brief: ParsedBrief | undefined): BriefArtifacts | undefined {
   if (!brief) return undefined;
-  return { chat: briefForChat(brief), overview: briefOverview(brief), intro: briefIntro(brief) };
+  const pages = briefPages(brief);
+  return { chat: briefForChat(brief), overview: briefOverview(brief), intro: briefIntro(brief), ...(pages.length > 0 ? { pages } : {}) };
 }
 
 /** What `aida build` publishes from the brief at `file`: nothing when there's no brief, and
@@ -129,4 +147,94 @@ export function briefIntro(brief: ParsedBrief): string | undefined {
     out += s;
   }
   return out.trim() || `${plain.slice(0, INTRO_MAX_CHARS - 1).replace(/\s+\S*$/, "")}…`;
+}
+
+/** Rows of the "Words it uses" table: term, meaning, not to be confused with. */
+export function glossaryRows(brief: ParsedBrief): { term: string; meaning: string; notConfusedWith?: string }[] {
+  const text = sectionText(publishedSection(brief, "Words it uses"));
+  const rows = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith("|"))
+    .map((l) => l.replace(/^\||\|$/g, "").split("|").map((c) => c.trim()));
+  return rows
+    .slice(1)
+    .filter((r) => !r.every((c) => /^:?-+:?$/.test(c)))
+    .filter((r) => r[0] && r[1])
+    .map((r) => ({ term: r[0], meaning: r[1], ...(r[2] && !/^(-|—|n\/a|none)$/i.test(r[2]) ? { notConfusedWith: r[2] } : {}) }));
+}
+
+/** The bullets of a section, one string each (continuation lines joined). */
+function bullets(text: string): string[] {
+  const out: string[] = [];
+  for (const line of text.split("\n")) {
+    const m = line.match(/^\s*[-*]\s+(.*)$/);
+    if (m) out.push(m[1].trim());
+    else if (line.trim() && out.length > 0) out[out.length - 1] += ` ${line.trim()}`;
+  }
+  return out.filter(Boolean);
+}
+
+function slugify(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "app";
+}
+
+function sentence(s: string): string {
+  const t = s.trim();
+  return /[.!?:)]$/.test(t) ? t : `${t}.`;
+}
+
+/**
+ * Help-site pages from the brief's published sections ("Open questions" never): a glossary in
+ * Words we use, the rules in Troubleshooting and FAQ as "Good to know", and "What <app> is for"
+ * at the top of Getting started. A section with nothing in it gives no page.
+ */
+export function briefPages(brief: ParsedBrief): BriefPage[] {
+  const app = briefAppName(brief);
+  const pages: BriefPage[] = [];
+
+  const words = glossaryRows(brief);
+  if (words.length > 0) {
+    const body = words
+      .map((w) => {
+        const lines = [`## ${escapeMdxText(w.term)}`, "", sentence(escapeMdxText(w.meaning))];
+        if (w.notConfusedWith) lines.push("", `Not to be confused with: ${sentence(escapeMdxText(w.notConfusedWith))}`);
+        return lines.join("\n");
+      })
+      .join("\n\n");
+    pages.push({
+      category: "words-we-use",
+      slug: "glossary",
+      title: app ? `Words ${app} uses` : "Glossary",
+      description: "What the words you'll see on screen mean, and what they don't.",
+      body,
+    });
+  }
+
+  const rules = bullets(sectionText(publishedSection(brief, "Rules that matter")));
+  if (rules.length > 0) {
+    pages.push({
+      category: "troubleshooting-and-faq",
+      slug: "good-to-know",
+      title: "Good to know",
+      description: app ? `Rules worth knowing before you use ${app}, and why they matter.` : "Rules worth knowing before you start, and why they matter.",
+      body: rules.map((r) => `- ${escapeMdxText(r)}`).join("\n"),
+    });
+  }
+
+  const forText = sectionText(publishedSection(brief, "What it's for"));
+  const whoText = sectionText(publishedSection(brief, "Who uses it"));
+  if (hasContent(forText)) {
+    const parts = [escapeMdxText(forText.trim())];
+    if (hasContent(whoText)) parts.push(`## Who uses it\n\n${escapeMdxText(whoText.trim())}`);
+    pages.push({
+      category: "getting-started",
+      slug: `what-${slugify(app ?? "the-app")}-is-for`,
+      title: app ? `What ${app} is for` : "What the app is for",
+      description: app ? `What ${app} does, and who uses it.` : "What the app does, and who uses it.",
+      body: parts.join("\n\n"),
+      first: true,
+    });
+  }
+  return pages;
 }

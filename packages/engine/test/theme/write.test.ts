@@ -235,3 +235,21 @@ describe("imageAspect and logoWide", () => {
     }
   });
 });
+
+describe("theme --from-app start pages", () => {
+  it("prefers the role's own walkthroughs over signed-out ones", async () => {
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join: j } = await import("node:path");
+    const { startPages } = await import("../../src/commands/theme.js");
+    const dir = mkdtempSync(j(tmpdir(), "aida-start-pages-"));
+    const wt = (id: string, page: string, role?: string) =>
+      writeFileSync(j(dir, `${id}.yaml`), `walkthrough: ${id}\nversion: 1\ntitle: T\nstart:\n${role ? `  signed_in_as: ${role}\n` : ""}  page: ${page}\nsteps:\n  - id: s\n    title: S\n    check: text "A" is visible\n`);
+    wt("a-guest", "/invite/1");
+    wt("b-admin", "/orders", "admin");
+    wt("c-staff", "/desk", "staff");
+    wt("d-admin", "/reports", "admin");
+    expect(startPages(dir, "admin")).toEqual(["/orders", "/reports"]);
+    expect(startPages(dir, undefined)).toEqual(["/invite/1", "/orders"]);
+  });
+});

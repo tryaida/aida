@@ -142,15 +142,16 @@ function isReplaceableIndex(file: string): boolean {
   return LEGACY_PLACEHOLDER_TEXT.some((t) => raw.includes(t));
 }
 
-function indexInfo(dir: string): { title?: string; generated: boolean; placeholder: boolean; kind?: string } {
+function indexInfo(dir: string): { title?: string; generated: boolean; placeholder: boolean; kind?: string; brief: boolean } {
   const file = pageFileIn(dir);
-  if (!file) return { generated: false, placeholder: false };
+  if (!file) return { generated: false, placeholder: false, brief: false };
   const fm = readFrontmatter(readFileSync(file, "utf8"));
   return {
     title: typeof fm.title === "string" ? fm.title : undefined,
     generated: fm.generated === true,
     placeholder: fm.placeholder === true,
     kind: typeof fm.kind === "string" ? fm.kind : undefined,
+    brief: fm.brief === true,
   };
 }
 
@@ -219,6 +220,97 @@ export interface LibraryStructureOptions {
   /** What the app is for, in a sentence or two (the app brief's first paragraph): the home page's
    * description, shown under its heading, instead of the generic one. */
   intro?: string;
+  /** Pages built from the app brief (brief/consumers.ts `briefPages`). Written as
+   * `brief: true`, `generated: true`; earlier ones no longer in the list are removed. A page a
+   * person has taken over (no `generated: true`) is never touched. */
+  briefPages?: LibraryBriefPage[];
+  /** Walkthrough ids in outline.yaml card order: pages in a section follow it. */
+  outlineOrder?: string[];
+}
+
+/** A page from the app brief, as the library places it. Plain data, so the index stage needn't
+ * import the brief module. */
+export interface LibraryBriefPage {
+  category: string;
+  slug: string;
+  title: string;
+  description: string;
+  body: string;
+  first?: boolean;
+}
+
+/** Task-lifecycle rank from a title's first words: making things first, then finding and
+ * viewing, changing, wrapping up, and removing last. Unknown verbs sit with viewing. */
+export function lifecycleRank(title: string): number {
+  const t = title.trim().toLowerCase();
+  if (/^(set up|sign up)\b/.test(t)) return 0;
+  const verb = t.split(/\s+/)[0] ?? "";
+  if (/^(create|add|new|invite|start|make|book|register|import|upload|record)$/.test(verb)) return 0;
+  if (/^(view|find|see|open|search|filter|browse|check|look|read|get|download|export|print)$/.test(verb)) return 1;
+  if (/^(edit|change|update|set|move|duplicate|copy|rename|reorder|assign|share|send|reply|respond)$/.test(verb)) return 3;
+  if (/^(finalize|finalise|pick|schedule|confirm|approve|publish|close|cancel|archive|complete|finish|end|stop|pause|lock)$/.test(verb)) return 4;
+  if (/^(delete|remove|revoke|deactivate|disable)$/.test(verb)) return 5;
+  return 2;
+}
+
+/** Orders a section's pages: overview pages first, then outline.yaml order, then
+ * `lifecycleRank`, then title. */
+export function orderLeaves<T extends { id?: string; title: string; first?: boolean }>(leaves: T[], outlineOrder: string[] = []): T[] {
+  const outlineIndex = new Map(outlineOrder.map((id, i) => [id, i] as const));
+  const key = (l: T): [number, number, number] => [
+    l.first ? 0 : 1,
+    l.id !== undefined && outlineIndex.has(l.id) ? outlineIndex.get(l.id)! : Number.MAX_SAFE_INTEGER,
+    lifecycleRank(l.title),
+  ];
+  return [...leaves].sort((a, b) => {
+    const ka = key(a);
+    const kb = key(b);
+    for (let i = 0; i < ka.length; i++) if (ka[i] !== kb[i]) return ka[i] - kb[i];
+    return a.title.localeCompare(b.title);
+  });
+}
+
+/** Writes this build's brief pages and removes generated ones the brief no longer gives.
+ * Returns their folders (relative to the content dir) with what the sidebar needs. */
+function writeBriefPages(contentDir: string, pages: LibraryBriefPage[]): Map<string, { title: string; first?: boolean }> {
+  const written = new Map<string, { title: string; first?: boolean }>();
+  for (const page of pages) {
+    if (!CATEGORY_SLUGS.has(page.category) || !/^[a-z0-9][a-z0-9-]*$/.test(page.slug)) continue;
+    const rel = `${page.category}/${page.slug}`;
+    const dir = join(contentDir, page.category, page.slug);
+    const file = pageFileIn(dir) ?? join(dir, "index.mdx");
+    if (existsSync(file)) {
+      const info = indexInfo(dir);
+      // A person's page in this folder (or a walkthrough's): leave it, and don't list ours.
+      if (!(info.generated && info.brief)) {
+        // Someone's own page here (not a walkthrough's): keep it, and order it as ours would be.
+        if (!info.generated) written.set(rel, { title: info.title ?? page.title, first: page.first });
+        continue;
+      }
+    }
+    mkdirSync(dir, { recursive: true });
+    // `brief: true`, not a new `kind`: a help app scaffolded before brief pages existed validates
+    // `kind` against a fixed list, and shows an unknown-kind-free page as a plain page.
+    const fm = frontmatterBlock({ title: page.title, description: page.description, brief: true, generated: true, passed: true });
+    writeIfChanged(file, `${fm}\n\n{/* Generated by aida from app-brief.md — edit the brief, not this page. */}\n\n${page.body.trim()}\n`);
+    written.set(rel, { title: page.title, first: page.first });
+  }
+  // Generated brief pages from an earlier build that this one doesn't give any more.
+  for (const category of LIBRARY_CATEGORIES) {
+    const catDir = join(contentDir, category.slug);
+    if (!existsSync(catDir)) continue;
+    for (const entry of readdirSync(catDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const rel = `${category.slug}/${entry.name}`;
+      if (written.has(rel)) continue;
+      const info = indexInfo(join(catDir, entry.name));
+      if (info.generated && info.brief) {
+        for (const name of PAGE_FILES) rmSync(join(catDir, entry.name, name), { force: true });
+        removeIfEmpty(join(catDir, entry.name));
+      }
+    }
+  }
+  return written;
 }
 
 /**
@@ -230,7 +322,8 @@ export function writeLibraryStructure(opts: LibraryStructureOptions): void {
   const { contentDir } = opts;
   mkdirSync(contentDir, { recursive: true });
   const pages = findStagedPages(contentDir);
-  const pageRels = new Set(pages.map((p) => p.rel));
+  const briefRels = writeBriefPages(contentDir, opts.briefPages ?? []);
+  const pageRels = new Set([...pages.map((p) => p.rel), ...briefRels.keys()]);
 
   // Folders holding at least one walkthrough page, with the title the walkthrough's section gives
   // them (when known).
@@ -244,6 +337,10 @@ export function writeLibraryStructure(opts: LibraryStructureOptions): void {
       const title = known[depth - 1];
       if (!inUse.has(rel) || (title && !inUse.get(rel))) inUse.set(rel, title);
     }
+  }
+  for (const rel of briefRels.keys()) {
+    const category = rel.split("/")[0];
+    if (!inUse.has(category)) inUse.set(category, undefined);
   }
 
   removeEmptyGeneratedSections(contentDir, contentDir, inUse);
@@ -262,18 +359,22 @@ export function writeLibraryStructure(opts: LibraryStructureOptions): void {
   const childrenOf = (rel: string): string[] => {
     const dir = join(contentDir, rel);
     const sections: { slug: string; title: string }[] = [];
-    const leaves: { slug: string; title: string }[] = [];
+    const leaves: { slug: string; title: string; id?: string; first?: boolean }[] = [];
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const childRel = `${rel}/${entry.name}`;
-      if (pageRels.has(childRel)) {
-        leaves.push({ slug: entry.name, title: pages.find((p) => p.rel === childRel)?.title ?? entry.name });
+      const brief = briefRels.get(childRel);
+      if (brief) {
+        leaves.push({ slug: entry.name, title: brief.title, first: brief.first });
+      } else if (pageRels.has(childRel)) {
+        const page = pages.find((p) => p.rel === childRel);
+        leaves.push({ slug: entry.name, title: page?.title ?? entry.name, id: page?.id });
       } else if (inUse.has(childRel)) {
         sections.push({ slug: entry.name, title: titleOf(childRel) });
       }
     }
     const byTitle = (a: { title: string }, b: { title: string }) => a.title.localeCompare(b.title);
-    return [...sections.sort(byTitle), ...leaves.sort(byTitle)].map((c) => c.slug);
+    return [...sections.sort(byTitle), ...orderLeaves(leaves, opts.outlineOrder)].map((c) => c.slug);
   };
 
   // Top-level categories: never deleted. One with walkthrough pages gets a section index (unless

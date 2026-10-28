@@ -89,6 +89,10 @@ export function describeAction(a: Action, data?: Data): string | undefined {
       const words = targetWords(a.target);
       return words ? `Go to the ${strong(resolveDisplayText(words, data))} field.` : `Go to ${bold(a.target)}.`;
     }
+    case "showEmail": {
+      const subject = a.mock?.subject ?? (a.subject !== undefined && !textPattern(a.subject) ? resolveDisplayText(a.subject, data) : undefined);
+      return subject ? `Open the email ${strong(subject)}.` : "Open the email.";
+    }
     case "waitFor":
     case "waitForUrl":
       return undefined;

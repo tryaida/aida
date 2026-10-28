@@ -9,11 +9,11 @@ import type { ResolvedConfig } from "../config/index.js";
 import { loadWalkthroughFile } from "../walkthrough/index.js";
 import type { Persona, Walkthrough } from "../walkthrough/index.js";
 import { capturePaths, comparePathRuns, pathsPassed, prunePathDirs, recordPathDiffs, runCapture, runLevelFailure } from "../capture/index.js";
-import { assertLocalDatabase } from "../capture/write-guard.js";
 import type { CaptureRunResult } from "../capture/runner.js";
 import type { FailureReport } from "../capture/types.js";
 import { markNotCaptured } from "../capture/not-captured.js";
 import { recordCaptureDriftResult, type CaptureDriftRecord } from "../outline/record.js";
+import { resetDatabase } from "../capture/reset.js";
 import type { DriftEntry } from "../outline/schema.js";
 
 function storageStateKey(baseUrl: string, walkthrough: Walkthrough, config: Pick<ResolvedConfig, "signIn" | "signInHash">): string {
@@ -93,9 +93,7 @@ export async function captureWalkthroughForCi(
     }
 
     if (config.database && resetAllowed) {
-      const dbUrl = await config.database.url();
-      assertLocalDatabase(dbUrl);
-      await config.database.reset?.();
+      await resetDatabase(config);
     }
 
     const result: CaptureRunResult = await runCapture({

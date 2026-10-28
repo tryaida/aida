@@ -50,6 +50,15 @@ steps:
         highlight: true
       - do: expect
         target: { text: Date scheduled }
+  - id: their-invite
+    title: What participants receive
+    say: Each person you chose gets an email with the date and a calendar invite to add it with one click.
+    caption: The invite participants receive.
+    page_text: Each participant you chose gets an email with the final date and a calendar invite attached, so they can add it to their calendar.
+    actions:
+      - do: showEmail
+        to: hannah.kim@example.com
+        highlight: true
 validate:
   database:
     - name: poll-scheduled

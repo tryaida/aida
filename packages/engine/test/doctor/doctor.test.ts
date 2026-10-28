@@ -275,7 +275,10 @@ describe("runDoctor", () => {
     expect(sized).toEqual([join(root, ".next")]);
     // The app may still be compiling on first request (a next dev server took 4.7 s in the
     // wild) — doctor gives it up to 20 s, not the 3 s it used to.
-    expect(fetchTimeouts).toEqual([20_000]);
+    // ...and the other spelling of this machine's address (localhost) gets a short probe beside it.
+    expect(fetchTimeouts).toEqual([20_000, 5000]);
+    // A remote database is never sampled for demo emails.
+    expect(byId["demo-emails"]).toMatchObject({ status: "skip" });
     expect(byId["help-app"].status).toBe("ok");
     expect(result.ok).toBe(false);
     expect(JSON.stringify(result)).not.toContain("Secret123");

@@ -135,7 +135,7 @@ describe("index stage library layout", () => {
     expect(json("how-do-i/meta.json")).toEqual({ title: "How do I…", pages: ["competitors", "payments", "export-results", "..."], generated: true });
     expect(json("how-do-i/payments/meta.json")).toEqual({
       title: "Payments",
-      pages: ["filter-unpaid-entries", "record-a-payment", "..."],
+      pages: ["record-a-payment", "filter-unpaid-entries", "..."],
       generated: true,
     });
     expect(json("meta.json").pages).toEqual([
@@ -308,5 +308,36 @@ describe("index stage library layout", () => {
     expect(fm("index.mdx").title).toBe("Acme help");
     runIndexStage({ pagesDir, outDir, helpApp, pages: [page], walkthroughs: [{ ...wf("a", "A"), product: undefined }] });
     expect(fm("index.mdx").title).toBe("Help");
+  });
+});
+
+describe("page order within a section", () => {
+  it("ranks titles from making things to removing them", async () => {
+    const { lifecycleRank } = await import("../../src/build/library.js");
+    const titles = ["Delete a poll", "Close a poll", "Edit a poll", "Find your polls", "Create a poll", "Set up a space", "Set your time zone", "Say when you're free", "Pick the final date", "Leave a comment"];
+    expect(titles.map(lifecycleRank)).toEqual([5, 4, 3, 1, 0, 0, 3, 2, 4, 2]);
+  });
+
+  it("follows outline.yaml first, then the lifecycle, then the title", async () => {
+    const { orderLeaves } = await import("../../src/build/library.js");
+    const leaves = [
+      { id: "delete-a-poll", title: "Delete a poll" },
+      { id: "close-a-poll", title: "Close a poll" },
+      { id: "create-a-poll", title: "Create a poll" },
+      { id: "edit-a-poll", title: "Edit a poll" },
+      { title: "What Acme is for", first: true },
+    ];
+    expect(orderLeaves(leaves).map((l) => l.title)).toEqual(["What Acme is for", "Create a poll", "Edit a poll", "Close a poll", "Delete a poll"]);
+    expect(orderLeaves(leaves, ["edit-a-poll", "delete-a-poll"]).map((l) => l.title)).toEqual(["What Acme is for", "Edit a poll", "Delete a poll", "Create a poll", "Close a poll"]);
+  });
+
+  it("writes the order into the section's meta.json", () => {
+    seedTemplate();
+    const walkthroughs = [wf("delete-a-thing", "Delete a thing", "Things"), wf("add-a-thing", "Add a thing", "Things"), wf("close-a-thing", "Close a thing", "Things")];
+    const pages = walkthroughs.map((w) => writePage(w.walkthrough, w.title));
+    runIndexStage({ pagesDir, outDir, helpApp, pages, walkthroughs });
+    expect(json("how-do-i/things/meta.json").pages).toEqual(["add-a-thing", "close-a-thing", "delete-a-thing", "..."]);
+    runIndexStage({ pagesDir, outDir, helpApp, pages, walkthroughs, outlineOrder: ["close-a-thing"] });
+    expect(json("how-do-i/things/meta.json").pages).toEqual(["close-a-thing", "add-a-thing", "delete-a-thing", "..."]);
   });
 });

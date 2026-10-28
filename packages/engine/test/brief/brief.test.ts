@@ -24,6 +24,7 @@ import {
   sectionText,
 } from "../../src/brief/index.js";
 import { runIndexStage } from "../../src/build/index-stage.js";
+import { readFrontmatter } from "../../src/pages/index.js";
 import { resolveChatConfig } from "../../src/chat/handler.js";
 import { runBriefCheck, runBriefInit, runBriefShow, runBriefSources } from "../../src/commands/brief.js";
 import { buildDomain } from "../../src/domain/index.js";
@@ -376,5 +377,59 @@ describe("docsDirs", () => {
     const root = mkdtempSync(join(tmpdir(), "aida-docs-dirs-"));
     for (const d of ["docs", "apps/web", "apps/docs", "packages/ui", "packages/documentation"]) mkdirSync(join(root, d), { recursive: true });
     expect(docsDirs(root)).toEqual(["docs", "apps/docs", "packages/documentation"]);
+  });
+});
+
+describe("briefPages", () => {
+  it("builds a glossary, the rules and what the app is for from the published sections", async () => {
+    const { briefPages } = await import("../../src/brief/index.js");
+    const pages = briefPages(parseBrief(briefText));
+    const by = Object.fromEntries(pages.map((p) => [p.slug, p]));
+    expect(by.glossary).toMatchObject({ category: "words-we-use", title: "Words Acme Events uses" });
+    expect(by.glossary.body).toContain("## Booking\n\nOne attendee's seats at one event.\n\nNot to be confused with: Ticket (the printed pass)");
+    expect(by["good-to-know"]).toMatchObject({ category: "troubleshooting-and-faq", title: "Good to know" });
+    expect(by["good-to-know"].body).toBe("- A refunded payment can't be changed back, so check the amount before refunding.");
+    expect(by["what-acme-events-is-for"]).toMatchObject({ category: "getting-started", first: true });
+    expect(by["what-acme-events-is-for"].body).toContain("## Who uses it");
+  });
+
+  it("never publishes Open questions, escapes MDX, and skips empty sections", async () => {
+    const { briefPages } = await import("../../src/brief/index.js");
+    const text = `---\napp: Acme\n---\n\n## What it's for\n\nTracks {things} <fast>.\n\n## Words it uses\n\n| Term | Meaning | Not to be confused with |\n| --- | --- | --- |\n\n## Rules that matter\n\n## Open questions\n\n- Secret plan?\n`;
+    const pages = briefPages(parseBrief(text));
+    expect(pages.map((p) => p.slug)).toEqual(["what-acme-is-for"]);
+    expect(pages[0].body).toContain("Tracks \\{things\\} \\<fast>.");
+    expect(JSON.stringify(pages)).not.toContain("Secret plan");
+  });
+
+  it("the index stage writes them into their categories, and removes them when the brief goes", () => {
+    const helpApp = path.join(dir, "help");
+    const pagesDir = path.join(dir, "out", "pages");
+    mkdirSync(pagesDir, { recursive: true });
+    const base = { pagesDir, outDir: path.join(dir, "out"), helpApp, pages: [], walkthroughs: [], productName: "Acme Events" };
+    runIndexStage({ ...base, appBrief: briefArtifacts(parseBrief(briefText)) });
+    const docs = path.join(helpApp, "content", "docs");
+    const glossary = readFileSync(path.join(docs, "words-we-use", "glossary", "index.mdx"), "utf8");
+    expect(readFrontmatter(glossary)).toMatchObject({ brief: true, generated: true });
+    expect(glossary).toContain("## Held");
+    expect(JSON.parse(readFileSync(path.join(docs, "words-we-use", "meta.json"), "utf8")).pages).toEqual(["glossary", "..."]);
+    expect(JSON.parse(readFileSync(path.join(docs, "getting-started", "meta.json"), "utf8")).pages[0]).toBe("what-acme-events-is-for");
+
+    runIndexStage(base);
+    expect(existsSync(path.join(docs, "words-we-use", "glossary"))).toBe(false);
+    expect(existsSync(path.join(docs, "troubleshooting-and-faq", "good-to-know"))).toBe(false);
+  });
+
+  it("leaves a page a person has taken over", () => {
+    const helpApp = path.join(dir, "help");
+    const pagesDir = path.join(dir, "out", "pages");
+    mkdirSync(pagesDir, { recursive: true });
+    const own = path.join(helpApp, "content", "docs", "words-we-use", "glossary");
+    mkdirSync(own, { recursive: true });
+    writeFileSync(path.join(own, "index.mdx"), "---\ntitle: Our words\n---\n\nHand written.\n");
+    runIndexStage({ pagesDir, outDir: path.join(dir, "out"), helpApp, pages: [], walkthroughs: [], appBrief: briefArtifacts(parseBrief(briefText)) });
+    expect(readFileSync(path.join(own, "index.mdx"), "utf8")).toContain("Hand written.");
+    runIndexStage({ pagesDir, outDir: path.join(dir, "out"), helpApp, pages: [], walkthroughs: [] });
+    expect(existsSync(path.join(own, "index.mdx"))).toBe(true);
   });
 });

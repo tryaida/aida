@@ -24,6 +24,9 @@ import { accessibleName, pageHeadings, seenField } from "./seen.js";
 import { ImpactTracker } from "./impact.js";
 import { gotoReady } from "./page-ready.js";
 import { seenTargets } from "./target-names.js";
+import { startMailCatcher, type CaughtEmail, type MailCatcher } from "../mail/catcher.js";
+import { emailCardBox, hideEmailOverlay, showEmailOverlay, type EmailView } from "../mail/overlay.js";
+import type { MockEmail } from "../walkthrough/action.js";
 import type {
   Box,
   CaptureEvent,
@@ -41,6 +44,8 @@ import type {
 const IGNORED_CONSOLE = [/fonts\.googleapis\.com/];
 // `press` counts: Enter in a form field submits it.
 const WRITE_ACTIONS = new Set(["click", "type", "select", "press"]);
+/** The mail catcher's port when config `mail` gives none (the usual local SMTP port for tests). */
+const DEFAULT_MAIL_PORT = 1025;
 
 export interface CaptureOptions {
   walkthrough: Walkthrough;
@@ -175,7 +180,12 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
   const framesDir = join(opts.outDir, "frames");
   if (record) mkdirSync(framesDir, { recursive: true });
 
-  const browser: Browser = await chromium.launch({ headless: opts.headless ?? true });
+  // The app's outgoing email for this run (config `mail`): caught here, never sent.
+  const mail = config.mail ? await startMailCatcher(config.mail.port ?? DEFAULT_MAIL_PORT) : undefined;
+  const browser: Browser = await chromium.launch({ headless: opts.headless ?? true }).catch(async (err) => {
+    await mail?.close();
+    throw err;
+  });
   let context: BrowserContext;
   const reuseState = opts.storageStatePath && existsSync(opts.storageStatePath) ? opts.storageStatePath : undefined;
   try {
@@ -386,6 +396,8 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
           const a = acts[ai];
           failedAction = a;
           progress.current = { index: ai + 1, do: a.do, ...("target" in a ? { target: a.target } : {}) };
+          // An email shown by `showEmail` stays up until the next action.
+          if (a.do !== "showEmail") await hideEmailOverlay(page);
           ai = await runAction({
             page,
             step,
@@ -402,6 +414,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
             progress,
             waitCap,
             seen,
+            mail,
           });
           progress.lastOk = { index: ai + 1, do: acts[ai].do };
         }
@@ -573,6 +586,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
     };
   } finally {
     await browser.close();
+    await mail?.close();
   }
 }
 
@@ -662,6 +676,36 @@ interface RunActionArgs {
   waitCap: (ms: number) => number;
   /** Accessible names of the elements this step's actions resolved (`ManifestStep.seen`). */
   seen: (string | undefined)[];
+  /** The run's mail catcher (config `mail`), for `showEmail`. */
+  mail?: MailCatcher;
+}
+
+/** A `mock` email as shown: plain text, or HTML. */
+function mockEmailView(mock: MockEmail): EmailView {
+  return { from: mock.from, to: mock.to, subject: mock.subject, ...(mock.html !== undefined ? { html: mock.html } : { text: mock.text ?? "" }) };
+}
+
+/** The newest email the app sent this run that matches `to`/`subject`, waiting for it. */
+async function caughtEmail(a: { to?: string; subject?: string }, mail: MailCatcher | undefined, timeoutMs: number): Promise<EmailView> {
+  if (!mail) {
+    throw new Error(
+      "showEmail: no mail catcher. Set `mail: { port: 1025 }` in the config and point the app's SMTP settings at 127.0.0.1:1025 " +
+        "(so its email is caught, never sent), or give the action a `mock` email instead",
+    );
+  }
+  const matches = (value: string, wanted: string | undefined) => {
+    if (wanted === undefined) return true;
+    const pattern = /^\/(.*)\/([a-z]*)$/.exec(wanted);
+    return pattern ? new RegExp(pattern[1], pattern[2]).test(value) : value.toLowerCase().includes(wanted.toLowerCase());
+  };
+  let m: CaughtEmail;
+  try {
+    m = await mail.waitFor((e) => matches(e.subject, a.subject) && (a.to === undefined || e.to.some((t) => matches(t, a.to))), timeoutMs);
+  } catch (err) {
+    const seen = mail.messages().map((e) => `"${e.subject}" to ${e.to.join(", ")}`).slice(-5);
+    throw new Error(`showEmail: ${(err as Error).message}${seen.length ? `; caught: ${seen.join("; ")}` : ""}`);
+  }
+  return { from: m.from, to: m.to.join(", "), subject: m.subject, ...(m.html !== undefined ? { html: m.html } : { text: m.text ?? "" }) };
 }
 
 /** True when `target`'s `label` is one of `step.mask`'s field names. */
@@ -821,6 +865,20 @@ async function runAction(args: RunActionArgs): Promise<number> {
     }
     case "scrollTo": {
       await smoothScrollTo(page, a.target, events, shot, { align: "top" }, step.mask);
+      return ai;
+    }
+    case "showEmail": {
+      const email = a.mock ? mockEmailView(a.mock) : await caughtEmail(a, args.mail, waitCap(30_000));
+      await showEmailOverlay(page, email);
+      await paint(page);
+      events.push({ type: "clearHighlight" }, { type: "frame", image: await shot("state", step.mask), transition: "fade" });
+      highlightState.target = null;
+      if (a.highlight) {
+        const hb = await emailCardBox(page);
+        if (hb) events.push({ type: "highlight", box: hb });
+      }
+      events.push({ type: "hold", seconds: 1.2 });
+      pushCheck(stepResult, { showEmail: email.subject, ...(a.mock ? { mock: true } : {}), ok: true });
       return ai;
     }
     case "point":

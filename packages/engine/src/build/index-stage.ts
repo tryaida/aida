@@ -311,6 +311,9 @@ export interface IndexStageOptions {
    * paragraph of "What it's for" onto the home page. Without one, a stale `app-overview.md` is
    * removed. */
   appBrief?: BriefArtifacts;
+  /** Walkthrough ids in outline.yaml card order: pages in each section follow it (then a
+   * create-to-delete order by title). */
+  outlineOrder?: string[];
 }
 
 export interface IndexStageResult {
@@ -427,6 +430,8 @@ export function runIndexStage(opts: IndexStageOptions): IndexStageResult {
       placements,
       product: mostCommonProduct([...walkthroughs.values()].map((w) => w.product)) ?? opts.productName,
       intro: opts.appBrief?.intro,
+      briefPages: opts.appBrief?.pages,
+      outlineOrder: opts.outlineOrder,
     });
   }
 

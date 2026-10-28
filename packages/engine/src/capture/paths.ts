@@ -28,10 +28,10 @@ import type { ResolvedConfig } from "../config/types.js";
 import { resolveCaptureSettings } from "../config/types.js";
 import { runCapture } from "./runner.js";
 import { withFrameStabilization } from "./frame-diff.js";
-import { assertLocalDatabase } from "./write-guard.js";
 import { appProblems, runLevelFailure } from "./failure-report.js";
 import { markNotCaptured } from "./not-captured.js";
 import { actionIds, comparePathWrites, countFrames, endChecks, pathCaptureDir, readPathCaptures, writeKeys, type EndChecks } from "./path-files.js";
+import { resetDatabase } from "./reset.js";
 import type { CaptureManifest, FailureReport, FrameDiffSummary, ManifestStep, PathCheckResult, PathDiff, ValidationResult } from "./types.js";
 
 export interface PathCaptureSummary {
@@ -134,9 +134,7 @@ export async function capturePaths(opts: CapturePathsOptions): Promise<CapturePa
     opts.log?.(`path ${path.id}: from ${path.start.page}, ${run.alone ? "running to its own end" : `joining at ${path.joins}`}`);
     try {
       // The same gate as the main run: never reset without proving the database is local.
-      const dbUrl = await config.database!.url();
-      assertLocalDatabase(dbUrl);
-      await config.database!.reset!();
+      await resetDatabase(config);
       const capture = () =>
         runCapture({
           walkthrough: run.walkthrough,

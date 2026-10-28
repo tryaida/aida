@@ -18,12 +18,12 @@ import {
   withFrameStabilization,
   type PathCaptureSummary,
 } from "../capture/index.js";
-import { assertLocalDatabase } from "../capture/write-guard.js";
 import { captureSafetyRefusal } from "../safety/index.js";
 import { appBugBlockReason, planRunFromFiles } from "../states/index.js";
 import { markNotCaptured } from "../capture/not-captured.js";
 import type { CaptureManifest, CaptureSummary, FailureReport, PathDiff } from "../capture/types.js";
 import { resolveCaptureSettings } from "../config/types.js";
+import { resetDatabase } from "../capture/reset.js";
 import { recordCaptureDrift } from "../outline/index.js";
 
 export interface RunCaptureOptions {
@@ -141,9 +141,7 @@ export async function runCaptureCommand(opts: RunCaptureOptions): Promise<number
       // per-walkthrough failure instead of crashing the whole command.
       // The plan moves a chain member's reset to the start of its chain.
       if (item.resetBefore && config.database) {
-        const dbUrl = await config.database.url();
-        assertLocalDatabase(dbUrl);
-        await config.database.reset?.();
+        await resetDatabase(config);
       }
 
       const captureSettings = resolveCaptureSettings(config.capture);
