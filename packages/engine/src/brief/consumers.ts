@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { briefNotPublishableReason, checkBrief } from "./check.js";
 import { escapeMdxText } from "../pages/content.js";
-import { briefAppName, briefReaders, normalizeHeading, parseBrief, sectionText, type BriefSection, type BriefSectionName, type ParsedBrief } from "./format.js";
+import { BRIEF_OPTIONAL_SECTIONS, briefAppName, briefReaders, normalizeHeading, parseBrief, sectionText, type BriefReader, type BriefSection, type BriefSectionName, type ParsedBrief } from "./format.js";
 
 export const DEFAULT_BRIEF_FILE = "app-brief.md";
 
@@ -23,6 +23,8 @@ export const OVERVIEW_SECTIONS: BriefSectionName[] = [
   "Rules that matter",
   "Rhythm",
   "Several ways to do one thing",
+  "Workflows",
+  "Where people get stuck",
 ];
 export const OVERVIEW_MAX_CHARS = 16_000;
 
@@ -64,17 +66,28 @@ function publishedSection(brief: ParsedBrief, name: BriefSectionName): BriefSect
 
 function compose(brief: ParsedBrief, names: BriefSectionName[], maxChars: number, withReaders: boolean): string | undefined {
   const app = briefAppName(brief);
-  const perSection = Math.floor(maxChars / names.length) * 2;
-  const parts: string[] = [];
-  for (const name of names) {
-    const text = sectionText(publishedSection(brief, name));
-    if (hasContent(text)) parts.push(`## ${name}\n\n${trimText(text, perSection)}`);
-  }
+  // Optional sections saying "None." have nothing to hand on.
+  const filled = names
+    .map((name) => ({ name, text: sectionText(publishedSection(brief, name)) }))
+    .filter(({ name, text }) => hasContent(text) && !((BRIEF_OPTIONAL_SECTIONS as readonly string[]).includes(name) && /^none( found)?\.?$/i.test(text)));
+  // Shared between the sections that have something, so a brief without the optional sections
+  // keeps the room it had before they existed.
+  const perSection = Math.floor(maxChars / Math.max(filled.length, 1)) * 2;
+  const parts = filled.map(({ name, text }) => `## ${name}\n\n${trimText(text, perSection)}`);
   if (parts.length === 0) return undefined;
   const head: string[] = [`# ${app ?? "The app"}`];
   const readers = briefReaders(brief).filter((r) => r.name.trim());
-  if (withReaders && readers.length > 0) head.push(`Readers: ${readers.map((r) => (r.job.trim() ? `${r.name} (${r.job.trim().replace(/\.$/, "")})` : r.name)).join("; ")}.`);
+  if (withReaders && readers.length > 0) head.push(`Readers: ${readers.map(readerLine).join("; ")}.`);
   return trimText(`${head.join("\n\n")}\n\n${parts.join("\n\n")}`, maxChars);
+}
+
+/** "an organiser (run the club's races; on phone, every week in season)": the job, then any
+ * profile the brief gives (devices, how often). */
+function readerLine(r: BriefReader): string {
+  const job = r.job.trim().replace(/\.$/, "");
+  const profile = [r.devices && r.devices.length > 0 ? `on ${r.devices.join(" or ")}` : "", r.frequency?.replace(/\.$/, "") ?? ""].filter(Boolean);
+  const detail = [job, profile.join(", ")].filter(Boolean).join("; ");
+  return detail ? `${r.name} (${detail})` : r.name;
 }
 
 /** The help chat's stable prefix: what the app is for, who uses it and its words. */
@@ -226,6 +239,17 @@ export function briefPages(brief: ParsedBrief): BriefPage[] {
       title: "Good to know",
       description: app ? `Rules worth knowing before you use ${app}, and why they matter.` : "Rules worth knowing before you start, and why they matter.",
       body: rules.map((r) => `- ${escapeMdxText(r)}`).join("\n"),
+    });
+  }
+
+  const stuck = bullets(sectionText(publishedSection(brief, "Where people get stuck")));
+  if (stuck.length > 0) {
+    pages.push({
+      category: "troubleshooting-and-faq",
+      slug: "common-problems",
+      title: "Common problems",
+      description: "Mistakes people often make, and how to put them right.",
+      body: stuck.map((r) => `- ${escapeMdxText(r)}`).join("\n"),
     });
   }
 

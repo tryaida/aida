@@ -60,8 +60,10 @@ export async function runBriefCheck(opts: BriefFileOptions): Promise<number> {
   if (opts.json) {
     console.log(JSON.stringify({ path: file, ...result }));
   } else {
-    const filled = result.sections.filter((s) => s.filled).length;
-    console.log(`${result.ok ? "ok" : "not ready"}: ${file} — ${filled}/${BRIEF_SECTIONS.length} sections filled, ${result.chars} characters`);
+    const required = new Set<string>(BRIEF_SECTIONS);
+    const filled = result.sections.filter((s) => required.has(s.name) && s.filled).length;
+    const extra = result.sections.filter((s) => !required.has(s.name)).map((s) => s.name);
+    console.log(`${result.ok ? "ok" : "not ready"}: ${file} — ${filled}/${BRIEF_SECTIONS.length} sections filled${extra.length > 0 ? ` (and ${extra.join(", ")})` : ""}, ${result.chars} characters`);
     for (const e of result.errors) console.log(`  error: ${e.section ? `[${e.section}] ` : ""}${e.message}`);
     for (const w of result.warnings) console.log(`  warning: ${w.section ? `[${w.section}] ` : ""}${w.message}`);
   }

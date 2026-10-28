@@ -108,6 +108,8 @@ Then:
 aida digest --app-repo <app-dir>           # compact map of routes, roles and labels
 aida domain --config <cfg>                 # entities, links and states from the database schema
 aida brief init --config <cfg>             # app-brief.md skeleton; fill it, then aida brief check
+aida interview start --config <cfg> --depth standard   # questions for the builder interview
+aida interview next --config <cfg>         # what to ask next; then answer|skip|ask|notes|applied|status
 aida outline list --config <cfg>          # the planned walkthroughs, and where the screen differs
 aida inspect /some/page --config <cfg>     # what's on screen: exact names, roles, options
 aida inspect /some/page --config <cfg> --as <role> --skip 79   # signed in; the next 80 lines
@@ -258,9 +260,10 @@ role its reader-facing name (`roles: { admin: "an organiser" }`).
 
 `skills/` holds the Agent Skills that drive AIDA from a coding agent. `aida` is the entry point
 ("make help docs for my app"); it hands off to `aida-discover`, `aida-understand`, `aida-plan`,
-`aida-write`, `aida-repair`, `aida-review` and `aida-demo-data`. Each names a model tier, and
-Claude Code subagent definitions in `skills/agents/` match them: Haiku for discover, Sonnet for
-write, repair and review, Opus for understand and plan. Shared style, safety, token and walkthrough-format references live in
+`aida-write`, `aida-repair`, `aida-review` and `aida-demo-data`, and loads `aida-interview` itself
+when the person wants the in-depth builder interview (it talks to them, so it can't be a
+subagent). Each names a model tier, and Claude Code subagent definitions in `skills/agents/`
+match them: Haiku for discover, Sonnet for write, repair and review, Opus for understand and plan. Shared style, safety, token and walkthrough-format references live in
 `skills/references/`.
 
 Install into a target repo with `aida skills install --target <repo>` (copies skills into
