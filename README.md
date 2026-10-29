@@ -222,7 +222,7 @@ npm run typecheck
 node skills/check.mjs  # validates the agent skills
 ```
 
-Read [AGENTS.md](AGENTS.md) before changing things. It lists the ground rules and the docs to read
-first.
+Read [AGENTS.md](AGENTS.md) and [CONTRIBUTING.md](CONTRIBUTING.md) before changing things.
+Report security problems privately: see [SECURITY.md](SECURITY.md).
 
 Licence: Apache-2.0.

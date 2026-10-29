@@ -9,7 +9,7 @@
 //      ships. `.gitignore` is stored as `_gitignore` (npm never packs a .gitignore).
 //   3. The agent skills, <repo>/skills -> skills/ (git-tracked files, without the repo's own
 //      checker, check.mjs).
-//   4. The repo's LICENSE.
+//   4. The repo's LICENSE and NOTICE.
 //
 // scripts/postpack.mjs removes 2-4 again (they're git-ignored meanwhile). Plain Node, no shell, so
 // it runs the same on Windows. Only ever run from a clone of the aida repo.
@@ -31,7 +31,7 @@ function fail(message) {
   process.exit(1);
 }
 
-for (const [what, path] of [["help-app template", join(helpAppDir, "package.json")], ["skills", join(skillsSrc, "agents")], ["LICENSE", join(repoRoot, "LICENSE")]]) {
+for (const [what, path] of [["help-app template", join(helpAppDir, "package.json")], ["skills", join(skillsSrc, "agents")], ["LICENSE", join(repoRoot, "LICENSE")], ["NOTICE", join(repoRoot, "NOTICE")]]) {
   if (!existsSync(path)) fail(`no ${what} at ${path}; pack from a clone of the aida repo`);
 }
 
@@ -117,5 +117,5 @@ const templateDest = join(engineDir, "templates", "help-app");
   console.log(`prepack: bundled ${count} skill files into skills`);
 }
 
-// 4. LICENSE.
-copyFileSync(join(repoRoot, "LICENSE"), join(engineDir, "LICENSE"));
+// 4. LICENSE and NOTICE.
+for (const name of ["LICENSE", "NOTICE"]) copyFileSync(join(repoRoot, name), join(engineDir, name));

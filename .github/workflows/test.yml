@@ -1,0 +1,35 @@
+# AIDA's own checks: typecheck, the fast test suite and the skills lint, on every push to main
+# and every pull request. (The workflow `aida init --ci` writes into an app lives in the engine's
+# init templates; this one is only for this repo.)
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install ffmpeg and poppler
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg poppler-utils
+      - run: npm ci
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - run: npm run typecheck
+      - run: node skills/check.mjs
+      - run: npm test
