@@ -17,7 +17,7 @@
 //     to check out; the push+comment step additionally asks for `contents: write`/
 //     `pull-requests: write`, which GitHub silently downgrades back to read-only for a fork PR
 //     regardless of this block, so declaring it is safe and only takes effect for same-repo PRs.
-//   - Every `uses:` is pinned to a major version tag (`@v4`), never a branch or `@master`.
+//   - Every `uses:` is pinned to a major version tag (`@v7`), never a branch or `@master`.
 //   - Nothing is fetched by bare package name at run time: the app wait is an inline Node fetch
 //     loop (not `npx --yes wait-on`), and the help app's packages install from its own lockfile
 //     via init/help-install.ts, which refuses a registry `aida-docs` or `aida` (decisions #29). The config's
@@ -86,7 +86,7 @@ function parseUsesRef(uses: string): { repo: string; ref: string } {
  * extra checkout. */
 function docsRepoCheckoutStep(docsRepo: string): string {
   return `      - name: Check out docs repo (${docsRepo})
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${docsRepo}
           token: \${{ secrets.AIDA_DOCS_TOKEN }}
@@ -165,13 +165,14 @@ jobs:
       contents: write # downgraded to read-only by GitHub for fork PRs regardless of this line
       pull-requests: write # same — only takes effect for same-repo PRs
 ${opts.postgres ? postgresService() : ""}    steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-${docsRepoStep}      - uses: actions/setup-node@v4
+${docsRepoStep}      - uses: actions/setup-node@v7
         with:
           node-version: 22
+          package-manager-cache: false
 
       - name: Install app dependencies
         run: npm ci
@@ -203,7 +204,7 @@ ${waitStep}
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: aida-previews
       - name: Remove this PR's preview folder
@@ -224,16 +225,17 @@ ${waitStep}
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 2
 
-${docsRepoStep}      - uses: actions/setup-node@v4
+${docsRepoStep}      - uses: actions/setup-node@v7
         with:
           node-version: 22
+          package-manager-cache: false
 
       - name: Check out aida (${uses})
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${aidaRepo}
           ref: ${aidaRef}
@@ -264,13 +266,7 @@ ${waitStep}
             --head \${{ github.sha }} \\
             --app-url ${waitOnUrl}
 
-      - name: Commit refreshed docs
-        run: |
-          # Only the docs folder: never the .aida-src checkout or anything else the run created.
-          git add -- ${posixDirname(configPath)}
-          git diff --cached --quiet || git -c user.email=aida-ci@users.noreply.github.com -c user.name=aida-ci commit -m "aida: refresh published screenshots/pages"
-          git push origin main
-`;
+${commitStep(configPath, opts.docsRepo)}`;
 
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, content, "utf8");
@@ -384,7 +380,7 @@ jobs:
       pull-requests: write
       issues: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: refs/pull/\${{ needs.check-access.outputs.pr-number }}/head
           fetch-depth: 0
@@ -407,6 +403,25 @@ jobs:
 }
 
 /** Directory part of a POSIX path as written into a workflow ("help/aida.config.ts" -> "help"). */
+/** The publish job's commit. Same-repo docs commit to the app's main. With a separate docs repo
+ * the config lives in the `.aida-docs` checkout, its own git repo: `git add` from the app repo
+ * stages nothing inside it, so commit there and push to the branch that checkout is on (with the
+ * AIDA_DOCS_TOKEN it was checked out with). */
+function commitStep(configPath: string, docsRepo?: string): string {
+  const docsDir = posixDirname(configPath);
+  const inDocsRepo = Boolean(docsRepo) && (docsDir === ".aida-docs" || docsDir.startsWith(".aida-docs/"));
+  const cd = inDocsRepo ? "          cd .aida-docs\n" : "";
+  const addPath = inDocsRepo ? (docsDir === ".aida-docs" ? "." : docsDir.slice(".aida-docs/".length)) : docsDir;
+  const push = inDocsRepo ? "git push origin HEAD" : "git push origin main";
+  return `      - name: Commit refreshed docs${inDocsRepo ? ` (to ${docsRepo})` : ""}
+        run: |
+          # Only the docs folder: never the .aida-src checkout or anything else the run created.
+${cd}          git add -- ${addPath}
+          git diff --cached --quiet || git -c user.email=aida-ci@users.noreply.github.com -c user.name=aida-ci commit -m "aida: refresh published screenshots/pages"
+          ${push}
+`;
+}
+
 function posixDirname(p: string): string {
   const i = p.lastIndexOf("/");
   return i <= 0 ? "." : p.slice(0, i);

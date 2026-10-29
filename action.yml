@@ -51,12 +51,13 @@ runs:
   using: "composite"
   steps:
     - name: Set up Node
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
         node-version: 22
+        package-manager-cache: false
 
     - name: Cache Playwright browsers
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: ~/.cache/ms-playwright
         key: playwright-chromium-${{ runner.os }}-${{ hashFiles(format('{0}/package-lock.json', github.action_path)) }}
@@ -125,7 +126,7 @@ runs:
 
     - name: Upload diff as an artifact (fork PR, or the comment/push step failed)
       if: steps.run.outputs.artifact == 'true'
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: aida-ci-diff
         path: ${{ steps.run.outputs.artifact-dir }}

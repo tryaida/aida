@@ -108,6 +108,33 @@ describe("writeCiWorkflow", () => {
     expect(content).toContain("secrets.AIDA_DOCS_TOKEN");
     expect(content).toContain("config: .aida-docs/help/aida.config.ts");
   });
+
+  it("commits refreshed docs inside the docs repo checkout, not the app repo, when --docs-repo is set", () => {
+    const appRepo = tmpDir();
+    const content = readFileSync(writeCiWorkflow({ appRepo, docsRepo: "acme/aida-docs" }).file, "utf8");
+    const commit = content.slice(content.indexOf("- name: Commit refreshed docs"));
+    expect(commit).toContain("Commit refreshed docs (to acme/aida-docs)");
+    expect(commit).toContain("cd .aida-docs\n          git add -- help\n");
+    expect(commit).toContain("git push origin HEAD");
+    expect(commit).not.toContain("git push origin main");
+  });
+
+  it("commits same-repo docs to the app's main", () => {
+    const appRepo = tmpDir();
+    const content = readFileSync(writeCiWorkflow({ appRepo, configPath: "help/aida.config.ts" }).file, "utf8");
+    const commit = content.slice(content.indexOf("- name: Commit refreshed docs"));
+    expect(commit).not.toContain("cd .aida-docs");
+    expect(commit).toContain("git add -- help\n");
+    expect(commit).toContain("git push origin main");
+  });
+
+  it("pins every action to a Node 24 major and turns off setup-node's automatic package cache", () => {
+    const appRepo = tmpDir();
+    const content = readFileSync(writeCiWorkflow({ appRepo, docsRepo: "acme/aida-docs" }).file, "utf8");
+    expect(content).not.toMatch(/actions\/[a-z-]+@v[1-6]\b/);
+    const setupNode = content.match(/actions\/setup-node@v7\n\s+with:\n\s+node-version: 22\n\s+package-manager-cache: false/g) ?? [];
+    expect(setupNode.length).toBe((content.match(/actions\/setup-node@/g) ?? []).length);
+  });
 });
 
 describe("generated workflow: nothing fetched by bare name", () => {
