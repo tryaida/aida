@@ -465,6 +465,21 @@ async function runPagesStage(wf: Walkthrough, config: ResolvedConfig, state: Wal
   }
 }
 
+/** The page an earlier build left on disk (`pages-cache.json`), for a run that didn't select the
+ * pages stage (`aida build --only pdf`). `publishable` folds in that walkthrough's last QA result
+ * (`qa.json`), since the cached flag predates QA. Undefined when no page was built, its index
+ * file is gone or the cache can't be read. */
+function loadBuiltPage(config: ResolvedConfig, id: string): BuildPageResult | undefined {
+  try {
+    const cache = readJsonIfExists<{ result: BuildPageResult }>(join(config.buildDir, id, "pages-cache.json"));
+    if (!cache || !existsSync(cache.result.indexFile)) return undefined;
+    const qa = readJsonIfExists<{ ok: boolean }>(join(config.buildDir, id, "qa.json"));
+    return { ...cache.result, publishable: cache.result.publishable && qa?.ok !== false };
+  } catch {
+    return undefined;
+  }
+}
+
 /** Renders a walkthrough's `<id>.pdf`/`<id>.card.pdf` (docs/scope.md "Printable guides",
  * build-plan.md M12) from its just-built page, then links them into that page's frontmatter
  * (`pdf:`/`pdfCard:`) so the help app's print area can offer a "Download PDF" link. Skipped —
@@ -779,13 +794,23 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
   // never ship/keep a PDF for a page QA just failed).
   const pdfDir = join(config.outDir, "pdf");
   if (stages.has("pdf")) {
+    // Without the pages stage this run, render from the pages an earlier build left on disk.
+    if (!stages.has("pages")) {
+      for (const state of states) {
+        if (textFailed(state) || captureOrVoiceFailed(state)) continue;
+        state.pageResult = loadBuiltPage(config, state.wf.walkthrough);
+      }
+    }
     const toProcess = states.filter((s) => Boolean(s.pageResult));
+    const noPageSkip = skipped(
+      stages.has("pages") ? "capture, voice or pages failed this run — not rendering a PDF from it" : "no built page on disk — run the pages stage first",
+    );
     if (toProcess.length > 0) {
       const browser = await launchBrowser();
       try {
         for (const state of states) {
           if (!toProcess.includes(state)) {
-            state.stages.pdf = textFailed(state) ? textSkip(state) : skipped("capture, voice or pages failed this run — not rendering a PDF from it");
+            state.stages.pdf = textFailed(state) ? textSkip(state) : noPageSkip;
             continue;
           }
           await runPdfStage(state.wf, config, state, pdfDir, browser, finalPublishable(state));
@@ -799,10 +824,9 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
             if (selected?.pageResult) {
               return { ...pdfInputFromPage(selected.wf, selected.pageResult), publishable: finalPublishable(selected) };
             }
-            const cacheFile = join(config.buildDir, id, "pages-cache.json");
-            if (!existsSync(cacheFile)) return undefined;
             try {
-              const cached = readJson<{ result: BuildPageResult }>(cacheFile).result;
+              const cached = loadBuiltPage(config, id);
+              if (!cached) return undefined;
               const file = findWalkthroughFiles(config.walkthroughsDir, [id])[0];
               return pdfInputFromPage(loadWalkthroughFile(file), cached);
             } catch {
@@ -815,7 +839,7 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
         await browser.close();
       }
     } else {
-      for (const state of states) state.stages.pdf = textFailed(state) ? textSkip(state) : skipped("capture, voice or pages failed this run — not rendering a PDF from it");
+      for (const state of states) state.stages.pdf = textFailed(state) ? textSkip(state) : noPageSkip;
     }
     if (config.helpApp) stagePdfsToHelpApp(pdfDir, config.helpApp);
   } else {

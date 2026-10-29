@@ -138,6 +138,7 @@ Newest last. One line per loop turn: date, milestone, result, anything blocked.
 - 2026-10-28 · Rallly example at 23 walkthroughs. `showEmail` `remember` reads a value (a sign-in code, a magic link) out of an email for a later `type`/`goto`/`expect` as `{{inbox.<key>}}`; Rallly's sign-in and change-email flows capture end to end. Fixed: typing into a field that submits itself on the last key (one-time codes) screenshotted the page in flight (blank frame, then a screenshot timeout); screenshots retry once after the next page loads. The better-auth sign-in template can map a role to a user id, so a walkthrough that changes that user's email doesn't break the others.
 
 - 2026-10-29 · README shows the Rallly example as proof: help-site screenshots, the "Pick the final date" video (1 MB, 720p) and its PDF guide and card, under `docs/media/rallly/`. Fixed: PDF page headers repeated the name beside a wordmark logo.
+- 2026-10-29 · Fixed: `aida build --only pdf` reported OK but built no PDF. Without the pages stage, PDFs now render from the pages an earlier build left on disk (`pages-cache.json`), not publishable if that walkthrough's last QA failed; with no built page the stage says to run pages first.
 ## Follow-ups
 
 - First pilot: plain `aida inspect` lands on an empty "nothing selected" screen (the current record is set by the post-login route); add a `states` hook for it to the pilot's config, which also explains a one-off capture failure on the selection page.
@@ -157,4 +158,3 @@ Newest last. One line per loop turn: date, milestone, result, anything blocked.
 - `aida upgrade` from a dev clone reads the live template including untracked files (same as `init`); the packed template is tracked files only.
 - One recorder test failed once under full-suite load (target not confirmed in time); the recorder now retries once with a longer deadline. Watch for recurrence.
 - Re-measure Playwright import mapping on the second app (35% before M38).
-- `aida build --only pdf` (without `pages`) reports OK but builds no PDF: the PDF stage reads this run's page results. Load them from disk, or refuse `pdf` without `pages`.
