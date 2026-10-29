@@ -66,6 +66,34 @@ The help site is an ordinary Next.js app in your repo. Edit text and screenshot 
 local Studio (`npm run dev` in `help/`, then open `/studio`) and deploy it anywhere Next.js runs:
 Vercel, Netlify, AWS Amplify, Cloudflare, a Node server or a static host.
 
+## See it on a real app
+
+[Rallly](https://github.com/lukevella/rallly) is an open-source meeting scheduler (Next.js,
+better-auth, Prisma). We ran AIDA against a local copy with its demo data: 23 walkthroughs, every
+one replayed in a real browser, and every output below came out of `aida build` unedited. The
+config, sign-in adapter and walkthroughs are in [examples/rallly](examples/rallly).
+
+**Help site.** A home page grouped by topic, and one page per task with numbered screenshots, the
+video, PDF downloads and a "checked in the app" date. The brief adds a glossary and a "Good to
+know" page of rules.
+
+<p>
+  <img alt="The Rallly help site home page" src="docs/media/rallly/help-site-home.png" width="49%">
+  <img alt="A Rallly help page: Pick the final date, with its video and steps" src="docs/media/rallly/help-site-page.png" width="49%">
+</p>
+
+**Narrated video.** 45 seconds, five steps: open Finalize, pick the date, choose who to tell,
+confirm, and the "Date booked" email participants receive (Rallly's real email, caught on the way
+out and never sent). Captions and chapters are generated with it.
+
+<a href="docs/media/rallly/pick-the-final-date.mp4"><img alt="Play the Pick the final date video" src="docs/media/rallly/video-poster.png" width="720"></a>
+
+**Printable guide and quick reference card.** The same steps as an A4 guide and a one-page card.
+[Download the guide (PDF)](docs/media/rallly/pick-the-final-date.pdf) ·
+[Download the card (PDF)](docs/media/rallly/pick-the-final-date-card.pdf)
+
+<a href="docs/media/rallly/pick-the-final-date.pdf"><img alt="Pages 1 and 2 of the Pick the final date guide, and its quick reference card" src="docs/media/rallly/pdf-preview.png" width="720"></a>
+
 ## Quick start
 
 AIDA isn't published to npm yet, so run it from a clone. You need Node 22+ and `ffmpeg` on your
@@ -152,7 +180,9 @@ users yet. Expect rough edges and breaking changes.
   your app
 - PDF guides, a full manual and quick reference cards
 - Narrated videos with captions and chapters using the local Kokoro voice
-- `aida init`, `doctor`, `digest`, `inspect`, and a sign-in adapter for Auth.js apps
+- `aida init`, `doctor`, `digest`, `inspect`, and sign-in adapters for Auth.js and better-auth apps
+- Emails in walkthroughs: the app's real email caught locally (never sent), or a written mock;
+  codes and links in it can be typed into later steps (sign-in by emailed code)
 - Studio for editing text, callouts and blur boxes, with history and undo
 - Agent skills for Claude Code
 - PR checks in GitHub Actions: affected walkthroughs, screenshot diffs, and a tiered PR comment
@@ -178,9 +208,6 @@ users yet. Expect rough edges and breaking changes.
 - Sign-in helpers for Clerk, Supabase Auth and Firebase
 - A setup path for no-code builders (Lovable, Bolt) that doesn't require opening GitHub
 - Longer-term evidence that docs stay current over weeks of real app changes
-
-[examples/rallly](examples/rallly) is a worked run against an open-source app: config, a
-better-auth sign-in adapter, four walkthroughs and the pages they built.
 
 The detailed plan is in [docs/scope.md](docs/scope.md), and milestone status is in
 [docs/build-plan.md](docs/build-plan.md).

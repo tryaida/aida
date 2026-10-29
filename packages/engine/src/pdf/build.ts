@@ -8,7 +8,7 @@ import path from "node:path";
 import type { Browser } from "playwright";
 import { PDFDocument } from "pdf-lib";
 import { checkPersonalData, checkSecrets } from "../qa/index.js";
-import { buildCardHtml, buildCoverHtml, buildPageHtml, buildTocHtml, cardLayout, figureView, type TocEntry } from "./html.js";
+import { buildCardHtml, buildCoverHtml, buildPageHtml, buildTocHtml, cardLayout, figureView, pdfTheme, type TocEntry } from "./html.js";
 import { cacheFontFaces, defaultFontCacheDir, fontFaceCss } from "./fonts.js";
 import { guideUrl } from "./qr.js";
 import { PDF_SIDE_MARGIN_MM, cardOverflows, launchBrowser, renderHtmlToPdf, renderHtmlToPdfBytes, writePdfBytes, type PdfChromeBrand, type RenderPdfOptions } from "./render.js";
@@ -130,8 +130,10 @@ export function prepareBrand(browser: Browser, brand: PdfBrand | undefined, font
 /** Header/footer brand for a page: product (walkthrough's `product`, else brand name), small
  * logo, primary colour, font. */
 function chromeBrand(brand: PdfBrand | undefined, product?: string): PdfChromeBrand {
+  // A wordmark logo already spells the name: show it on its own.
+  const wordmark = Boolean(brand?.logoSrc) && pdfTheme(brand).logoWide;
   return {
-    name: product?.trim() || brand?.name,
+    name: wordmark ? undefined : product?.trim() || brand?.name,
     logoSrc: brand?.logoSrc,
     color: cssColor(brand?.colors?.primary) ?? cssColor(brand?.primaryColor),
     font: brand?.font,
