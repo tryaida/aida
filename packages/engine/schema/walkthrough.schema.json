@@ -1,175 +1,839 @@
 {
-  "$ref": "#/definitions/Walkthrough",
-  "definitions": {
-    "Walkthrough": {
+  "title": "Walkthrough",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "walkthrough": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "version": {
+      "type": "number"
+    },
+    "title": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "product": {
+      "type": "string"
+    },
+    "for": {
+      "type": "string"
+    },
+    "section": {
+      "type": "string"
+    },
+    "verifiedAgainst": {
       "type": "object",
       "properties": {
-        "walkthrough": {
-          "type": "string",
-          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        "app": {
+          "type": "string"
         },
-        "version": {
+        "routes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "start": {
+      "type": "object",
+      "properties": {
+        "signed_in_as": {
+          "type": "string",
+          "minLength": 1
+        },
+        "page": {
+          "type": "string"
+        },
+        "baseUrl": {
+          "type": "string"
+        },
+        "viewport": {
+          "type": "object",
+          "properties": {
+            "width": {
+              "type": "number"
+            },
+            "height": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "width",
+            "height"
+          ],
+          "additionalProperties": false
+        },
+        "deviceScaleFactor": {
           "type": "number"
+        },
+        "show": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "persona": {
+          "type": "object",
+          "properties": {
+            "role": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "email": {
+              "type": "string"
+            },
+            "cognitoSub": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "data": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
+    },
+    "voice": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "voiceId": {
+          "type": "string"
+        },
+        "speed": {
+          "type": "number"
+        },
+        "gapSeconds": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false
+    },
+    "intro": {
+      "type": "object",
+      "properties": {
+        "eyebrow": {
+          "type": "string"
         },
         "title": {
           "type": "string"
         },
-        "summary": {
+        "subtitle": {
           "type": "string"
         },
-        "product": {
+        "say": {
           "type": "string"
         },
-        "for": {
+        "caption": {
           "type": "string"
         },
-        "section": {
+        "recap": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "outro": {
+      "type": "object",
+      "properties": {
+        "eyebrow": {
           "type": "string"
         },
-        "verifiedAgainst": {
-          "type": "object",
-          "properties": {
-            "app": {
+        "title": {
+          "type": "string"
+        },
+        "subtitle": {
+          "type": "string"
+        },
+        "say": {
+          "type": "string"
+        },
+        "caption": {
+          "type": "string"
+        },
+        "recap": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "steps": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chapter": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "do": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "say": {
+            "type": "string"
+          },
+          "caption": {
+            "type": "string"
+          },
+          "page_text": {
+            "type": "string"
+          },
+          "check": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "mask": {
+            "type": "array",
+            "items": {
               "type": "string"
-            },
-            "routes": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "sources": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
             }
           },
-          "additionalProperties": false
-        },
-        "start": {
-          "type": "object",
-          "properties": {
-            "signed_in_as": {
-              "type": "string",
-              "minLength": 1
-            },
-            "page": {
-              "type": "string"
-            },
-            "baseUrl": {
-              "type": "string"
-            },
-            "viewport": {
+          "camera": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "full"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "focus": {
+                    "$ref": "#/definitions/__schema0"
+                  },
+                  "zoom": {
+                    "type": "number"
+                  },
+                  "align": {
+                    "type": "string",
+                    "enum": [
+                      "top",
+                      "right",
+                      "left"
+                    ]
+                  }
+                },
+                "required": [
+                  "focus"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "hold": {
+            "type": "number",
+            "minimum": 0
+          },
+          "callouts": {
+            "type": "array",
+            "items": {
               "type": "object",
               "properties": {
-                "width": {
-                  "type": "number"
+                "id": {
+                  "type": "string"
                 },
-                "height": {
-                  "type": "number"
+                "target": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/__schema0"
+                    }
+                  ]
+                },
+                "box": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    },
+                    "w": {
+                      "type": "number"
+                    },
+                    "h": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "w",
+                    "h"
+                  ],
+                  "additionalProperties": false
+                },
+                "label": {
+                  "type": "string"
                 }
               },
               "required": [
-                "width",
-                "height"
+                "id"
               ],
               "additionalProperties": false
-            },
-            "deviceScaleFactor": {
-              "type": "number"
-            },
-            "show": {
-              "type": "string"
-            },
-            "notes": {
-              "type": "string"
-            },
-            "persona": {
+            }
+          },
+          "blur": {
+            "type": "array",
+            "items": {
               "type": "object",
               "properties": {
-                "role": {
+                "id": {
                   "type": "string"
                 },
-                "name": {
-                  "type": "string"
+                "target": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/__schema0"
+                    }
+                  ]
                 },
-                "email": {
-                  "type": "string"
+                "box": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    },
+                    "w": {
+                      "type": "number"
+                    },
+                    "h": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "w",
+                    "h"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "do": {
+                      "type": "string",
+                      "const": "click"
+                    },
+                    "target": {
+                      "$ref": "#/definitions/__schema0"
+                    },
+                    "highlight": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "$ref": "#/definitions/__schema0"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "do",
+                    "target"
+                  ],
+                  "additionalProperties": false
                 },
-                "cognitoSub": {
+                {
+                  "type": "object",
+                  "properties": {
+                    "do": {
+                      "type": "string",
+                      "const": "type"
+                    },
+                    "target": {
+                      "$ref": "#/definitions/__schema0"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "do",
+                    "target",
+                    "text"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "do": {
+                      "type": "string",
+                      "const": "select"
+                    },
+                    "target": {
+                      "$ref": "#/definitions/__schema0"
+                    },
+                    "option": {
+                      "type": "string"
+                    },
+                    "highlight": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "$ref": "#/definitions/__schema0"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "do",
+                    "target",
+                    "option"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "do": {
+                      "type": "string",
+                      "const": "point"
+                    },
+                    "target": {
+                      "$ref": "#/definitions/__schema0"
+                    },
+                    "highlight": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "$ref": "#/definitions/__schema0"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "do",
+                    "target"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "do": {
+                      "type": "string",
+                      "const": "expect"
+                    },
+                    "target": {
+                      "$ref": "#/definitions/__schema0"
+                    },
+                    "highlight": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "$ref": "#/definitions/__schema0"
+                        }
+                      ]
+                    },
+                    "text": {
+                      "description": "The target's text must contain this; with exact: true it must equal it. \"/pattern/\" (or \"/pattern/i\" to ignore case) is a regular expression.",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "exact": {
+                      "description": "With text: the target's whole text must equal text (whitespace collapsed), not just contain it.",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "do",
+                    "target"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "do": {
+                      "type": "string",
+                      "const": "press"
+                    },
+                    "key": {
+                      "description": "A key or chord, in Playwright key names: \"Enter\", \"Escape\", \"Tab\", \"ArrowDown\", \"Control+K\", \"ControlOrMeta+K\".",
+                      "type": "string"
+                    },
+                    "target": {
+                      "description": "Focus this element first and press the key in it; without it, the key goes to whatever has focus.",
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/__schema0"
+                        }
+                      ]
+                    },
+                    "highlight": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "$ref": "#/definitions/__schema0"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "do",
+                    "key"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "do": {
+                      "type": "string",
+                      "const": "hover"
+                    },
+                    "target": {
+                      "$ref": "#/definitions/__schema0"
+                    },
+                    "highlight": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "$ref": "#/definitions/__schema0"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "do",
+                    "target"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Moves the pointer over the target without clicking."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "do": {
+                      "type": "string",
+                      "const": "focus"
+                    },
+                    "target": {
+                      "$ref": "#/definitions/__schema0"
+                    },
+                    "highlight": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "$ref": "#/definitions/__schema0"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "do",
+                    "target"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Puts keyboard focus on the target without clicking it."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "do": {
+                      "type": "string",
+                      "const": "waitFor"
+                    },
+                    "target": {
+                      "$ref": "#/definitions/__schema0"
+                    },
+                    "snapshot": {
+                      "type": [
+                        "boolean",
+                        "string"
+                      ]
+                    },
+                    "highlight": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "$ref": "#/definitions/__schema0"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "do",
+                    "target"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "do": {
+                      "type": "string",
+                      "const": "waitForUrl"
+                    },
+                    "pattern": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "do",
+                    "pattern"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "do": {
+                      "type": "string",
+                      "const": "scrollTo"
+                    },
+                    "target": {
+                      "$ref": "#/definitions/__schema0"
+                    }
+                  },
+                  "required": [
+                    "do",
+                    "target"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "do": {
+                      "type": "string",
+                      "const": "goto"
+                    },
+                    "path": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "do",
+                    "path"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "do": {
+                      "type": "string",
+                      "const": "showEmail"
+                    },
+                    "to": {
+                      "type": "string"
+                    },
+                    "subject": {
+                      "type": "string"
+                    },
+                    "mock": {
+                      "type": "object",
+                      "properties": {
+                        "from": {
+                          "type": "string"
+                        },
+                        "to": {
+                          "type": "string"
+                        },
+                        "subject": {
+                          "type": "string"
+                        },
+                        "text": {
+                          "type": "string"
+                        },
+                        "html": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "from",
+                        "to",
+                        "subject"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "highlight": {
+                      "type": "boolean"
+                    },
+                    "remember": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string",
+                        "pattern": "^\\w+$"
+                      },
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "do"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Shows an email on screen: one the app sent (caught locally, matched by to/subject) or an emulated `mock`."
+                }
+              ]
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "validate": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "sql": {
+                "type": "string"
+              },
+              "params": {
+                "type": "array",
+                "items": {
                   "type": "string"
                 }
               },
-              "additionalProperties": false
-            }
-          },
-          "additionalProperties": false
-        },
-        "data": {
-          "type": "object",
-          "additionalProperties": {}
-        },
-        "voice": {
-          "type": "object",
-          "properties": {
-            "provider": {
-              "type": "string"
-            },
-            "model": {
-              "type": "string"
-            },
-            "voiceId": {
-              "type": "string"
-            },
-            "speed": {
-              "type": "number"
-            },
-            "gapSeconds": {
-              "type": "number"
-            }
-          },
-          "additionalProperties": false
-        },
-        "intro": {
-          "type": "object",
-          "properties": {
-            "eyebrow": {
-              "type": "string"
-            },
-            "title": {
-              "type": "string"
-            },
-            "subtitle": {
-              "type": "string"
-            },
-            "say": {
-              "type": "string"
-            },
-            "caption": {
-              "type": "string"
-            },
-            "recap": {
-              "type": "array",
-              "items": {
-                "type": "string"
+              "expect": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
               }
-            }
-          },
-          "additionalProperties": false
-        },
-        "outro": {
-          "$ref": "#/definitions/Walkthrough/properties/intro"
+            },
+            "required": [
+              "name",
+              "sql",
+              "expect"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "needs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+      }
+    },
+    "leaves": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+      }
+    },
+    "clears": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+      }
+    },
+    "setup": {
+      "type": "object",
+      "properties": {
+        "as": {
+          "type": "string"
         },
         "steps": {
+          "minItems": 1,
           "type": "array",
           "items": {
             "type": "object",
             "properties": {
               "id": {
-                "type": "string"
-              },
-              "chapter": {
                 "type": "string"
               },
               "title": {
@@ -188,15 +852,6 @@
                   }
                 ]
               },
-              "say": {
-                "type": "string"
-              },
-              "caption": {
-                "type": "string"
-              },
-              "page_text": {
-                "type": "string"
-              },
               "check": {
                 "anyOf": [
                   {
@@ -210,157 +865,10 @@
                   }
                 ]
               },
-              "mask": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "camera": {
-                "anyOf": [
-                  {
-                    "type": "string",
-                    "const": "full"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "focus": {
-                        "type": "object",
-                        "properties": {
-                          "role": {
-                            "type": "string"
-                          },
-                          "name": {
-                            "type": "string"
-                          },
-                          "exact": {
-                            "type": "boolean"
-                          },
-                          "label": {
-                            "type": "string"
-                          },
-                          "placeholder": {
-                            "type": "string"
-                          },
-                          "text": {
-                            "type": "string"
-                          },
-                          "css": {
-                            "type": "string"
-                          },
-                          "hasText": {
-                            "type": "string"
-                          },
-                          "within": {
-                            "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
-                          },
-                          "innermost": {
-                            "type": "boolean"
-                          },
-                          "nth": {
-                            "type": "integer",
-                            "minimum": 0
-                          },
-                          "padUnion": {
-                            "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
-                          }
-                        },
-                        "additionalProperties": false
-                      },
-                      "zoom": {
-                        "type": "number"
-                      },
-                      "align": {
-                        "type": "string",
-                        "enum": [
-                          "top",
-                          "right",
-                          "left"
-                        ]
-                      }
-                    },
-                    "required": [
-                      "focus"
-                    ],
-                    "additionalProperties": false
-                  }
-                ]
-              },
-              "hold": {
-                "type": "number",
-                "minimum": 0
-              },
-              "callouts": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string"
-                    },
-                    "target": {
-                      "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
-                    },
-                    "box": {
-                      "type": "object",
-                      "properties": {
-                        "x": {
-                          "type": "number"
-                        },
-                        "y": {
-                          "type": "number"
-                        },
-                        "w": {
-                          "type": "number"
-                        },
-                        "h": {
-                          "type": "number"
-                        }
-                      },
-                      "required": [
-                        "x",
-                        "y",
-                        "w",
-                        "h"
-                      ],
-                      "additionalProperties": false
-                    },
-                    "label": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "id"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "blur": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string"
-                    },
-                    "target": {
-                      "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
-                    },
-                    "box": {
-                      "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/callouts/items/properties/box"
-                    }
-                  },
-                  "required": [
-                    "id"
-                  ],
-                  "additionalProperties": false
-                }
-              },
               "actions": {
                 "type": "array",
                 "items": {
-                  "anyOf": [
+                  "oneOf": [
                     {
                       "type": "object",
                       "properties": {
@@ -369,7 +877,7 @@
                           "const": "click"
                         },
                         "target": {
-                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                          "$ref": "#/definitions/__schema0"
                         },
                         "highlight": {
                           "anyOf": [
@@ -377,7 +885,7 @@
                               "type": "boolean"
                             },
                             {
-                              "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                              "$ref": "#/definitions/__schema0"
                             }
                           ]
                         }
@@ -396,7 +904,7 @@
                           "const": "type"
                         },
                         "target": {
-                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                          "$ref": "#/definitions/__schema0"
                         },
                         "text": {
                           "type": "string"
@@ -417,13 +925,20 @@
                           "const": "select"
                         },
                         "target": {
-                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                          "$ref": "#/definitions/__schema0"
                         },
                         "option": {
                           "type": "string"
                         },
                         "highlight": {
-                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/actions/items/anyOf/0/properties/highlight"
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "$ref": "#/definitions/__schema0"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -441,10 +956,17 @@
                           "const": "point"
                         },
                         "target": {
-                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                          "$ref": "#/definitions/__schema0"
                         },
                         "highlight": {
-                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/actions/items/anyOf/0/properties/highlight"
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "$ref": "#/definitions/__schema0"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -461,19 +983,26 @@
                           "const": "expect"
                         },
                         "target": {
-                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                          "$ref": "#/definitions/__schema0"
                         },
                         "highlight": {
-                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/actions/items/anyOf/0/properties/highlight"
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "$ref": "#/definitions/__schema0"
+                            }
+                          ]
                         },
                         "text": {
+                          "description": "The target's text must contain this; with exact: true it must equal it. \"/pattern/\" (or \"/pattern/i\" to ignore case) is a regular expression.",
                           "type": "string",
-                          "minLength": 1,
-                          "description": "The target's text must contain this; with exact: true it must equal it. \"/pattern/\" (or \"/pattern/i\" to ignore case) is a regular expression."
+                          "minLength": 1
                         },
                         "exact": {
-                          "type": "boolean",
-                          "description": "With text: the target's whole text must equal text (whitespace collapsed), not just contain it."
+                          "description": "With text: the target's whole text must equal text (whitespace collapsed), not just contain it.",
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -490,15 +1019,26 @@
                           "const": "press"
                         },
                         "key": {
-                          "type": "string",
-                          "description": "A key or chord, in Playwright key names: \"Enter\", \"Escape\", \"Tab\", \"ArrowDown\", \"Control+K\", \"ControlOrMeta+K\"."
+                          "description": "A key or chord, in Playwright key names: \"Enter\", \"Escape\", \"Tab\", \"ArrowDown\", \"Control+K\", \"ControlOrMeta+K\".",
+                          "type": "string"
                         },
                         "target": {
-                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus",
-                          "description": "Focus this element first and press the key in it; without it, the key goes to whatever has focus."
+                          "description": "Focus this element first and press the key in it; without it, the key goes to whatever has focus.",
+                          "allOf": [
+                            {
+                              "$ref": "#/definitions/__schema0"
+                            }
+                          ]
                         },
                         "highlight": {
-                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/actions/items/anyOf/0/properties/highlight"
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "$ref": "#/definitions/__schema0"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -515,10 +1055,17 @@
                           "const": "hover"
                         },
                         "target": {
-                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                          "$ref": "#/definitions/__schema0"
                         },
                         "highlight": {
-                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/actions/items/anyOf/0/properties/highlight"
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "$ref": "#/definitions/__schema0"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -536,10 +1083,17 @@
                           "const": "focus"
                         },
                         "target": {
-                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                          "$ref": "#/definitions/__schema0"
                         },
                         "highlight": {
-                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/actions/items/anyOf/0/properties/highlight"
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "$ref": "#/definitions/__schema0"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -557,7 +1111,7 @@
                           "const": "waitFor"
                         },
                         "target": {
-                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                          "$ref": "#/definitions/__schema0"
                         },
                         "snapshot": {
                           "type": [
@@ -566,7 +1120,14 @@
                           ]
                         },
                         "highlight": {
-                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/actions/items/anyOf/0/properties/highlight"
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "$ref": "#/definitions/__schema0"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -600,7 +1161,7 @@
                           "const": "scrollTo"
                         },
                         "target": {
-                          "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/camera/anyOf/1/properties/focus"
+                          "$ref": "#/definitions/__schema0"
                         }
                       },
                       "required": [
@@ -670,11 +1231,12 @@
                         },
                         "remember": {
                           "type": "object",
+                          "propertyNames": {
+                            "type": "string",
+                            "pattern": "^\\w+$"
+                          },
                           "additionalProperties": {
                             "type": "string"
-                          },
-                          "propertyNames": {
-                            "pattern": "^\\w+$"
                           }
                         }
                       },
@@ -686,202 +1248,716 @@
                     }
                   ]
                 }
-              }
+              },
+              "chapter": {},
+              "say": {},
+              "caption": {},
+              "page_text": {},
+              "mask": {},
+              "camera": {},
+              "hold": {},
+              "callouts": {},
+              "blur": {}
             },
-            "additionalProperties": false
-          },
-          "minItems": 1
-        },
-        "validate": {
-          "type": "object",
-          "properties": {
-            "database": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string"
-                  },
-                  "sql": {
-                    "type": "string"
-                  },
-                  "params": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "expect": {
-                    "type": "object",
-                    "additionalProperties": {}
-                  }
-                },
-                "required": [
-                  "name",
-                  "sql",
-                  "expect"
-                ],
-                "additionalProperties": false
-              }
-            }
-          },
-          "additionalProperties": false
-        },
-        "needs": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
-          }
-        },
-        "leaves": {
-          "$ref": "#/definitions/Walkthrough/properties/needs"
-        },
-        "clears": {
-          "$ref": "#/definitions/Walkthrough/properties/needs"
-        },
-        "setup": {
-          "type": "object",
-          "properties": {
-            "as": {
-              "type": "string"
-            },
-            "steps": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string"
-                  },
-                  "title": {
-                    "type": "string"
-                  },
-                  "do": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
-                    ]
-                  },
-                  "check": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
-                    ]
-                  },
-                  "actions": {
-                    "type": "array",
-                    "items": {
-                      "$ref": "#/definitions/Walkthrough/properties/steps/items/properties/actions/items"
-                    }
-                  },
-                  "chapter": {},
-                  "say": {},
-                  "caption": {},
-                  "page_text": {},
-                  "mask": {},
-                  "camera": {},
-                  "hold": {},
-                  "callouts": {},
-                  "blur": {}
-                },
-                "additionalProperties": false
-              },
-              "minItems": 1
-            }
-          },
-          "required": [
-            "steps"
-          ],
-          "additionalProperties": false
-        },
-        "paths": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
-              },
-              "title": {
-                "type": "string",
-                "minLength": 1
-              },
-              "when": {
-                "type": "string",
-                "minLength": 1
-              },
-              "start": {
-                "type": "object",
-                "properties": {
-                  "page": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "signed_in_as": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "required": [
-                  "page"
-                ],
-                "additionalProperties": false
-              },
-              "steps": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/definitions/Walkthrough/properties/steps/items"
-                },
-                "minItems": 1
-              },
-              "joins": {
-                "type": "string",
-                "minLength": 1
-              },
-              "note": {
-                "type": "string"
-              },
-              "needs": {},
-              "leaves": {},
-              "clears": {},
-              "setup": {},
-              "validate": {}
-            },
-            "required": [
-              "id",
-              "title",
-              "when",
-              "start",
-              "steps"
-            ],
             "additionalProperties": false
           }
         }
       },
       "required": [
-        "walkthrough",
-        "title",
         "steps"
       ],
       "additionalProperties": false
+    },
+    "paths": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "when": {
+            "type": "string",
+            "minLength": 1
+          },
+          "start": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "string",
+                "minLength": 1
+              },
+              "signed_in_as": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "page"
+            ],
+            "additionalProperties": false
+          },
+          "steps": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "chapter": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "do": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "say": {
+                  "type": "string"
+                },
+                "caption": {
+                  "type": "string"
+                },
+                "page_text": {
+                  "type": "string"
+                },
+                "check": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "mask": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "camera": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "full"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "focus": {
+                          "$ref": "#/definitions/__schema0"
+                        },
+                        "zoom": {
+                          "type": "number"
+                        },
+                        "align": {
+                          "type": "string",
+                          "enum": [
+                            "top",
+                            "right",
+                            "left"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "focus"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "hold": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "callouts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "target": {
+                        "allOf": [
+                          {
+                            "$ref": "#/definitions/__schema0"
+                          }
+                        ]
+                      },
+                      "box": {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "number"
+                          },
+                          "y": {
+                            "type": "number"
+                          },
+                          "w": {
+                            "type": "number"
+                          },
+                          "h": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y",
+                          "w",
+                          "h"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "label": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "blur": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "target": {
+                        "allOf": [
+                          {
+                            "$ref": "#/definitions/__schema0"
+                          }
+                        ]
+                      },
+                      "box": {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "number"
+                          },
+                          "y": {
+                            "type": "number"
+                          },
+                          "w": {
+                            "type": "number"
+                          },
+                          "h": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y",
+                          "w",
+                          "h"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "actions": {
+                  "type": "array",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "do": {
+                            "type": "string",
+                            "const": "click"
+                          },
+                          "target": {
+                            "$ref": "#/definitions/__schema0"
+                          },
+                          "highlight": {
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "$ref": "#/definitions/__schema0"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "do",
+                          "target"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "do": {
+                            "type": "string",
+                            "const": "type"
+                          },
+                          "target": {
+                            "$ref": "#/definitions/__schema0"
+                          },
+                          "text": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "do",
+                          "target",
+                          "text"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "do": {
+                            "type": "string",
+                            "const": "select"
+                          },
+                          "target": {
+                            "$ref": "#/definitions/__schema0"
+                          },
+                          "option": {
+                            "type": "string"
+                          },
+                          "highlight": {
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "$ref": "#/definitions/__schema0"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "do",
+                          "target",
+                          "option"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "do": {
+                            "type": "string",
+                            "const": "point"
+                          },
+                          "target": {
+                            "$ref": "#/definitions/__schema0"
+                          },
+                          "highlight": {
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "$ref": "#/definitions/__schema0"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "do",
+                          "target"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "do": {
+                            "type": "string",
+                            "const": "expect"
+                          },
+                          "target": {
+                            "$ref": "#/definitions/__schema0"
+                          },
+                          "highlight": {
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "$ref": "#/definitions/__schema0"
+                              }
+                            ]
+                          },
+                          "text": {
+                            "description": "The target's text must contain this; with exact: true it must equal it. \"/pattern/\" (or \"/pattern/i\" to ignore case) is a regular expression.",
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "exact": {
+                            "description": "With text: the target's whole text must equal text (whitespace collapsed), not just contain it.",
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "do",
+                          "target"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "do": {
+                            "type": "string",
+                            "const": "press"
+                          },
+                          "key": {
+                            "description": "A key or chord, in Playwright key names: \"Enter\", \"Escape\", \"Tab\", \"ArrowDown\", \"Control+K\", \"ControlOrMeta+K\".",
+                            "type": "string"
+                          },
+                          "target": {
+                            "description": "Focus this element first and press the key in it; without it, the key goes to whatever has focus.",
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/__schema0"
+                              }
+                            ]
+                          },
+                          "highlight": {
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "$ref": "#/definitions/__schema0"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "do",
+                          "key"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "do": {
+                            "type": "string",
+                            "const": "hover"
+                          },
+                          "target": {
+                            "$ref": "#/definitions/__schema0"
+                          },
+                          "highlight": {
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "$ref": "#/definitions/__schema0"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "do",
+                          "target"
+                        ],
+                        "additionalProperties": false,
+                        "description": "Moves the pointer over the target without clicking."
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "do": {
+                            "type": "string",
+                            "const": "focus"
+                          },
+                          "target": {
+                            "$ref": "#/definitions/__schema0"
+                          },
+                          "highlight": {
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "$ref": "#/definitions/__schema0"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "do",
+                          "target"
+                        ],
+                        "additionalProperties": false,
+                        "description": "Puts keyboard focus on the target without clicking it."
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "do": {
+                            "type": "string",
+                            "const": "waitFor"
+                          },
+                          "target": {
+                            "$ref": "#/definitions/__schema0"
+                          },
+                          "snapshot": {
+                            "type": [
+                              "boolean",
+                              "string"
+                            ]
+                          },
+                          "highlight": {
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "$ref": "#/definitions/__schema0"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "do",
+                          "target"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "do": {
+                            "type": "string",
+                            "const": "waitForUrl"
+                          },
+                          "pattern": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "do",
+                          "pattern"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "do": {
+                            "type": "string",
+                            "const": "scrollTo"
+                          },
+                          "target": {
+                            "$ref": "#/definitions/__schema0"
+                          }
+                        },
+                        "required": [
+                          "do",
+                          "target"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "do": {
+                            "type": "string",
+                            "const": "goto"
+                          },
+                          "path": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "do",
+                          "path"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "do": {
+                            "type": "string",
+                            "const": "showEmail"
+                          },
+                          "to": {
+                            "type": "string"
+                          },
+                          "subject": {
+                            "type": "string"
+                          },
+                          "mock": {
+                            "type": "object",
+                            "properties": {
+                              "from": {
+                                "type": "string"
+                              },
+                              "to": {
+                                "type": "string"
+                              },
+                              "subject": {
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "html": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "from",
+                              "to",
+                              "subject"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "highlight": {
+                            "type": "boolean"
+                          },
+                          "remember": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^\\w+$"
+                            },
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "do"
+                        ],
+                        "additionalProperties": false,
+                        "description": "Shows an email on screen: one the app sent (caught locally, matched by to/subject) or an emulated `mock`."
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "joins": {
+            "type": "string",
+            "minLength": 1
+          },
+          "note": {
+            "type": "string"
+          },
+          "needs": {},
+          "leaves": {},
+          "clears": {},
+          "setup": {},
+          "validate": {}
+        },
+        "required": [
+          "id",
+          "title",
+          "when",
+          "start",
+          "steps"
+        ],
+        "additionalProperties": false
+      }
     }
   },
-  "$schema": "http://json-schema.org/draft-07/schema#"
+  "required": [
+    "walkthrough",
+    "title",
+    "steps"
+  ],
+  "additionalProperties": false,
+  "definitions": {
+    "__schema0": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "exact": {
+          "type": "boolean"
+        },
+        "label": {
+          "type": "string"
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "css": {
+          "type": "string"
+        },
+        "hasText": {
+          "type": "string"
+        },
+        "within": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/__schema0"
+            }
+          ]
+        },
+        "innermost": {
+          "type": "boolean"
+        },
+        "nth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "padUnion": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/__schema0"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
 }

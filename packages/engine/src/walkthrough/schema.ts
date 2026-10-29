@@ -74,7 +74,7 @@ const DatabaseCheckSchema = z
     name: z.string(),
     sql: z.string(),
     params: z.array(z.string()).optional(),
-    expect: z.record(z.unknown()),
+    expect: z.record(z.string(), z.unknown()),
   })
   .strict();
 
@@ -299,7 +299,7 @@ export const WalkthroughDocSchema = z
     verifiedAgainst: VerifiedAgainstSchema.optional(),
     start: StartSchema.optional(),
     data: z
-      .record(z.unknown())
+      .record(z.string(), z.unknown())
       .superRefine((data, ctx) => {
         for (const key of RESERVED_DATA_KEYS) {
           if (key in data) {

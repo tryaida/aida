@@ -139,6 +139,7 @@ Newest last. One line per loop turn: date, milestone, result, anything blocked.
 
 - 2026-10-29 · README shows the Rallly example as proof: help-site screenshots, the "Pick the final date" video (1 MB, 720p) and its PDF guide and card, under `docs/media/rallly/`. Fixed: PDF page headers repeated the name beside a wordmark logo.
 - 2026-10-29 · Fixed: `aida build --only pdf` reported OK but built no PDF. Without the pages stage, PDFs now render from the pages an earlier build left on disk (`pages-cache.json`), not publishable if that walkthrough's last QA failed; with no built page the stage says to run pages first.
+- 2026-10-29 · Launch prep: full Apache 2.0 text in LICENSE (GitHub showed "Other") with the copyright in NOTICE (packed with LICENSE); SECURITY.md (GitHub private vulnerability reporting, now on), CONTRIBUTING.md; the repo's own CI (`.github/workflows/test.yml`: typecheck, skills check, fast suite). Engine on zod 4 (zod 3 had a high-severity advisory with no fix); walkthrough.schema.json now from `z.toJSONSchema` (zod-to-json-schema emitted an empty schema under zod 4), all 23 example walkthroughs valid against old and new. Packed tarball smoke: install, `aida init` on a scratch Next.js app, help-app `next build`. Remaining audit: `sharp` via kokoro-js, no fix upstream.
 ## Follow-ups
 
 - First pilot: plain `aida inspect` lands on an empty "nothing selected" screen (the current record is set by the post-login route); add a `states` hook for it to the pilot's config, which also explains a one-off capture failure on the selection page.
