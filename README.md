@@ -5,6 +5,9 @@
   </picture>
 </h1>
 
+[![Test](https://github.com/tryaida/aida/actions/workflows/test.yml/badge.svg)](https://github.com/tryaida/aida/actions/workflows/test.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 **Turn your app into user guides and narrated tutorials.**
 
 AIDA (Agent-driven Instruction and Documentation Automation) works with your coding agent to
