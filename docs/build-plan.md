@@ -156,6 +156,7 @@ Newest last. One line per loop turn: date, milestone, result, anything blocked.
 - Phase 1 gate needs an outside vibe coder.
 
 - No way yet to allow an expected 5xx in a walkthrough that deliberately shows an error page (needs a schema field, e.g. `validate.allowServerErrors`).
+- Generated CI workflows (`init/ci.ts`) and `action.yml` pin `actions/checkout@v4` / `actions/setup-node@v4` (Node 20, deprecated; GitHub forces Node 24). Bump to v7 and re-check live (checkout v6+ stores credentials differently; `ci --publish` pushes with them).
 - `aida upgrade` from a dev clone reads the live template including untracked files (same as `init`); the packed template is tracked files only.
 - One recorder test failed once under full-suite load (target not confirmed in time); the recorder now retries once with a longer deadline. Watch for recurrence.
 - Re-measure Playwright import mapping on the second app (35% before M38).
