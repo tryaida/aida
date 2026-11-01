@@ -961,7 +961,17 @@ program
     process.exitCode = await runDoctorCommand({ configPath: opts.config }, Boolean(opts.json));
   });
 
-program.parse();
+// An error a command didn't catch itself (an invalid walkthrough, a config that won't load) prints
+// as one plain message, not a Node stack trace; AIDA_DEBUG=1 adds the trace for a bug report.
+program.parseAsync().catch((err: unknown) => {
+  console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+  if (process.env.AIDA_DEBUG && err instanceof Error && err.stack) console.error(err.stack);
+  else console.error("(set AIDA_DEBUG=1 to see where it happened)");
+  process.exitCode = 1;
+  // A browser or server the command left open would keep the process alive; the unhandled
+  // rejection this replaces exited at once. Unref'd, so a clean exit doesn't wait for it.
+  setTimeout(() => process.exit(1), 2000).unref();
+});
 
 function parseNonNegativeInt(value: string, flag: string): number {
   const n = Number(value);

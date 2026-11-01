@@ -105,7 +105,7 @@ export function formatReport(report: BuildReport): string {
   if (report.error) lines.push(`  stopped: ${report.error.split("\n")[0]}`);
   for (const w of report.walkthroughs) {
     lines.push(`  ${w.walkthrough}: ${w.ok ? "ok" : "FAILED"}`);
-    for (const stage of ["capture", "voice", "render", "pages", "qa"] as BuildStageName[]) {
+    for (const stage of ["capture", "voice", "render", "pages", "pdf", "qa"] as BuildStageName[]) {
       lines.push(stageLine(stage, w.stages[stage]));
     }
     for (const f of w.failures ?? []) lines.push(...failureLines(w.walkthrough, f));
