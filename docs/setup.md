@@ -9,8 +9,7 @@ package). Run it either way:
 
 - **From the package:** `npx aida-docs <command>`, or install it (`npm install -g aida-docs`)
   and run `aida <command>`. The package carries the help-app template and the agent skills, so it
-  needs no clone. It isn't on npm until the first release (see [Releasing](#releasing)); until
-  then, install a tarball from `npm pack` the same way.
+  needs no clone.
 - **From a clone:** `node <aida>/packages/engine/dist/cli.js` after `npm run build`, or
   `npx tsx <aida>/packages/engine/src/cli.ts` without a build. A clone uses its own
   `packages/help-app` and `skills/`, so edits there show up in the next `aida init` and
@@ -328,7 +327,8 @@ meanwhile). Pack from a clean, committed tree.
    `.env*`, `*.tsbuildinfo` or `.next`. For a real try, `npm pack --pack-destination ~`, install
    the tarball in an empty folder and run its `aida init` on a scratch Next.js app.
 4. **Publish:** `cd packages/engine && npm publish --access public` (needs an npm login with
-   rights to `aida-docs`). Then tag the commit, e.g. `git tag aida-docs-v0.1.0 && git push --tags`.
+   rights to `aida-docs` and two-factor auth; with a security key, npm prints a link to approve
+   the publish in a browser). Then tag the commit, e.g. `git tag aida-docs-v0.1.0 && git push --tags`.
 
 Later: publish from GitHub Actions with
 [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC, no npm token in the

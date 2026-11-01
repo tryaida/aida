@@ -6,6 +6,7 @@
 </h1>
 
 [![Test](https://github.com/tryaida/aida/actions/workflows/test.yml/badge.svg)](https://github.com/tryaida/aida/actions/workflows/test.yml)
+[![npm](https://img.shields.io/npm/v/aida-docs.svg)](https://www.npmjs.com/package/aida-docs)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 **Turn your app into user guides and narrated tutorials.**
@@ -99,19 +100,19 @@ out and never sent). Captions and chapters are generated with it.
 
 ## Quick start
 
-AIDA isn't published to npm yet, so run it from a clone. You need Node 22+ and `ffmpeg` on your
-PATH, and your app running locally against a throwaway database.
+You need Node 22+ and `ffmpeg` on your PATH, and your app running locally against a throwaway
+database. AIDA's package on npm is `aida-docs` (the `aida` name on npm is an unrelated package).
 
 ```bash
-git clone https://github.com/tryaida/aida.git && cd aida
-npm install && npm run build
 npx playwright install chromium
-alias aida="node $PWD/packages/engine/dist/cli.js"
 
-aida init ~/my-app                                       # adds ~/my-app/help and installs it
-aida doctor --config ~/my-app/help/aida.config.ts        # checks the machine and the app, one fix per problem
-aida skills install --target ~/my-app                    # adds the agent skills to your repo
+npx aida-docs init ~/my-app                                   # adds ~/my-app/help and installs it
+npx aida-docs doctor --config ~/my-app/help/aida.config.ts    # checks the machine and the app, one fix per problem
+npx aida-docs skills install --target ~/my-app                # adds the agent skills to your repo
 ```
+
+Or install it once (`npm install -g aida-docs`) and run `aida <command>`. To work on AIDA itself,
+see [Contributing](#contributing).
 
 Then open your coding agent in `~/my-app` and ask:
 
@@ -119,7 +120,7 @@ Then open your coding agent in `~/my-app` and ask:
 
 The agent maps your app, proposes a list of guides for you to approve, writes and captures each
 walkthrough, and fixes what fails. To see the result, run `npm run dev` in `help/` and open the
-site. Run `aida build --config help/aida.config.ts` to rebuild it all yourself.
+site. Run `npx aida-docs build --config help/aida.config.ts` to rebuild it all yourself.
 
 Capture against a production build of your app (`next build && next start`) rather than the dev
 server. [docs/setup.md](docs/setup.md) covers the sign-in adapter, the Studio over a tunnel, and
@@ -206,8 +207,6 @@ users yet. Expect rough edges and breaking changes.
 
 **Planned**
 
-- An npm release as `aida-docs` (the `aida` name on npm is an unrelated package), so you can run
-  `npx aida-docs` without cloning
 - Sign-in helpers for Clerk and Firebase
 - A setup path for no-code builders (Lovable, Bolt) that doesn't require opening GitHub
 - Longer-term evidence that docs stay current over weeks of real app changes
