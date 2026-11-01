@@ -183,7 +183,7 @@ users yet. Expect rough edges and breaking changes.
   your app
 - PDF guides, a full manual and quick reference cards
 - Narrated videos with captions and chapters using the local Kokoro voice
-- `aida init`, `doctor`, `digest`, `inspect`, and sign-in adapters for Auth.js and better-auth apps
+- `aida init`, `doctor`, `digest`, `inspect`, and sign-in adapters for Auth.js, better-auth and Supabase Auth apps
 - Emails in walkthroughs: the app's real email caught locally (never sent), or a written mock;
   codes and links in it can be typed into later steps (sign-in by emailed code)
 - Studio for editing text, callouts and blur boxes, with history and undo
@@ -208,7 +208,7 @@ users yet. Expect rough edges and breaking changes.
 
 - An npm release as `aida-docs` (the `aida` name on npm is an unrelated package), so you can run
   `npx aida-docs` without cloning
-- Sign-in helpers for Clerk, Supabase Auth and Firebase
+- Sign-in helpers for Clerk and Firebase
 - A setup path for no-code builders (Lovable, Bolt) that doesn't require opening GitHub
 - Longer-term evidence that docs stay current over weeks of real app changes
 

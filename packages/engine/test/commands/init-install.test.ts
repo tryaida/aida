@@ -195,6 +195,17 @@ describe("aida init: Auth.js sign-in", () => {
     expect(result.nextSteps.join("\n")).toMatch(/USERS/);
   });
 
+  it("writes the Supabase adapter for Supabase Auth", () => {
+    const dir = tmpDir();
+    fakeApp(dir, { next: "16.0.0", "@supabase/ssr": "0.6.0", "@supabase/supabase-js": "2.50.0" });
+    const f = fakeRunner(dir);
+    const result = runInitCommand({ dir, runner: f.run, engineDir: f.engineDir });
+    expect(result.signIn).toMatchObject({ written: true, configured: true, kind: "supabase" });
+    expect(readFileSync(join(dir, "help", "aida.config.ts"), "utf8")).toContain('signIn: "./adapters/sign-in.mjs",');
+    expect(readFileSync(result.signIn!.file, "utf8")).toContain("admin/generate_link");
+    expect(result.nextSteps.join("\n")).toMatch(/supabase start.*USERS/);
+  });
+
   it("writes no adapter for other sign-in libraries", () => {
     const dir = tmpDir();
     fakeApp(dir, { next: "16.0.0", "@clerk/nextjs": "6.0.0" });

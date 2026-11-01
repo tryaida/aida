@@ -224,6 +224,7 @@ function detectSignInMethod(appRepo: string): string | undefined {
       if (Object.keys(deps).some((d) => d.startsWith("@clerk/"))) return "Clerk";
       if (deps["@supabase/auth-helpers-nextjs"] || deps["@supabase/ssr"]) return "Supabase Auth";
       if (deps.firebase) return "Firebase Auth";
+      if (deps["@supabase/supabase-js"]) return "Supabase Auth";
     } catch {
       // fall through to source scan
     }

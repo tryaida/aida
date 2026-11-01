@@ -69,6 +69,8 @@ const AUTH_LIBRARIES: Record<string, string> = {
   "@supabase/auth-helpers-nextjs": "Supabase Auth",
   "@supabase/ssr": "Supabase Auth",
   firebase: "Firebase Auth",
+  // Last: an app may use supabase-js only for data, with one of the libraries above for sign-in.
+  "@supabase/supabase-js": "Supabase Auth",
 };
 
 function detectAuthLibrary(pkg: Record<string, unknown> | undefined): string | undefined {

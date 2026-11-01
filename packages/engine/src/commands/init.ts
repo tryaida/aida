@@ -38,7 +38,7 @@ import {
   STUDIO_HOSTS_VAR,
   TUNNEL_HOST_WARNING,
 } from "../init/env-local.js";
-import { signInTemplateFor, writeAuthJsSignIn, writeBetterAuthSignIn, SIGN_IN_ADAPTER_PATH } from "../init/sign-in-template.js";
+import { signInTemplateFor, SIGN_IN_WRITERS, SIGN_IN_ADAPTER_PATH, type SignInKind } from "../init/sign-in-template.js";
 import { excludeHelpFromAppTsconfig, type ExcludeHelpResult } from "../init/app-tsconfig.js";
 import { checkAppDatabase } from "../safety/index.js";
 import type { BrandConfig } from "../config/types.js";
@@ -119,7 +119,7 @@ export interface InitResult {
   };
   /** The starter sign-in adapter, when the app uses Auth.js. `configured` is false when an
    * existing config with no `signIn` was left alone (add it by hand). */
-  signIn?: { file: string; written: boolean; configured: boolean; kind: "auth-js" | "better-auth" };
+  signIn?: { file: string; written: boolean; configured: boolean; kind: SignInKind };
   /** The help folder added to the app's own tsconfig `exclude`, so the app's `next build` doesn't
    * typecheck the help app. */
   appTsconfig: ExcludeHelpResult;
@@ -153,11 +153,10 @@ export function runInitCommand(options: InitOptions): InitResult {
   recordTemplateManifest(destDir, TEMPLATE_DIR, { packageJsonCopied: copied.includes("package.json") });
   const appTsconfig = excludeHelpFromAppTsconfig(detected.appRoot ?? appRepoDir, destDir);
 
-  let signInFile: { file: string; written: boolean; kind: "auth-js" | "better-auth" } | undefined;
+  let signInFile: { file: string; written: boolean; kind: SignInKind } | undefined;
   const signInKind = signInTemplateFor(detected.authLibrary);
   if (signInKind && detected.appRoot) {
-    const write = signInKind === "better-auth" ? writeBetterAuthSignIn : writeAuthJsSignIn;
-    signInFile = { ...write(destDir, detected.appRoot), kind: signInKind };
+    signInFile = { ...SIGN_IN_WRITERS[signInKind](destDir, detected.appRoot), kind: signInKind };
   }
   const appRoot = detected.appRoot ?? appRepoDir;
   const appUrl: DetectedAppUrl = options.appUrl
@@ -260,12 +259,23 @@ function hasStudioHosts(destDir: string): boolean {
   return existsSync(file) && new RegExp(`^\\s*(export\\s+)?${STUDIO_HOSTS_VAR}\\s*=\\s*\\S`, "m").test(readFileSync(file, "utf8"));
 }
 
+const SIGN_IN_LABELS: Record<SignInKind, string> = { "auth-js": "Auth.js", "better-auth": "better-auth", supabase: "Supabase Auth" };
+
+/** What to check in each starter adapter, after "Check <file>: ". */
+const SIGN_IN_CHECKS: Record<SignInKind, string> = {
+  "auth-js": "it mints an Auth.js session cookie per persona; make claims() match the app's jwt callback",
+  "better-auth":
+    "it inserts a better-auth database session per persona; map each role to a seeded user in USERS, and check SESSION_TABLE/USER_TABLE match the app's schema and SESSION_PATH its basePath",
+  supabase:
+    "it signs each persona in through the local Supabase stack (supabase start); map each role to a seeded user's email in USERS, and set STORAGE_KEY_OVERRIDE if the app passes its own storageKey to createClient()",
+};
+
 function nextSteps(o: {
   appTsconfig: ExcludeHelpResult;
   destDir: string;
   appRoot: string;
   installed: boolean;
-  signIn?: { file: string; kind: "auth-js" | "better-auth" };
+  signIn?: { file: string; kind: SignInKind };
   signInConfigured: boolean;
   tunnel: boolean;
 }): string[] {
@@ -283,9 +293,7 @@ function nextSteps(o: {
   );
   if (o.signIn) {
     steps.push(
-      (o.signIn.kind === "better-auth"
-        ? `Check ${relative(process.cwd(), o.signIn.file)}: it inserts a better-auth database session per persona; map each role to a seeded user in USERS, and check SESSION_TABLE/USER_TABLE match the app's schema and SESSION_PATH its basePath`
-        : `Check ${relative(process.cwd(), o.signIn.file)}: it mints an Auth.js session cookie per persona; make claims() match the app's jwt callback`) +
+      `Check ${relative(process.cwd(), o.signIn.file)}: ${SIGN_IN_CHECKS[o.signIn.kind]}` +
         (o.signInConfigured ? "" : `, and add signIn: "${SIGN_IN_ADAPTER_PATH}" to the existing aida.config.ts`),
     );
   }
@@ -385,7 +393,7 @@ export async function runInit(options: InitOptions, json: boolean): Promise<numb
   }
   if (result.appTsconfig.note) console.log(`  note: ${result.appTsconfig.note}`);
   if (result.signIn) {
-    console.log(result.signIn.written ? `  wrote ${result.signIn.file} (${result.signIn.kind === "better-auth" ? "better-auth" : "Auth.js"} sign-in)` : `  left existing ${result.signIn.file} untouched`);
+    console.log(result.signIn.written ? `  wrote ${result.signIn.file} (${SIGN_IN_LABELS[result.signIn.kind]} sign-in)` : `  left existing ${result.signIn.file} untouched`);
   }
   if (database) {
     console.log(`  warning: ${database.message}`);

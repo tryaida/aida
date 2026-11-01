@@ -1,7 +1,8 @@
 // Starter sign-in adapters `aida init` writes when it recognises the app's sign-in library
 // (build-plan.md M25): `templates/auth-js-sign-in.mjs` mints an Auth.js app's own JWT session
 // cookie; `templates/better-auth-sign-in.mjs` inserts a better-auth database session and sets its
-// signed cookie. Plain `.mjs`, not `.ts`: the built CLI loads adapters with a plain
+// signed cookie; `templates/supabase-sign-in.mjs` redeems a local Supabase sign-in link and puts
+// the session in the `sb-<ref>-auth-token` cookie and localStorage. Plain `.mjs`, not `.ts`: the built CLI loads adapters with a plain
 // `import()` unless tsx is around, and TS-only syntax would fail there.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
@@ -29,10 +30,18 @@ export function isBetterAuth(authLibrary: string | undefined): boolean {
   return authLibrary === "better-auth";
 }
 
+/** True for Supabase Auth (`@supabase/ssr`, `@supabase/auth-helpers-nextjs`, `@supabase/supabase-js`). */
+export function isSupabaseAuth(authLibrary: string | undefined): boolean {
+  return authLibrary === "Supabase Auth";
+}
+
+export type SignInKind = "auth-js" | "better-auth" | "supabase";
+
 /** Which starter adapter fits the app's sign-in library, if any. */
-export function signInTemplateFor(authLibrary: string | undefined): "auth-js" | "better-auth" | undefined {
+export function signInTemplateFor(authLibrary: string | undefined): SignInKind | undefined {
   if (isAuthJs(authLibrary)) return "auth-js";
   if (isBetterAuth(authLibrary)) return "better-auth";
+  if (isSupabaseAuth(authLibrary)) return "supabase";
   return undefined;
 }
 
@@ -61,3 +70,16 @@ export function writeAuthJsSignIn(helpDir: string, appDir: string, templateDir: 
 export function writeBetterAuthSignIn(helpDir: string, appDir: string, templateDir: string = SIGN_IN_TEMPLATE_DIR): WriteSignInResult {
   return writeSignInFromTemplate(helpDir, appDir, join(templateDir, "better-auth-sign-in.mjs"));
 }
+
+/** Writes `<helpDir>/adapters/sign-in.mjs` from the Supabase template, pointing it at `appDir`.
+ * Never overwrites an existing adapter. */
+export function writeSupabaseSignIn(helpDir: string, appDir: string, templateDir: string = SIGN_IN_TEMPLATE_DIR): WriteSignInResult {
+  return writeSignInFromTemplate(helpDir, appDir, join(templateDir, "supabase-sign-in.mjs"));
+}
+
+/** The writer for each starter adapter. */
+export const SIGN_IN_WRITERS: Record<SignInKind, (helpDir: string, appDir: string) => WriteSignInResult> = {
+  "auth-js": writeAuthJsSignIn,
+  "better-auth": writeBetterAuthSignIn,
+  supabase: writeSupabaseSignIn,
+};

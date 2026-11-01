@@ -69,6 +69,21 @@ aida init <app-dir>                        # scaffold <app-dir>/help and install
   `basePath` (default `/api/auth/get-session`). It checks that path after setting the cookie and
   fails loudly unless the app sees the persona's user signed in. It refuses an app or database
   that isn't on this machine.
+- **Signs in for capture (Supabase Auth).** If the app uses Supabase (`@supabase/ssr`,
+  `@supabase/auth-helpers-nextjs` or `@supabase/supabase-js`, when no other sign-in library is
+  there), `init` writes the same file from a Supabase template. It works with the local Supabase
+  stack (`supabase start`): with the stack's secret key it makes a one-time sign-in link for an
+  existing user (nothing is emailed, no password changes, no user is created), redeems it for a
+  session, checks the session belongs to that user, and puts it in the `sb-<ref>-auth-token`
+  cookie (split into `.0`, `.1`, ... when long; `base64-` encoded for `@supabase/ssr`, plain JSON
+  for auth-helpers) and in the app's localStorage, so server-rendered and single-page apps (Vite,
+  Lovable, Bolt) both see the persona signed in. The API URL and publishable key come from the
+  app's own variables (`NEXT_PUBLIC_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` and the like), the
+  secret key from `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY`, read from the capture run's
+  environment or the app's development env files (never `.env.production*`), else from
+  `supabase status`. Map each walkthrough role to a seeded user's email in `USERS`, and set
+  `STORAGE_KEY_OVERRIDE` if the app passes its own `storageKey` to `createClient()`. It refuses an
+  app or a Supabase API that isn't on this machine, so a hosted project is never touched.
 - **Checks the app's database.** It warns if the app's database setting points at a live
   database; capture refuses to run against one (see [Safety defaults](#safety-defaults)).
 
