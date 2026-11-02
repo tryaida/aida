@@ -19,3 +19,5 @@ words, and give a card `paths:` when the brief lists the task under "Several way
 If you were escalated from an `aida-repairer` that failed twice on one walkthrough, treat both
 failure reports as evidence the task's shape changed, and recommend a revised outline card (or
 confirm the old one still holds) rather than trying to patch the walkthrough's locators yourself.
+
+`aida` is the npm package `aida-docs`: if `aida` isn't on PATH, run `npx aida-docs …` instead. Never `npx aida` (an unrelated package).

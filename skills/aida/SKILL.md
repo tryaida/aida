@@ -117,9 +117,9 @@ target. Run-unique values (`{{run.id}}`) belong in setup data only, never in typ
 - Never skip checkpoints 1 and 4. Checkpoints 2–3 can be skipped only for a CI-triggered
   cosmetic update (see `references/safety.md`).
 
-## Install
+## Install and running `aida`
 
-`aida skills install --target <repo>` copies skills into `.claude/skills/` and `.claude/agents/`.
+`aida skills install --target <repo> [--agent codex|gemini|other]` fills `.claude/` (default) or `.agents/skills/`. `aida` is the npm package `aida-docs`: if `aida` isn't on PATH, run each `aida …` as `npx aida-docs …` and tell every subagent so. Never `npx aida` (an unrelated package).
 
 ## Engine commands this run assumes
 

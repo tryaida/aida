@@ -21,3 +21,5 @@ walkthrough id, pass/fail, and step count only.
 
 Demo data: `@example.com` emails, reserved fictional phone ranges, invented names — see
 `skills/references/safety.md`. Never a production write without explicit sign-off.
+
+`aida` is the npm package `aida-docs`: if `aida` isn't on PATH, run `npx aida-docs …` instead. Never `npx aida` (an unrelated package).

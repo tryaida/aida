@@ -1,6 +1,8 @@
 // `aida skills install`: copies the Agent Skills (SKILL.md dirs) and subagent definitions
-// that ship with aida into a target repo's `.claude/skills/` and `.claude/agents/`
-// (docs/scope.md "Working with any agent": "Claude Code and Codex read these natively").
+// that ship with aida into a target repo (docs/scope.md "Working with any agent"). Two layouts:
+// `claude` puts skills in `.claude/skills/` and subagents in `.claude/agents/` (Claude Code;
+// Cursor and Copilot read it too); `agents` puts the whole tree in `.agents/skills/`, the
+// shared folder Codex, Gemini CLI, Cursor, Copilot, OpenCode and others read.
 // Never overwrites a file a person has edited since it was installed — only files that are
 // missing, or byte-identical to what aida would write, are touched.
 //
@@ -62,11 +64,34 @@ function copyGuarded(src: string, dest: string, copied: string[], skipped: strin
   copied.push(dest);
 }
 
+export type SkillsLayout = "claude" | "agents";
+
+/** `--agent` names and the layout each one reads. Cursor and Copilot read both; `.agents/skills`
+ * is the shared one. */
+export const AGENT_LAYOUTS: Record<string, SkillsLayout> = {
+  claude: "claude",
+  "claude-code": "claude",
+  codex: "agents",
+  gemini: "agents",
+  cursor: "agents",
+  copilot: "agents",
+  opencode: "agents",
+  agents: "agents",
+  other: "agents",
+};
+
+/** The folder a layout installs into, relative to the target repo. */
+export function layoutDir(layout: SkillsLayout): string {
+  return layout === "claude" ? ".claude" : join(".agents", "skills");
+}
+
 /**
- * Installs aida's skills (every `skills/<name>/` except `agents/`) into
+ * Installs aida's skills. `claude`: every `skills/<name>/` except `agents/` into
  * `<target>/.claude/skills/<name>/`, and `skills/agents/*.md` into `<target>/.claude/agents/`.
+ * `agents`: every `skills/<name>/` (`agents/` included, as reference files the skills point to)
+ * into `<target>/.agents/skills/<name>/`.
  */
-export function installSkills(target: string, skillsDir: string = findSkillsDir()): InstallSkillsResult {
+export function installSkills(target: string, skillsDir: string = findSkillsDir(), layout: SkillsLayout = "claude"): InstallSkillsResult {
   if (!existsSync(skillsDir)) throw new Error(`no skills directory at ${skillsDir}`);
 
   const copied: string[] = [];
@@ -75,7 +100,7 @@ export function installSkills(target: string, skillsDir: string = findSkillsDir(
 
   for (const entry of readdirSync(skillsDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
-    if (entry.name === "agents") {
+    if (entry.name === "agents" && layout === "claude") {
       const agentsDestDir = join(target, ".claude", "agents");
       const agentsSrcDir = join(skillsDir, "agents");
       for (const file of readdirSync(agentsSrcDir)) {
@@ -89,7 +114,7 @@ export function installSkills(target: string, skillsDir: string = findSkillsDir(
     for (const rel of files) {
       copyGuarded(
         join(skillsDir, entry.name, rel),
-        join(target, ".claude", "skills", entry.name, rel),
+        layout === "claude" ? join(target, ".claude", "skills", entry.name, rel) : join(target, ".agents", "skills", entry.name, rel),
         copied,
         skipped,
         unchanged,
@@ -102,13 +127,23 @@ export function installSkills(target: string, skillsDir: string = findSkillsDir(
 
 export interface RunSkillsInstallOptions {
   target?: string;
+  /** Which coding agent the repo uses (AGENT_LAYOUTS); default `claude`. */
+  agent?: string;
 }
 
 export function runSkillsInstall(opts: RunSkillsInstallOptions, json: boolean): number {
   const target = opts.target ?? process.cwd();
+  const agent = (opts.agent ?? "claude").toLowerCase();
+  const layout = AGENT_LAYOUTS[agent];
+  if (!layout) {
+    const message = `unknown --agent "${opts.agent}"; use one of ${Object.keys(AGENT_LAYOUTS).join(", ")} (any agent that reads .agents/skills: other)`;
+    if (json) console.log(JSON.stringify({ ok: false, error: message }));
+    else console.error(`skills install failed: ${message}`);
+    return 1;
+  }
   let result: InstallSkillsResult;
   try {
-    result = installSkills(target);
+    result = installSkills(target, undefined, layout);
   } catch (err) {
     const message = (err as Error).message;
     if (json) console.log(JSON.stringify({ ok: false, error: message }));
@@ -117,9 +152,9 @@ export function runSkillsInstall(opts: RunSkillsInstallOptions, json: boolean): 
   }
 
   if (json) {
-    console.log(JSON.stringify({ ok: true, ...result }));
+    console.log(JSON.stringify({ ok: true, layout, ...result }));
   } else {
-    console.log(`installed skills from ${result.skillsDir} -> ${join(target, ".claude")}`);
+    console.log(`installed skills from ${result.skillsDir} -> ${join(target, layoutDir(layout))}`);
     console.log(`  copied: ${result.copied.length}, unchanged: ${result.unchanged.length}, skipped (user-modified): ${result.skipped.length}`);
     for (const f of result.skipped) console.log(`  skipped: ${f}`);
   }

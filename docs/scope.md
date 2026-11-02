@@ -217,7 +217,7 @@ Sign-in happens once with the test account, then the saved session is reused. He
 ### Working with any agent
 
 1. **Engine.** TypeScript, run with `npx`. Does capture, render, index, publish and checks, the same way every time.
-2. **Skills.** Agent Skills format (`SKILL.md`), plus an `AGENTS.md` that points to them. Claude Code and Codex read these natively. The skills cover discover, plan, write, demo data and repair.
+2. **Skills.** Agent Skills format (`SKILL.md`), plus an `AGENTS.md` that points to them. `aida skills install` writes them where the agent looks: `.claude/` for Claude Code, `.agents/skills/` for Codex, Gemini CLI, Cursor, Copilot, OpenCode and others. Only Claude Code picks a model per subagent; the rest run every step on one model. The skills cover discover, plan, write, demo data and repair.
 3. **Generator MCP server.** The same engine actions for clients that speak MCP but can't run commands.
 4. **Built-in agent loop.** Where no coding agent is present (the web app, CI), the engine runs the same skills itself through any model adapter.
 

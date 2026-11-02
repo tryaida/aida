@@ -296,10 +296,13 @@ subagent). Each names a model tier, and Claude Code subagent definitions in `ski
 match them: Haiku for discover, Sonnet for write, repair and review, Opus for understand and plan. Shared style, safety, token and walkthrough-format references live in
 `skills/references/`.
 
-Install into a target repo with `aida skills install --target <repo>` (copies skills into
-`.claude/skills/` and agents into `.claude/agents/`, never overwriting changed files). Codex and
-other AGENTS.md-reading agents can point at `skills/AGENTS.md`. Validate with
-`node skills/check.mjs`.
+Install into a target repo with `aida skills install --target <repo>`, never overwriting a file
+someone changed. By default it copies skills into `.claude/skills/` and agents into
+`.claude/agents/` (Claude Code; Cursor and GitHub Copilot read these too). `--agent codex` (or
+`gemini`, `cursor`, `copilot`, `opencode`, `other`) copies the whole tree, agent files included as
+references, into `.agents/skills/`, the shared folder Codex, Gemini CLI and most other agents
+read. Agents other than Claude Code can't pick a model per subagent and run every step on one
+model (`skills/agents/codex-note.md`). Validate with `node skills/check.mjs`.
 
 ## Repo layout
 

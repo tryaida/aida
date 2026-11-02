@@ -701,11 +701,12 @@ const skillsCmd = program.command("skills").description("install aida's Agent Sk
 
 skillsCmd
   .command("install")
-  .description("copy skills/** into <target>/.claude/skills/ and agents into <target>/.claude/agents/")
+  .description("copy the skills into the repo: .claude/ for Claude Code (default), .agents/skills/ for Codex, Gemini CLI and other agents")
   .option("--target <repo>", "target repo (default: cwd)")
+  .option("--agent <name>", "the repo's coding agent: claude (default), codex, gemini, cursor, copilot, opencode, or other (any agent that reads .agents/skills)")
   .option("--json", "print a single JSON object instead of a summary")
-  .action((opts: { target?: string; json?: boolean }) => {
-    process.exitCode = runSkillsInstall({ target: opts.target }, Boolean(opts.json));
+  .action((opts: { target?: string; agent?: string; json?: boolean }) => {
+    process.exitCode = runSkillsInstall({ target: opts.target, agent: opts.agent }, Boolean(opts.json));
   });
 
 program

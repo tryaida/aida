@@ -16,3 +16,5 @@ the brief's words and rules, and personal-data risk against `skills/references/s
 anything ambiguous is a fail). Report a short verdict per walkthrough/page: pass, or specific
 findings quoting the offending text or field. Don't rewrite anything yourself — hand findings back
 for `aida-write`/`aida-repair` to fix.
+
+`aida` is the npm package `aida-docs`: if `aida` isn't on PATH, run `npx aida-docs …` instead. Never `npx aida` (an unrelated package).

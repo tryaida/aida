@@ -1,6 +1,6 @@
 {
   "name": "aida-docs",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "AIDA engine: turns walkthrough files into a help site with printable pages, narrated videos, a help chat and an agent connector, kept current from CI.",
   "license": "Apache-2.0",
   "repository": {

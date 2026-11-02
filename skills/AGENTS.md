@@ -5,14 +5,17 @@ agent connector current from walkthrough files. Point your coding agent at the `
 anything help-docs related — "make help docs for my app", "update the help site", "why didn't the
 payments page update".
 
-Install once, from the AIDA checkout: `node <aida>/packages/engine/dist/cli.js skills install
---target <repo>` (or `npx tsx <aida>/packages/engine/src/cli.ts ...` without a build; never
-`npx aida`, which fetches an unrelated npm package; the engine will be published as `aida-docs`,
-but isn't yet) copies this `skills/` directory into `.claude/skills/` and `skills/agents/` into
-`.claude/agents/` (Claude Code), or leaves it here for Codex and other agents that read
-`AGENTS.md`/`SKILL.md` directly.
+`aida` is the command of the npm package `aida-docs`: run it as `npx aida-docs <command>`, or
+install it once (`npm install -g aida-docs`) and run `aida <command>`. Never `npx aida`, which
+fetches an unrelated npm package.
 
-Read `skills/aida/SKILL.md` first — it's the entry point and routes to the rest
+Install the skills once with `npx aida-docs skills install --target <repo>`. By default it copies
+them into `.claude/skills/` and the subagent definitions into `.claude/agents/` (Claude Code;
+Cursor and GitHub Copilot read these too). Add `--agent codex` (or `gemini`, `cursor`, `copilot`,
+`opencode`, `other`) to copy the whole tree into `.agents/skills/`, the shared folder Codex,
+Gemini CLI and most other agents read.
+
+Read `skills/aida/SKILL.md` first (the `aida` skill, wherever it was installed) — it's the entry point and routes to the rest
 (`aida-discover`, `aida-understand`, `aida-interview`, `aida-plan`, `aida-write`, `aida-repair`, `aida-review`,
 `aida-demo-data`). Don't read every skill up front; each one is short on purpose and loads its
 own reference files only when needed.

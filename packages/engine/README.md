@@ -23,7 +23,7 @@ You need your app running locally against a throwaway database (capture refuses 
 ```bash
 npx aida-docs init ~/my-app                                   # adds ~/my-app/help and installs it
 npx aida-docs doctor --config ~/my-app/help/aida.config.ts    # checks the machine and the app, one fix per problem
-npx aida-docs skills install --target ~/my-app                # adds the agent skills to your repo
+npx aida-docs skills install --target ~/my-app                # adds the agent skills (--agent codex etc. for other agents)
 ```
 
 Then open your coding agent in `~/my-app` and ask:

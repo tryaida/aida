@@ -13,3 +13,5 @@ Return only the summary shape from `aida-discover`'s SKILL.md (`area`, `routes`,
 `likely_tasks`, `notes`) — no code excerpts, no file contents, no reasoning trace. Keep it under
 roughly 200 tokens. If the area is too big for that budget, say so and suggest splitting it rather
 than writing a longer summary.
+
+`aida` is the npm package `aida-docs`: if `aida` isn't on PATH, run `npx aida-docs …` instead. Never `npx aida` (an unrelated package).

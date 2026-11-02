@@ -17,3 +17,5 @@ before planning, and moves each answer into its section. Never invent a rule or 
 
 Return only: the brief's path, the readers (role, name, job), the tasks under "Several ways to do
 one thing", and the open questions — not the brief's full text.
+
+`aida` is the npm package `aida-docs`: if `aida` isn't on PATH, run `npx aida-docs …` instead. Never `npx aida` (an unrelated package).

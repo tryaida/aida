@@ -22,3 +22,5 @@ suggestion in your report, not an overwrite.
 Re-run capture for this walkthrough only. Pass → report what changed, one line. Fail twice on the
 same walkthrough → stop, report both failure reports and what's unclear, and say this needs
 `aida-plan` (deep tier), not another repair try.
+
+`aida` is the npm package `aida-docs`: if `aida` isn't on PATH, run `npx aida-docs …` instead. Never `npx aida` (an unrelated package).

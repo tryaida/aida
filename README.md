@@ -21,6 +21,25 @@ walkthroughs it touches and tells you which pages changed and which ones broke.
 https://github.com/user-attachments/assets/3ea1357c-b653-4ab3-bf58-d1a0f93d4d0c
 
 
+## Start with one prompt
+
+With your app running locally against a throwaway database, open your coding agent in the app's
+repo and paste:
+
+```text
+Make help docs for this app with AIDA, the npm package aida-docs (never run `npx aida`: that's an
+unrelated package).
+1. Run `npx aida-docs init .`
+2. Run `npx aida-docs skills install --target . --agent <you>`, where <you> is claude, codex,
+   gemini, cursor, copilot, opencode or other.
+3. Read the installed aida skill (.claude/skills/aida/SKILL.md or .agents/skills/aida/SKILL.md)
+   and follow it, starting with `npx aida-docs doctor --config help/aida.config.ts`.
+```
+
+The agent sets up the help site, maps your app, asks you to approve a list of guides, then writes,
+captures and checks each one. [Quick start](#quick-start) has the same steps by hand.
+
+
 
 ## What you get
 
@@ -108,7 +127,7 @@ npx playwright install chromium
 
 npx aida-docs init ~/my-app                                   # adds ~/my-app/help and installs it
 npx aida-docs doctor --config ~/my-app/help/aida.config.ts    # checks the machine and the app, one fix per problem
-npx aida-docs skills install --target ~/my-app                # adds the agent skills to your repo
+npx aida-docs skills install --target ~/my-app                # adds the agent skills (--agent codex etc. for other agents)
 ```
 
 Or install it once (`npm install -g aida-docs`) and run `aida <command>`. To work on AIDA itself,
@@ -130,13 +149,18 @@ every command.
 
 AIDA's engine is a deterministic CLI that never needs a model. Your coding agent does the judgment
 work using the skills in [`skills/`](skills): planning what to document, writing walkthroughs,
-repairing broken ones and reviewing the output.
+repairing broken ones and reviewing the output. They're plain [Agent Skills](https://agentskills.io)
+(`SKILL.md` folders), so any agent that reads that format can run them. The one Claude-specific
+part is the subagent files, which pick a model per job; other agents run every step on the model
+you've chosen, which works but costs more on a large app.
 
-| Agent | Support |
-| --- | --- |
-| **Claude Code** | Main target. `aida skills install` adds the skills and subagents, each on a suggested model tier: Haiku to map the app, Opus to plan, Sonnet to write, repair and review. |
-| **Codex** and other agents that read `AGENTS.md` or `SKILL.md` | Point them at [`skills/AGENTS.md`](skills/AGENTS.md). Same skills, run on whichever single model you've chosen. Less tested than Claude Code. |
-| **Claude Code GitHub Action** *(optional)* | Repairs a broken walkthrough when someone comments `@claude` on a PR. Uses a Claude Code OAuth token, not an API key. |
+| Agent | Install with | Support |
+| --- | --- | --- |
+| **Claude Code** | `skills install` (default) | Main target, tested end to end. Skills in `.claude/skills/`, subagents in `.claude/agents/`, each on a suggested tier: Haiku to map the app, Opus to plan, Sonnet to write, repair and review. |
+| **Codex**, **Gemini CLI**, **OpenCode** | `--agent codex`, `gemini`, `opencode` | Skills in `.agents/skills/`. Not yet tried end to end. |
+| **Cursor**, **GitHub Copilot** | `--agent cursor`, `copilot` | Skills in `.agents/skills/` (both also read `.claude/skills/`). Not yet tried end to end. |
+| **Any other agent** | `--agent other`, or point it at [`skills/AGENTS.md`](skills/AGENTS.md) | Works if it reads `.agents/skills/` or follows a file you point it at. |
+| **Claude Code GitHub Action** *(optional)* | `aida init --ci --claude` | Repairs a broken walkthrough when someone comments `@claude` on a PR. Uses a Claude Code OAuth token, not an API key. |
 
 ## How updates work
 
@@ -203,7 +227,7 @@ users yet. Expect rough edges and breaking changes.
 - `aida record`: click through a task once in a browser window and get a draft walkthrough. Tested
   on fixture pages; not yet used by a person on a real app
 - MiniMax and ElevenLabs voices
-- Codex and other `AGENTS.md`-based agents
+- Codex, Gemini CLI, Cursor, Copilot and other agents that read Agent Skills
 
 **Planned**
 
