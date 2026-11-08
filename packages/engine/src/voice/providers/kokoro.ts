@@ -1,7 +1,8 @@
-// Kokoro provider: local TTS via kokoro-js (https://github.com/hexgrad/kokoro, ONNX port).
+// Kokoro provider: local TTS via kokoro-js (https://github.com/hexgrad/kokoro, ONNX port),
+// vendored in `vendor/kokoro/` to run on transformers 4 (see its README).
 // Default voice provider — no key, no network cost per call, but the model (~90MB for q8)
-// downloads on first use. The import is lazy so loading this module (and running the test
-// suite) never pulls kokoro-js or its model in.
+// and the voice (~0.5MB) download on first use. The import is lazy so loading this module (and
+// running the test suite) never pulls transformers or the model in.
 import { writeFile } from 'node:fs/promises'
 import type { SynthesizeOptions, SynthesizeResult, VoiceProvider } from '../types.js'
 import { probeDurationMs } from '../wav.js'
@@ -22,11 +23,19 @@ export interface KokoroProviderOptions {
 // model on every synthesize() call within a process.
 const instances = new Map<string, Promise<any>>()
 
+// The same relative path from src/ (tsx, tests) and dist/ (the published build): both sit
+// directly in the package beside vendor/.
+const KOKORO_MODULE = new URL('../../../vendor/kokoro/kokoro.js', import.meta.url).href
+
+function importKokoro(): Promise<any> {
+  return import(KOKORO_MODULE)
+}
+
 async function loadKokoro(model: string, dtype: KokoroDtype): Promise<any> {
   const key = `${model}:${dtype}`
   let instance = instances.get(key)
   if (!instance) {
-    instance = import('kokoro-js').then(({ KokoroTTS }) => KokoroTTS.from_pretrained(model, { dtype }))
+    instance = importKokoro().then(({ KokoroTTS }) => KokoroTTS.from_pretrained(model, { dtype }))
     instances.set(key, instance)
   }
   return instance
@@ -40,10 +49,10 @@ export function createKokoroProvider(opts: KokoroProviderOptions = {}): VoicePro
     ext: 'wav',
     async available() {
       try {
-        await import('kokoro-js')
+        await importKokoro()
         return { available: true }
       } catch (err) {
-        return { available: false, reason: `kokoro-js not installed: ${(err as Error).message}` }
+        return { available: false, reason: `Kokoro can't load (is @huggingface/transformers installed?): ${(err as Error).message}` }
       }
     },
     settingsKey(input) {
@@ -58,13 +67,13 @@ export function createKokoroProvider(opts: KokoroProviderOptions = {}): VoicePro
       const tts = await loadKokoro(effectiveModel, dtype)
       const voice = options.voice ?? DEFAULT_KOKORO_VOICE
       const audio = await tts.generate(options.text, { voice, speed: options.speed ?? 1 })
-      // kokoro-js RawAudio exposes save(path) which writes a WAV file.
+      // transformers' RawAudio exposes save(path), which writes a WAV file.
       if (typeof audio.save === 'function') {
         await audio.save(options.outPath)
       } else if (audio.toWav) {
         await writeFile(options.outPath, Buffer.from(audio.toWav()))
       } else {
-        throw new Error('kokoro-js returned an audio object with no save()/toWav()')
+        throw new Error('Kokoro returned an audio object with no save()/toWav()')
       }
       const durationMs = await probeDurationMs(options.outPath)
       return { audioPath: options.outPath, durationMs }

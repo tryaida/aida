@@ -1,4 +1,5 @@
-// Real kokoro-js smoke test: downloads the model (~90MB) on first run. Skipped by default —
+// Real Kokoro smoke test (vendor/kokoro on transformers 4): downloads the model (~90MB) and a
+// voice (~0.5MB) on first run. Skipped by default —
 // opt in with AIDA_TEST_KOKORO=1 or AIDA_TEST_SLOW=1 (see `npm run test:slow`) since this is
 // slow/network-dependent and not appropriate for normal CI.
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -43,7 +44,7 @@ describe('kokoro provider respects a per-call model override', () => {
         }),
         modelUsed: model,
       }))
-      vi.doMock('kokoro-js', () => ({
+      vi.doMock('../../vendor/kokoro/kokoro.js', () => ({
         KokoroTTS: { from_pretrained: fromPretrained },
       }))
       vi.resetModules()
@@ -56,7 +57,7 @@ describe('kokoro provider respects a per-call model override', () => {
       expect(fromPretrained).toHaveBeenCalledWith('some-other-model', expect.anything())
       expect(fromPretrained).not.toHaveBeenCalledWith(DEFAULT_KOKORO_MODEL, expect.anything())
     } finally {
-      vi.doUnmock('kokoro-js')
+      vi.doUnmock('../../vendor/kokoro/kokoro.js')
       vi.resetModules()
       await rm(dir, { recursive: true, force: true })
     }

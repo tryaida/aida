@@ -23,6 +23,9 @@ examples/**/public/videos/
 # TypeScript incremental build state
 *.tsbuildinfo
 
+# test runner output
+.vitest/
+
 # private-app material, kept local only (not in the public repo)
 /reference/
 

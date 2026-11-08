@@ -2,3 +2,6 @@ AIDA
 Copyright 2026 AIDA contributors
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+packages/engine/vendor/kokoro contains code from kokoro-js (https://github.com/hexgrad/kokoro),
+licensed under the Apache License, Version 2.0 (see packages/engine/vendor/kokoro/LICENSE).
