@@ -58,7 +58,7 @@ function renderInline(text: string, cite: (n: number) => MarkdownCitation | unde
           key={i}
           href={href(c.url)}
           title={c.title}
-          className="ms-0.5 inline-flex size-4 -translate-y-1 items-center justify-center rounded-full bg-fd-primary/15 align-baseline text-[0.65rem] font-semibold text-fd-primary no-underline hover:bg-fd-primary hover:text-fd-primary-foreground"
+          className="ms-0.5 inline-flex size-4 -translate-y-1 items-center justify-center rounded-full bg-fd-primary/15 align-baseline text-[0.65rem] font-semibold text-fd-primary-text no-underline hover:bg-fd-primary hover:text-fd-primary-foreground"
         >
           {c.n}
         </a>

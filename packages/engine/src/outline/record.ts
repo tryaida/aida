@@ -5,7 +5,9 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { CaptureManifest, ValidationResult } from "../capture/types.js";
 import { readPathCaptures } from "../capture/path-files.js";
-import { loadWalkthroughFile, type Walkthrough } from "../walkthrough/index.js";
+import { loadWalkthroughFile, type Device, type Walkthrough } from "../walkthrough/index.js";
+import { primaryCaptureDir } from "../devices/index.js";
+import { briefPath, loadBrief } from "../brief/consumers.js";
 import { computeDrift, describeDrift, quotedStrings, seenNames, type DriftResult } from "./drift.js";
 import {
   addCard,
@@ -173,7 +175,7 @@ export function walkthroughIds(dir: string): Set<string> {
  * whose walkthrough now exists as written, and writes the outline once.
  */
 export function checkOutline(
-  config: OutlineConfigLike & { buildDir: string },
+  config: OutlineConfigLike & { buildDir: string; devices?: Device[]; brief?: string },
   ids: string[],
   now = new Date(),
 ): { file: string; exists: boolean; cards: CheckedCard[] } {
@@ -183,7 +185,7 @@ export function checkOutline(
 
 function checkLoaded(
   loaded: LoadedOutline,
-  config: OutlineConfigLike & { buildDir: string },
+  config: OutlineConfigLike & { buildDir: string; devices?: Device[]; brief?: string },
   ids: string[],
   now: Date,
 ): { file: string; exists: boolean; cards: CheckedCard[] } {
@@ -191,6 +193,7 @@ function checkLoaded(
   const cards = ids.length > 0 ? ids.map((id) => findCard(loaded.outline, id)!) : loaded.outline.cards;
   const at = now.toISOString();
   const out: CheckedCard[] = [];
+  const brief = loadBrief(briefPath(config));
 
   for (const card of cards) {
     const row = (state: CheckState, cleared: DriftEntry[] = []): CheckedCard => ({ id: card.id, status: card.status, state, drift: card.drift ?? [], cleared });
@@ -207,7 +210,8 @@ function checkLoaded(
       setStatus(loaded.doc, card.id, "written");
       card.status = "written";
     }
-    const captureDir = join(config.buildDir, card.id, "capture");
+    // The primary device's capture (decision 40): what `aida capture`/`build` record drift from.
+    const captureDir = primaryCaptureDir(config, walkthrough, brief);
     const manifest = readJson<CaptureManifest>(join(captureDir, "manifest.json"));
     const validation = readJson<ValidationResult>(join(captureDir, "validation.json"));
     if (!manifest || !validation) {

@@ -8,12 +8,17 @@ import { checkPersonalData, type PiiScanOptions } from './pii.js'
 import { checkSecrets, type SecretScanOptions } from './secrets.js'
 import { checkPlaceholders } from './placeholders.js'
 import { checkVideo, type VideoCheckOptions } from './video.js'
+import { checkAltText, checkPdfAccessibility, checkTranscript } from './a11y.js'
 import { qaCheck, type QaCheckResult } from './types.js'
 
 export type { QaCheckResult } from './types.js'
 
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.webm', '.mkv'])
 const CAPTION_EXTENSIONS = new Set(['.srt', '.vtt'])
+const PDF_EXTENSIONS = new Set(['.pdf'])
+/** `checkAltText` only ever applies to a page's own Markdown, not its captions/html siblings
+ * (also in `READER_FACING_TEXT_EXTENSIONS` below). */
+const MARKDOWN_EXTENSIONS = new Set(['.md', '.mdx'])
 
 // Reader-facing deliverables only — never the engine's own bookkeeping that happens to sit
 // alongside them (a page's `.aida.json` hash sidecar, `.aida-hash-cache.json`,
@@ -41,6 +46,13 @@ export interface RunQaOptions {
   secrets?: SecretScanOptions | false
   /** Raw `{{placeholders}}` in reader-facing text (M35). Default on. */
   placeholders?: false
+  /** Every image in a reader-facing .md/.mdx has non-empty, non-heading-repeating alt text
+   * (M42a). Default on. */
+  altText?: false
+  /** A video found in the target has a non-empty transcript next to it (M42a). Default on. */
+  transcript?: false
+  /** A PDF found in the target is tagged, with /Lang and a Title (M42a). Default on. */
+  pdf?: false
   /** Skip directories by name (e.g. 'node_modules', '.git') when target is a directory. Defaults cover both. */
   skipDirs?: string[]
 }
@@ -78,6 +90,8 @@ export async function runQa(target: string, opts: RunQaOptions = {}): Promise<Qa
   const videoFiles = files.filter((f) => VIDEO_EXTENSIONS.has(extname(f).toLowerCase()))
   const captionFiles = files.filter((f) => CAPTION_EXTENSIONS.has(extname(f).toLowerCase()))
   const textFiles = files.filter((f) => isReaderFacingTextFile(f))
+  const markdownFiles = files.filter((f) => MARKDOWN_EXTENSIONS.has(extname(f).toLowerCase()))
+  const pdfFiles = files.filter((f) => PDF_EXTENSIONS.has(extname(f).toLowerCase()))
 
   if (opts.video !== false) {
     for (const file of videoFiles) {
@@ -117,6 +131,25 @@ export async function runQa(target: string, opts: RunQaOptions = {}): Promise<Qa
     for (const file of textFiles) {
       const content = await readFile(file, 'utf8')
       checks.push(namespaced(checkPlaceholders(content), file, files.length > 1))
+    }
+  }
+
+  if (opts.altText !== false) {
+    for (const file of markdownFiles) {
+      const content = await readFile(file, 'utf8')
+      checks.push(namespaced(checkAltText(content), file, files.length > 1))
+    }
+  }
+
+  if (opts.transcript !== false) {
+    for (const file of videoFiles) {
+      checks.push(namespaced(checkTranscript(file), file, files.length > 1))
+    }
+  }
+
+  if (opts.pdf !== false) {
+    for (const file of pdfFiles) {
+      checks.push(namespaced(await checkPdfAccessibility(file), file, files.length > 1))
     }
   }
 

@@ -7,6 +7,7 @@
 // Blur is per screen across every capture of the task: the main run's and every path's boxes are
 // unioned by route (`taskRouteBlur`), so a screen blurred anywhere is blurred in every video.
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { CaptureManifest } from "../capture/types.js";
 import { readPathCaptures } from "../capture/path-files.js";
@@ -14,6 +15,7 @@ import type { Walkthrough } from "../walkthrough/types.js";
 import { pathWalkthrough } from "../walkthrough/paths.js";
 import { pathBeatId, pathClipText } from "./clip-lines.js";
 import { buildTimeline, mergeRouteBlur, routeBlurFor, type RouteBlur } from "./timeline.js";
+import { buildPathTranscript } from "./transcript.js";
 import type { NarrationBeat, PathClipResult, RenderOptions, Timeline } from "./types.js";
 import type { EncodeContext, EncodeFiles, EncodeResult } from "./index.js";
 
@@ -22,12 +24,21 @@ export interface PathClipFiles {
   srt: string;
   vtt: string;
   timelineJson: string;
+  /** `<id>.path-<pathId>.transcript.md` (M42a) — `buildPathTranscript`'s output. */
+  transcript: string;
 }
 
-/** `<id>.path-<pathId>.mp4` (+ `.srt`, `.vtt`) and its timeline, in the walkthrough's video dir. */
+/** `<id>.path-<pathId>.mp4` (+ `.srt`, `.vtt`, `.transcript.md`) and its timeline, in the
+ * walkthrough's video dir. */
 export function pathClipFiles(videoStepDir: string, id: string, pathId: string): PathClipFiles {
   const base = path.join(videoStepDir, `${id}.path-${pathId}`);
-  return { mp4: `${base}.mp4`, srt: `${base}.srt`, vtt: `${base}.vtt`, timelineJson: path.join(videoStepDir, `path-${pathId}.timeline.json`) };
+  return {
+    mp4: `${base}.mp4`,
+    srt: `${base}.srt`,
+    vtt: `${base}.vtt`,
+    transcript: `${base}.transcript.md`,
+    timelineJson: path.join(videoStepDir, `path-${pathId}.timeline.json`),
+  };
 }
 
 /** True when any path step declares `blur:`. */
@@ -55,7 +66,7 @@ export function taskRouteBlur(wf: Walkthrough, mainManifest: Pick<CaptureManifes
 
 /** Removes a clip's files (an older render for a path that's gone or no longer passes). */
 function removeClip(files: PathClipFiles): void {
-  for (const f of [files.mp4, `${files.mp4}.hash`, files.srt, files.vtt, files.timelineJson]) rmSync(f, { force: true });
+  for (const f of [files.mp4, `${files.mp4}.hash`, files.srt, files.vtt, files.transcript, files.timelineJson]) rmSync(f, { force: true });
 }
 
 /** Clip files in `videoStepDir` for paths the walkthrough no longer has. */
@@ -63,7 +74,7 @@ function pruneOldClips(videoStepDir: string, id: string, keep: Set<string>): voi
   if (!existsSync(videoStepDir)) return;
   const prefix = `${id}.path-`;
   for (const name of readdirSync(videoStepDir)) {
-    const m = name.startsWith(prefix) ? /^(.+?)\.(mp4|mp4\.hash|srt|vtt)$/.exec(name.slice(prefix.length)) : null;
+    const m = name.startsWith(prefix) ? /^(.+?)\.(mp4|mp4\.hash|srt|vtt|transcript\.md)$/.exec(name.slice(prefix.length)) : null;
     const t = /^path-(.+)\.timeline\.json$/.exec(name);
     const pathId = m?.[1] ?? t?.[1];
     if (pathId && !keep.has(pathId)) rmSync(path.join(videoStepDir, name), { force: true });
@@ -151,6 +162,11 @@ export async function renderPathClips(wf: Walkthrough, mainTimeline: Timeline, c
       outro: { title: text.outro.title, say: text.outro.say, recap: [] },
     };
     const n = p.steps.length;
+    // No `frame` here (M43c): a path's clip always renders at `buildTimeline`'s landscape
+    // default, whatever device `wf` renders on — paths are captured on the primary device only
+    // (pipeline.ts), and a portrait clip (a phone-primary walkthrough) is out of this milestone's
+    // scope; the capture's own frames still show at their native (portrait) aspect inside it,
+    // just letterboxed rather than filling a portrait frame.
     const timeline = buildTimeline(clipWt, { ...capture.manifest, steps: opening }, narration, {
       fps: quality.fps,
       frameSrc: (f) => path.join(capture.dir, "frames", f),
@@ -162,6 +178,8 @@ export async function renderPathClips(wf: Walkthrough, mainTimeline: Timeline, c
       clip: { introMinSeconds: 3, facts: [`${n} step${n === 1 ? "" : "s"}`, ...(text.continueAt ? [`then step ${text.continueAt.step}`] : [])] },
     });
     const at = text.continueAt ? mainTimeline.scenes?.find((s) => s.id === text.continueAt!.stepId)?.t0 : undefined;
+    // Cheap (no ffmpeg) — written unconditionally, same as the main video's (M42a).
+    await writeFile(files.transcript, buildPathTranscript(wf, p));
     const encoded = await ctx.encode(timeline, files, {
       options,
       quality,
@@ -176,6 +194,7 @@ export async function renderPathClips(wf: Walkthrough, mainTimeline: Timeline, c
       mp4: files.mp4,
       srt: files.srt,
       vtt: files.vtt,
+      transcript: files.transcript,
       timelineJson: files.timelineJson,
       durationSec: timeline.duration,
       skipped: encoded.skipped,
@@ -191,6 +210,8 @@ export interface PathClipLink {
   src: string;
   vtt?: string;
   srt?: string;
+  /** Site URL of the clip's transcript (M42a; `<id>.path-<pathId>.transcript.md`). */
+  transcript?: string;
   /** The main step the path joins, and where its chapter starts in the main video; absent for a
    * path that runs to its own end. */
   continueAt?: { step: number; title?: string; t?: number };
@@ -233,6 +254,7 @@ export function pathClipLinks(videoDir: string | undefined, wf: Walkthrough): Pa
       src: url(files.mp4),
       ...(existsSync(files.vtt) ? { vtt: url(files.vtt) } : {}),
       ...(existsSync(files.srt) ? { srt: url(files.srt) } : {}),
+      ...(existsSync(files.transcript) ? { transcript: url(files.transcript) } : {}),
       ...(at ? { continueAt: { step: at.step, title: at.title, ...(t !== undefined ? { t: Number(t.toFixed(2)) } : {}) } } : {}),
       ...(mainVideo && at ? { mainVideoAt: t !== undefined ? `${mainVideo}#t=${Number(t.toFixed(2))}` : mainVideo } : {}),
     });

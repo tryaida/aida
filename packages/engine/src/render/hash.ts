@@ -16,6 +16,9 @@ export interface HashSettings {
   crf: number;
   preset: string;
   draft: boolean;
+  /** The mux's audio and caption language tags. Whole-video hash only: the per-scene segments
+   * (segments.ts) don't depend on it, so a language change re-muxes without re-rendering scenes. */
+  lang?: string;
 }
 
 interface FileHashCacheEntry {

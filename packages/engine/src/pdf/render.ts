@@ -17,7 +17,9 @@ export interface PdfChromeBrand {
   name?: string;
   /** Small logo as a data: URL. */
   logoSrc?: string;
-  /** CSS colour for the header rule and page number. */
+  /** CSS colour for the header rule and page number. The page number is real text on a white
+   * page, so callers should pass a text-safe variant (>= 4.5:1), not the raw brand colour
+   * (pdf/build.ts's `chromeBrand`). */
   color?: string;
   /** Font family name (used if installed locally; webfonts don't reach the templates). */
   font?: string;
@@ -83,7 +85,10 @@ export function headerTemplate(title: string, brand?: PdfChromeBrand): string {
 }
 
 export function footerTemplate(title: string, lastChecked?: string, brand?: PdfChromeBrand, pageNumbers = true): string {
-  const color = brand?.color && SAFE_TEMPLATE_VALUE.test(brand.color) ? brand.color : NEUTRAL_COLORS.primary;
+  // The page number is real text on the page's white background (unlike the header's border-only
+  // use of this same brand colour), so its fallback must be the text-safe variant too, not the
+  // raw brand primary — callers normally already pass one (pdf/build.ts's `chromeBrand`).
+  const color = brand?.color && SAFE_TEMPLATE_VALUE.test(brand.color) ? brand.color : NEUTRAL_COLORS.primaryText;
   const checked = lastChecked ? `Last checked ${escapeHtmlAttr(shortDate(lastChecked))}` : escapeHtmlAttr(title);
   const numbers = pageNumbers
     ? `<span><span style="color:${color}; font-weight:700;" class="pageNumber"></span> / <span class="totalPages"></span></span>`
@@ -100,6 +105,11 @@ function pdfOptions(opts: RenderPdfOptions) {
     format: opts.paper,
     printBackground: true,
     omitBackground: opts.transparent ?? false,
+    // Accessible PDF (M42a, decision 39): a structure tree from the page's own headings/lists
+    // (Playwright 1.64+, Chromium's own tagging — see html.ts's heading levels) and a bookmark
+    // outline built from the same headings.
+    tagged: true,
+    outline: true,
     displayHeaderFooter: Boolean(f),
     headerTemplate: f ? headerTemplate(f.title, f.brand) : "<span></span>",
     footerTemplate: f ? footerTemplate(f.title, f.lastChecked, f.brand, f.pageNumbers ?? true) : "<span></span>",

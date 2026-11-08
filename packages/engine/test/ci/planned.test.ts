@@ -113,3 +113,53 @@ describe("runIdFor", () => {
     expect(runIdFor({ ci: true, canReset: true }, { AIDA_RUN_ID: "mine" })).toBe("mine");
   });
 });
+
+describe("captureInPlannedOrder: secondary devices (decision 40)", () => {
+  it("captures phone before the primary, bracketed by resets, and never mid-chain for a walkthrough that changes data", async () => {
+    vi.resetModules();
+    const { dir, buildDir } = project({ "add-session": "leaves: [session-exists]", overbook: "needs: [session-exists]\nleaves: [session-full]", "waitlist-full": "needs: [session-full]" });
+    const calls: { id: string; device?: string; resetBefore?: boolean; runId?: string }[] = [];
+    vi.doMock("../../src/ci/capture.js", () => ({
+      captureWalkthroughForCi: vi.fn(async (file: string, _c: unknown, _u: unknown, planned: { runId?: string; resetBefore?: boolean; device?: string }) => {
+        const id = file.split("/").pop()!.replace(".yaml", "");
+        calls.push({ id, device: planned.device, resetBefore: planned.resetBefore, runId: planned.runId });
+        return { walkthrough: { walkthrough: id }, captureDir: join(buildDir, id, "ci", planned.device ?? "desktop"), ok: true, mainOk: true };
+      }),
+    }));
+    const { captureInPlannedOrder } = await import("../../src/ci/planned.js");
+    const config = {
+      app: { baseUrl: "http://localhost:3000" },
+      configDir: dir,
+      walkthroughsDir: join(dir, "walkthroughs"),
+      outDir: dir,
+      buildDir,
+      devices: ["desktop", "phone"],
+      database: { url: async () => "postgres://127.0.0.1/x", reset: async () => {} },
+    } as unknown as ResolvedConfig;
+    const entries = ["add-session", "overbook", "waitlist-full"].map((id) => ({ id, file: join(dir, "walkthroughs", `${id}.yaml`) }));
+    const outcomes = [];
+    for await (const o of captureInPlannedOrder(config, entries as never, ["waitlist-full"], undefined, { allDevices: true })) outcomes.push(o);
+
+    expect(calls.map((c) => `${c.id}:${c.device}:${c.resetBefore}`)).toEqual([
+      // The chain's start: reset → phone → reset → desktop.
+      "add-session:phone:true",
+      "add-session:desktop:true",
+      // Mid-chain and it changes data (`leaves`): no reset allowed, so no phone capture.
+      "overbook:desktop:false",
+      // Mid-chain but read-only: phone runs without resets, on the run's own id.
+      "waitlist-full:phone:false",
+      "waitlist-full:desktop:false",
+    ]);
+    const [addPhone, addDesktop, , waitPhone, waitDesktop] = calls;
+    expect(addPhone.runId).not.toBe(addDesktop.runId); // bracketed by resets: its own run id
+    expect(waitPhone.runId).toBe(waitDesktop.runId);
+    const overbook = outcomes.find((o) => o.id === "overbook")!;
+    const phone = overbook.secondary?.find((s) => s.device === "phone");
+    expect(phone?.result.ok).toBe(false);
+    expect(phone?.result.notCaptured).toMatch(/needs a database reset between devices/);
+    const validation = JSON.parse(readFileSync(join(buildDir, "overbook", "ci", "phone", "capture", "validation.json"), "utf8"));
+    expect(validation).toMatchObject({ ok: false, notCaptured: expect.stringMatching(/needs a database reset between devices/) });
+    // A phone not captured never fails the walkthrough itself.
+    expect(overbook.captured?.ok).toBe(true);
+  });
+});

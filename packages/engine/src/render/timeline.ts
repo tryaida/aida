@@ -99,6 +99,23 @@ export interface BuildTimelineOptions {
   /** Share of the screen that differs between two capture frames (by file name), or undefined
    * when unknown. With it, a small in-place change cuts instead of crossfading (M36). */
   frameChange?: (from: string, to: string) => number | undefined;
+  /** The output frame's pixel size (M43c, decision 40). Default `{ w: 1920, h: 1080 }` (today's
+   * landscape) — pass `{ w: 1080, h: 1920 }` for a phone walkthrough's own video. Drives
+   * `stageFor`'s branch (landscape math is untouched byte-for-byte at the default), the pointer
+   * (a touch tap circle on a portrait frame, an arrow cursor on landscape) and whether a
+   * browser-chrome bar can show (never on portrait, however the style preset is configured). */
+  frame?: { w: number; h: number };
+  /** Whole-walkthrough step numbers (M43, decision 40) for a device-filtered walkthrough:
+   * `numbers[i]` is step i's 1-based position in the unfiltered walkthrough, `total` its step
+   * count — so a phone video's chips, chapters and highlight badges say "Step 3 of 3" where the
+   * page and screenshots do. Default: position in `written.steps` (identity). */
+  stepNumbering?: StepNumbering;
+}
+
+/** See `BuildTimelineOptions.stepNumbering`. */
+export interface StepNumbering {
+  numbers: number[];
+  total: number;
 }
 
 /**
@@ -170,13 +187,52 @@ export const STYLE_MOTION: Record<Style, { zoom: number; dy: number; d: number; 
   bold: { zoom: 1.3, dy: 40, d: 0.7, gap: 0.25, chrome: 38 },
 };
 
-/** The stage rectangle: the 16:9 screenshot area inside the 1920x1080 frame, under an optional
- * browser bar, above the caption band. */
-function stageFor(chrome: number): Timeline["stage"] {
-  const top = 24 + chrome;
-  const h = 931.5 - chrome;
-  const w = (h * 16) / 9;
-  return { x: Number(((1920 - w) / 2).toFixed(2)), y: top, w: Number(w.toFixed(2)), h };
+const DEFAULT_FRAME = { w: 1920, h: 1080 };
+
+/** True once the frame is taller than it is wide — a phone video (M43c), never the 1920x1080
+ * default (or any other landscape custom frame, should one ever exist). */
+function isPortrait(frame: { w: number; h: number }): boolean {
+  return frame.h > frame.w;
+}
+
+/** The stage + caption-band rectangles inside the output frame, under an optional browser bar
+ * (landscape only — M43c never draws one on a portrait frame, however the style preset sets
+ * `chrome`). Landscape math is exactly the original (byte-identical at the default 1920x1080
+ * frame: unchanged 16:9 screenshot area, caption band at its long-standing `y: 970, h: 100`).
+ * Portrait fits the capture viewport's own aspect ratio into a big centred rounded "phone" area
+ * with side/top margins, the band stacked below it in its own safe zone that never overlaps the
+ * screen — see decision 40 and M43c's survey notes on player.css/player.js. */
+function stageFor(chrome: number, frame: { w: number; h: number }, viewport: { w: number; h: number }): { stage: Timeline["stage"]; band: NonNullable<Timeline["band"]> } {
+  if (!isPortrait(frame)) {
+    const top = 24 + chrome;
+    const h = 931.5 - chrome;
+    const w = (h * 16) / 9;
+    const stage = { x: Number(((frame.w - w) / 2).toFixed(2)), y: top, w: Number(w.toFixed(2)), h };
+    const band = { x: stage.x, y: 970, w: stage.w, h: 100 };
+    return { stage, band };
+  }
+  const side = 56;
+  const top = 64;
+  const bottom = 56;
+  const bandH = 280;
+  const bandY = frame.h - bottom - bandH;
+  const availW = frame.w - side * 2;
+  const availH = bandY - top;
+  const aspect = viewport.w / viewport.h;
+  let w = Math.min(availW, availH * aspect);
+  let h = w / aspect;
+  if (h > availH) {
+    h = availH;
+    w = h * aspect;
+  }
+  const stage = {
+    x: Number(((frame.w - w) / 2).toFixed(2)),
+    y: Number((top + (availH - h) / 2).toFixed(2)),
+    w: Number(w.toFixed(2)),
+    h: Number(h.toFixed(2)),
+  };
+  const band = { x: side, y: bandY, w: frame.w - side * 2, h: bandH };
+  return { stage, band };
 }
 
 /** `office-staff` -> `Office staff`; a phrase is kept as written. */
@@ -414,15 +470,27 @@ export function buildTimeline(
   const gapSeconds = wf.voice?.gapSeconds ?? 0.45;
   const style: Style = opts.brand?.style ?? "bold";
   const motion = STYLE_MOTION[style];
-  const stepCount = wf.steps.length;
+  const stepCount = opts.stepNumbering?.total ?? wf.steps.length;
+  const stepNo = (si: number): number => opts.stepNumbering?.numbers[si] ?? si + 1;
   const reader = readerLabel(wf.for);
   const site = siteLabel(opts.brand?.siteUrl);
+  const frame = opts.frame ?? DEFAULT_FRAME;
+  const portrait = isPortrait(frame);
+  // No fake browser chrome on a phone frame, however the style preset sets `chrome` (M43c): a
+  // phone screen sits in a plain rounded "phone" frame, not a desktop browser window.
+  const chrome = portrait ? 0 : motion.chrome;
+  const { stage, band } = stageFor(chrome, frame, { w: VW, h: VH });
 
   const tl: Timeline = {
     fps: FPS,
     viewport: { w: VW, h: VH },
-    stage: stageFor(motion.chrome),
-    chrome: motion.chrome,
+    // Left unset at the landscape default (same pattern as `cards`/`scenes` elsewhere in this
+    // file): player.js/state.ts fall back to exactly this frame/band/pointer, so a desktop
+    // timeline's JSON — and its content hash — stays as close to byte-identical as adding M43c's
+    // portrait support at all allows.
+    ...(portrait ? { frame, band, pointer: "touch" as const } : {}),
+    stage,
+    chrome,
     fade: T.fade,
     brand: timelineBrand(opts.brand, wf.product),
     intro: {
@@ -444,7 +512,10 @@ export function buildTimeline(
     captions: [],
     chips: [],
     audio: [],
-    cursorStart: { x: 900, y: 470 },
+    // Landscape keeps the original fixed resting point exactly, whatever the capture viewport
+    // (byte-identical to every pre-M43c render); portrait has no equivalent to preserve, so it
+    // gets one proportional to its own (much narrower) viewport instead.
+    cursorStart: portrait ? { x: Math.round(VW / 2), y: Math.round(VH * 0.56) } : { x: 900, y: 470 },
     stageIn: { t0: 0, t1: 0 },
     stageOut: { t0: 0, t1: 0 },
     duration: 0,
@@ -579,11 +650,11 @@ export function buildTimeline(
     tl.chips.push({
       t0: stepStart,
       t1: 0,
-      num: String(si + 1),
+      num: String(stepNo(si)),
       eyebrow:
         tl.chapters.length > 1
           ? `Part ${tl.chapters.indexOf(chapterOf[si]) + 1} · ${chapterOf[si]}`
-          : `Step ${si + 1} of ${stepCount}`,
+          : `Step ${stepNo(si)} of ${stepCount}`,
       title: step.title ?? "",
     });
 
@@ -636,7 +707,7 @@ export function buildTimeline(
           // it's on screen long enough to read, not just for the instant before the click.
           const hiStart = moveStart !== undefined ? Math.min(moveStart, t) : t;
           closeHi(hiStart);
-          hiOpen = { t0: hiStart, t1: Infinity, box: e.box, num: si + 1 };
+          hiOpen = { t0: hiStart, t1: Infinity, box: e.box, num: stepNo(si) };
           tl.highlights.push(hiOpen);
           // Push in as the pointer sets off toward the target, and hold through the click; the
           // next step's own camera move eases back out (or a page change does, above).
@@ -715,7 +786,9 @@ export function buildTimeline(
   // A screenshot of the app beside the title on the cards (minimal, bold) — only when no step
   // declares blur at all (resolved or not): the cards show raw frames, with no mosaic over them.
   const declaresBlur = Boolean(opts.blurDeclaredElsewhere) || wf.steps.some((st) => (st.blur?.length ?? 0) > 0);
-  const hero = style !== "friendly" && !declaresBlur && blurWindows.length === 0 && tl.frames.length > 0;
+  // No hero on a portrait card (M43c): the layout's absolute positions (`.hero`'s `right:-150px`
+  // etc, player.css) are a landscape-card layout; a portrait card stays plain instead.
+  const hero = !portrait && style !== "friendly" && !declaresBlur && blurWindows.length === 0 && tl.frames.length > 0;
   tl.cards = cardReveals(style, tl.stageOut.t0, tl.outro.recap.length, hero);
 
   // Keep captions from overlapping.

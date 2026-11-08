@@ -79,8 +79,11 @@ export async function runPdfCommand(opts: RunPdfOptions, json: boolean): Promise
         continue;
       }
       try {
-        const input = pdfInputFromPage(wf, page);
-        const result = await buildWalkthroughPdf(input, { pdfDir, paper, brand, force: opts.force, siteUrl: config.publish?.siteUrl }, browser);
+        // `lang: config.lang` on both the input and the options, exactly like the build
+        // (build/pipeline.ts) — standalone `aida pdf` would otherwise always tag the PDF "en"
+        // and, worse, cache-key it differently than a build-produced PDF for the same walkthrough.
+        const input = { ...pdfInputFromPage(wf, page), lang: config.lang };
+        const result = await buildWalkthroughPdf(input, { pdfDir, paper, brand, force: opts.force, siteUrl: config.publish?.siteUrl, lang: config.lang }, browser);
         if (!result.excluded) {
           setPdfFrontmatter(page.indexFile, pdfPublicLinks(wf.walkthrough));
         }
@@ -105,10 +108,10 @@ export async function runPdfCommand(opts: RunPdfOptions, json: boolean): Promise
       .map((f) => {
         const wf = loadWalkthroughFile(f);
         const page = readPageCache(config.buildDir, wf.walkthrough);
-        return page ? pdfInputFromPage(wf, page) : undefined;
+        return page ? { ...pdfInputFromPage(wf, page), lang: config.lang } : undefined;
       })
       .filter((i): i is NonNullable<typeof i> => Boolean(i));
-    const manual = await buildManualPdf(allInputs, { pdfDir, paper, brand, force: opts.force, siteUrl: config.publish?.siteUrl }, browser);
+    const manual = await buildManualPdf(allInputs, { pdfDir, paper, brand, force: opts.force, siteUrl: config.publish?.siteUrl, lang: config.lang }, browser);
 
     const ok = results.every((r) => !r.error);
     const output: RunPdfResult = { ok, walkthroughs: results, manual };

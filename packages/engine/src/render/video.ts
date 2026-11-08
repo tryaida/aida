@@ -27,12 +27,18 @@ async function openBrowser(): Promise<import("playwright").Browser> {
   return chromium.launch();
 }
 
+/** Default output frame: desktop's long-standing 1920x1080 landscape canvas (M43c: a phone
+ * walkthrough's own render passes its portrait `Timeline.frame`, `{ w: 1080, h: 1920 }`,
+ * instead — see player.css/player.js, which lay out against this same size). */
+const DEFAULT_FRAME = { width: 1920, height: 1080 };
+
 async function openPage(
   browser: import("playwright").Browser,
   bundleDir: string,
   deviceScaleFactor = 1,
+  frame: { width: number; height: number } = DEFAULT_FRAME,
 ): Promise<import("playwright").Page> {
-  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor });
+  const page = await browser.newPage({ viewport: frame, deviceScaleFactor });
   page.on("pageerror", (e) => console.error("[render]", e.message));
   // `path.resolve` (not a bare join): a relative `bundleDir` — e.g. `aida render -o dist/videos`
   // run from a project dir, rather than through build/pipeline.ts, which always resolves outDir
@@ -57,10 +63,11 @@ async function withPage<T>(
   bundleDir: string,
   fn: (page: import("playwright").Page) => Promise<T>,
   deviceScaleFactor = 1,
+  frame?: { width: number; height: number },
 ): Promise<T> {
   const browser = await openBrowser();
   try {
-    const page = await openPage(browser, bundleDir, deviceScaleFactor);
+    const page = await openPage(browser, bundleDir, deviceScaleFactor, frame);
     return await fn(page);
   } finally {
     await browser.close();
@@ -68,18 +75,23 @@ async function withPage<T>(
 }
 
 /** Renders PNG stills at the given instants (seconds) into `<bundleDir>/stills/`. */
-export async function renderStills(bundleDir: string, instants: number[]): Promise<string[]> {
+export async function renderStills(bundleDir: string, instants: number[], frame?: { width: number; height: number }): Promise<string[]> {
   const outDir = path.join(bundleDir, "stills");
   await mkdir(outDir, { recursive: true });
   const files: string[] = [];
-  await withPage(bundleDir, async (page) => {
-    for (const s of instants) {
-      await page.evaluate((t) => (window as any).renderAt(t), s);
-      const file = path.join(outDir, `t${s.toFixed(2)}.png`);
-      await page.screenshot({ path: file });
-      files.push(file);
-    }
-  });
+  await withPage(
+    bundleDir,
+    async (page) => {
+      for (const s of instants) {
+        await page.evaluate((t) => (window as any).renderAt(t), s);
+        const file = path.join(outDir, `t${s.toFixed(2)}.png`);
+        await page.screenshot({ path: file });
+        files.push(file);
+      }
+    },
+    1,
+    frame,
+  );
   return files;
 }
 
@@ -216,6 +228,7 @@ export async function renderFrames(
 
   const started = Date.now();
   let framesSkipped = 0;
+  const frameSize = timeline.frame ? { width: timeline.frame.w, height: timeline.frame.h } : undefined;
   try {
     await withPage(
       bundleDir,
@@ -227,6 +240,7 @@ export async function renderFrames(
         ff.stdin!.end();
       },
       quality.deviceScaleFactor,
+      frameSize,
     );
     await ffDone;
   } catch (err) {
@@ -303,11 +317,12 @@ export async function openRenderBrowser(
   bundleDir: string,
   deviceScaleFactor: number,
   pageCount: number,
+  frame?: { width: number; height: number },
 ): Promise<{ pages: import("playwright").Page[]; close: () => Promise<void> }> {
   const browser = await openBrowser();
   try {
     const pages = await Promise.all(
-      Array.from({ length: pageCount }, () => openPage(browser, bundleDir, deviceScaleFactor)),
+      Array.from({ length: pageCount }, () => openPage(browser, bundleDir, deviceScaleFactor, frame)),
     );
     return { pages, close: () => browser.close() };
   } catch (err) {
@@ -335,8 +350,57 @@ export async function concatSegments(segmentFiles: string[], outFile: string, ff
   }
 }
 
-/** Muxes the silent video with the narration track, +faststart, titled from `title`. */
-export async function muxVideo(silentVideo: string, narrationTrack: string, outFile: string, title: string, ffmpeg: string): Promise<void> {
+/** BCP-47 primary language subtag (`en`, `en-GB`) -> ISO 639-2 (`eng`), the three-letter form
+ * ffmpeg's `language` metadata takes. Covers the languages aida's own voice providers document;
+ * an unrecognised subtag maps to `und` ("undetermined") rather than a guess ffmpeg would accept
+ * and mislabel. */
+const ISO_639_2: Record<string, string> = {
+  en: "eng",
+  es: "spa",
+  fr: "fra",
+  de: "deu",
+  it: "ita",
+  pt: "por",
+  nl: "nld",
+  sv: "swe",
+  da: "dan",
+  no: "nor",
+  fi: "fin",
+  pl: "pol",
+  cs: "ces",
+  ja: "jpn",
+  ko: "kor",
+  zh: "zho",
+  ar: "ara",
+  ru: "rus",
+  tr: "tur",
+  hi: "hin",
+};
+
+export function iso6392(lang: string | undefined): string {
+  const primary = (lang ?? "en").split(/[-_]/)[0]!.toLowerCase();
+  return ISO_639_2[primary] ?? "und";
+}
+
+export interface MuxOptions {
+  /** config.lang (BCP-47); tags the muxed audio stream's language. Default "en". */
+  lang?: string;
+  /** A `.vtt`/`.srt` captions file to embed as a soft `mov_text` subtitle track, same language
+   * as the audio — not forced (a player never auto-displays it over the video; the captions are
+   * already burned into the frames). mp4's own "track enabled" disposition bit is set on every
+   * track regardless, same as the video/audio tracks — that's a container requirement, not a
+   * "shown by default" signal. */
+  captionsFile?: string;
+}
+
+/** Muxes the silent video with the narration track, +faststart, titled from `title`, the audio
+ * stream tagged with `opts.lang`'s ISO 639-2 code. When `opts.captionsFile` is given, a second
+ * ffmpeg pass (stream copy, no re-encode — fast) adds it as a soft `mov_text` subtitle track: a
+ * separate pass, not folded into the first mux's `-shortest`, so a captions file whose last cue
+ * ends before the video's own last frame (a closing hold with no speech) can never truncate the
+ * video to the subtitle track's shorter duration. */
+export async function muxVideo(silentVideo: string, narrationTrack: string, outFile: string, title: string, ffmpeg: string, opts: MuxOptions = {}): Promise<void> {
+  const language = iso6392(opts.lang);
   await execFileAsync(ffmpeg, [
     "-y",
     "-v",
@@ -358,6 +422,46 @@ export async function muxVideo(silentVideo: string, narrationTrack: string, outF
     "+faststart",
     "-metadata",
     `title=${title}`,
+    "-metadata:s:a:0",
+    `language=${language}`,
     outFile,
   ]);
+  if (opts.captionsFile) await addSubtitleTrack(outFile, opts.captionsFile, language, ffmpeg);
+}
+
+/** Remuxes `file` in place with `captionsFile` added as a `mov_text` subtitle track — a plain
+ * stream copy of everything already in `file` (no `-shortest`: see `muxVideo`'s doc comment),
+ * not forced (see `MuxOptions.captionsFile`'s doc comment). */
+async function addSubtitleTrack(file: string, captionsFile: string, language: string, ffmpeg: string): Promise<void> {
+  const tmp = `${file}.tmp.mp4`;
+  try {
+    await execFileAsync(ffmpeg, [
+      "-y",
+      "-v",
+      "error",
+      "-i",
+      file,
+      "-i",
+      captionsFile,
+      "-map",
+      "0",
+      "-map",
+      "1:s",
+      "-c",
+      "copy",
+      "-c:s",
+      "mov_text",
+      "-movflags",
+      "+faststart",
+      "-metadata:s:s:0",
+      `language=${language}`,
+      "-disposition:s:0",
+      "0",
+      tmp,
+    ]);
+    await rename(tmp, file);
+  } catch (err) {
+    await rm(tmp, { force: true });
+    throw err;
+  }
 }

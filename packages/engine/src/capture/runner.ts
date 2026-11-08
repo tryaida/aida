@@ -4,12 +4,13 @@ import { chromium } from "playwright";
 import type { Browser, BrowserContext, ElementHandle, Locator, Page } from "playwright";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { Action, Persona, Step, Target, Walkthrough } from "../walkthrough/index.js";
+import type { Action, Device, Persona, Step, Target, Walkthrough } from "../walkthrough/index.js";
 import { newRunId, personaRole, resolveTemplatesDeep, withRunValues } from "../walkthrough/index.js";
 import { checkLeftStates, needsPreparation, prepareWalkthrough, preparationWrites, WalkthroughSetupError } from "../states/prepare.js";
 import type { PrepareOptions, PrepareReport } from "../states/prepare.js";
 import type { ResolvedConfig } from "../config/types.js";
 import { DEFAULT_CAPTURE_LOCALE, DEFAULT_CAPTURE_TIMEZONE, resolveCaptureSettings } from "../config/types.js";
+import { deviceSettings } from "../devices/index.js";
 import { boxOf, center, locate } from "./locate.js";
 import { waitForText } from "./text-check.js";
 import { paint, settle, smoothScrollTo } from "./settle.js";
@@ -62,7 +63,8 @@ export interface CaptureOptions {
   log?: (...args: unknown[]) => void;
   /**
    * Stop once the step with this id has passed (`aida inspect --after`): no later step runs,
-   * and the end-of-run database checks and left-state checks are skipped.
+   * and the end-of-run database checks and left-state checks are skipped. A step this run's
+   * `device` skips (`devices:`) is refused up front: the run would never reach it.
    */
   stopAfterStep?: string;
   /** Called with the live page once `stopAfterStep` passed, before the browser closes. */
@@ -81,6 +83,12 @@ export interface CaptureOptions {
   /** Default true. False opens a visible browser window (`aida record`, where a person clicks
    * through the app in the page `onStopped` hands over). */
   headless?: boolean;
+  /**
+   * Which device to capture as (decision 40, M43a). Default `"desktop"` — today's behaviour
+   * unchanged. `"phone"` captures with a touch, mobile-user-agent context (config `phone`, see
+   * `devices/index.ts` `deviceSettings`) and skips any step whose `devices:` excludes it.
+   */
+  device?: Device;
 }
 
 export interface CaptureRunResult {
@@ -159,8 +167,12 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
   }
   const baseOrigin = new URL(baseUrl).origin;
 
-  const viewport = walkthrough.start?.viewport ?? config.viewport ?? { width: 1440, height: 810 };
-  const deviceScaleFactor = walkthrough.start?.deviceScaleFactor ?? config.deviceScaleFactor ?? 2;
+  const device: Device = opts.device ?? "desktop";
+  const settings = deviceSettings(device, walkthrough, config);
+  const { viewport, deviceScaleFactor } = settings;
+  // Steps a device-only `devices:` excludes don't run (or count) for this capture — a device
+  // list that skips some steps must not look like a short run.
+  const applicableSteps = walkthrough.steps.filter((s) => !s.devices || s.devices.includes(device));
   // A long value (a UUID, say) used to pay one screenshot per character — 6 steps took 255 s.
   const maxTypeMs = resolveCaptureSettings(config.capture).maxTypeMs;
 
@@ -175,6 +187,12 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
   if (opts.stopAfterStep && !walkthrough.steps.some((s) => s.id === opts.stopAfterStep)) {
     const ids = walkthrough.steps.map((s) => s.id).filter(Boolean);
     throw new Error(`no step "${opts.stopAfterStep}" in walkthrough ${walkthrough.walkthrough} (steps: ${ids.join(", ") || "none with an id"})`);
+  }
+  // A step this device skips (`devices:`) would never be reached, so the run would never stop:
+  // refuse it up front rather than stopping somewhere else.
+  const stopStep = opts.stopAfterStep ? walkthrough.steps.find((s) => s.id === opts.stopAfterStep) : undefined;
+  if (stopStep && !applicableSteps.includes(stopStep)) {
+    throw new Error(`step "${stopStep.id}" doesn't run on ${device} (devices: ${(stopStep.devices ?? []).join(", ")}); pick a step that does, or capture another device`);
   }
   const waitCap = (ms: number): number => Math.min(ms, opts.maxWaitMs ?? ms);
 
@@ -199,6 +217,11 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
       // Most real apps' CSS/JS honour this, which keeps captures still —
       // crisper frames, fewer flaky mid-animation screenshots.
       reducedMotion: config.reducedMotion ?? "reduce",
+      // Phone (decision 40): a touch, mobile context, so the app's own responsive/touch code
+      // paths run — a state hook's own context (states/prepare.ts, which reuses this object)
+      // gets the same emulation, not just the main recording context.
+      ...(settings.isMobile ? { isMobile: true, hasTouch: true } : {}),
+      ...(settings.userAgent ? { userAgent: settings.userAgent } : {}),
     };
     context = await browser.newContext({
       ...contextOptions,
@@ -312,6 +335,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
       baseUrl,
       viewport,
       deviceScaleFactor,
+      device,
       steps: [],
     };
     const results: StepResult[] = [];
@@ -347,6 +371,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
       personaFor: opts.personaFor,
       sessionDir: opts.storageStatePath ? dirname(opts.storageStatePath) : undefined,
       contextOptions,
+      device,
       log,
     };
     let setupReport: PrepareReport | undefined;
@@ -356,7 +381,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
       } catch (err) {
         if (!(err instanceof WalkthroughSetupError)) throw err;
         log("  SETUP FAILED:", redactErrorMessage(err.message));
-        return setupFailureResult(walkthrough, baseUrl, viewport, deviceScaleFactor, capturedAt, runStarted, framesDir, record ? opts.outDir : undefined, page.url(), err);
+        return setupFailureResult(walkthrough, baseUrl, viewport, deviceScaleFactor, device, capturedAt, runStarted, framesDir, record ? opts.outDir : undefined, page.url(), err);
       }
       await page.bringToFront();
       await gotoReady(page, baseUrl + startPath, 120_000);
@@ -383,13 +408,21 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
     // first click means the app redirected away from the start page.
     watch.reset();
     watch.navigated(startPath);
-    const firstFrame = await shot("state", walkthrough.steps[0]?.mask);
+    const firstFrame = await shot("state", applicableSteps[0]?.mask);
     let stopped = false;
     let failureTarget: Target | undefined;
+    let firstFramePushed = false;
 
     for (const [si, step] of walkthrough.steps.entries()) {
+      // A step this device's `devices:` excludes (M43a) never runs, isn't filmed and doesn't
+      // count towards this capture's step total — `applicableSteps`/`stepIndex` keep later
+      // stages able to line this device's steps up against another's.
+      if (step.devices && !step.devices.includes(device)) continue;
       const events: CaptureEvent[] & { cameraBox?: ManifestStep["cameraBox"] } = [];
-      if (si === 0) events.push({ type: "frame", image: firstFrame, transition: "cut" });
+      if (!firstFramePushed) {
+        events.push({ type: "frame", image: firstFrame, transition: "cut" });
+        firstFramePushed = true;
+      }
       const stepResult: StepResult = { id: step.id, title: step.title, checks: [], ok: true, ms: 0 };
       const started = Date.now();
       log(`step ${si + 1}/${walkthrough.steps.length}: ${step.id ?? step.title ?? si}`);
@@ -431,6 +464,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
             seen,
             mail,
             emailValues,
+            touch: settings.hasTouch,
           });
           progress.lastOk = { index: ai + 1, do: acts[ai].do };
         }
@@ -494,6 +528,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
       results.push(stepResult);
       manifest.steps.push({
         id: step.id,
+        stepIndex: si,
         camera: step.camera ?? "full",
         cameraBox: events.cameraBox ?? null,
         events: events.filter(Boolean),
@@ -551,7 +586,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
       }
     }
 
-    const allStepsOk = results.length === walkthrough.steps.length && results.every((r) => r.ok);
+    const allStepsOk = results.length === applicableSteps.length && results.every((r) => r.ok);
     // Only a capture that worked is expected to have left its states.
     const warnings = allStepsOk && !opts.stopAfterStep && dbChecks.every((c) => c.ok) ? await checkLeftStates(prepareOpts) : [];
     for (const w of warnings) log("  warning:", w);
@@ -612,6 +647,7 @@ function setupFailureResult(
   baseUrl: string,
   viewport: { width: number; height: number },
   deviceScaleFactor: number,
+  device: Device,
   capturedAt: string,
   runStarted: number,
   framesDir: string,
@@ -628,7 +664,7 @@ function setupFailureResult(
   });
   if (outDir) writeFileSync(join(outDir, "failure.json"), `${JSON.stringify(failure, null, 2)}\n`);
   return {
-    manifest: { workflow: walkthrough.walkthrough, baseUrl, viewport, deviceScaleFactor, steps: [] },
+    manifest: { workflow: walkthrough.walkthrough, baseUrl, viewport, deviceScaleFactor, device, steps: [] },
     run: { capturedAt, durationMs: Date.now() - runStarted },
     validation: {
       workflow: walkthrough.walkthrough,
@@ -696,6 +732,10 @@ interface RunActionArgs {
   mail?: MailCatcher;
   /** Values `showEmail` `remember` read out of emails this run, for `{{inbox.<key>}}`. */
   emailValues: Record<string, string>;
+  /** True on a touch device (phone, decision 40): click taps instead of clicking, there's no
+   * mouse to hover with (so `hover` actions fail with a clear message), and the pre-action
+   * pointer frame skips the real mouse-move "settle" a hover has no equivalent for. */
+  touch: boolean;
 }
 
 /** `action` with `{{inbox.<key>}}` filled in where a value is used: typed text, a goto path, an
@@ -863,8 +903,13 @@ async function runAction(args: RunActionArgs): Promise<number> {
     watch,
     waitCap,
     seen,
+    touch,
   } = args;
   const viewportWidth = page.viewportSize()?.width ?? 1440;
+  // Point/click placement is tuned against a 1440px-wide desktop viewport (320/140 below); on a
+  // touch device scale the same proportions to the real viewport instead of reusing those
+  // desktop pixel constants as-is (M43a) — unchanged (scale 1) at the 1440 desktop default.
+  const placementScale = touch ? viewportWidth / 1440 : 1;
 
   // Writes must never land on a page that has drifted off-origin (an
   // off-origin redirect somewhere upstream of this action, including one a
@@ -947,15 +992,23 @@ async function runAction(args: RunActionArgs): Promise<number> {
     case "point":
     case "hover":
     case "click": {
+      // There's no mouse to hover with on a touch device — fail with a clear, fixable message
+      // (mark the step desktop-only) rather than silently doing nothing or faking a hover.
+      if (a.do === "hover" && touch) {
+        throw new Error(
+          "hover: this step is running on a touch device (phone), which has no mouse to hover with — " +
+            "give the step `devices: [desktop]` so it only runs there, or replace the hover with a tap/click",
+        );
+      }
       await smoothScrollTo(page, a.target, events, shot, { margin: a.do === "click" ? 60 : 24 }, step.mask);
       const loc = await locate(a.target, page);
       await loc.waitFor({ state: "visible" });
       seen.push(await accessibleName(loc));
       const box = await boxOf(a.target, page);
       const pt = center(box);
-      if (a.do === "click" && a.target.label) pt.x = Math.round(box.x + Math.min(box.w * 0.3, 140));
+      if (a.do === "click" && a.target.label) pt.x = Math.round(box.x + Math.min(box.w * 0.3, 140 * placementScale));
       if (a.do === "point") {
-        if (box.w <= 320) {
+        if (box.w <= 320 * placementScale) {
           pt.x = box.x + box.w + 10;
           pt.y = Math.round(box.y + box.h * 0.55);
         } else {
@@ -964,8 +1017,13 @@ async function runAction(args: RunActionArgs): Promise<number> {
         }
         pt.x = Math.min(pt.x, viewportWidth - 24);
       }
-      await page.mouse.move(pt.x, pt.y, { steps: 4 });
-      await page.waitForTimeout(160);
+      // No real mouse on a touch device: skip the synthetic move-and-settle (there's no hover
+      // state for it to settle into), but still paint and capture the pre-action pointer frame —
+      // it's what shows where the finger is about to land.
+      if (!touch) {
+        await page.mouse.move(pt.x, pt.y, { steps: 4 });
+        await page.waitForTimeout(160);
+      }
       await paint(page);
       events.push({ type: "move", to: pt });
       events.push({ type: "frame", image: await shot("hover", step.mask), transition: "cut" });
@@ -982,6 +1040,7 @@ async function runAction(args: RunActionArgs): Promise<number> {
       if (a.do === "hover") {
         // The pointer already rests on it; Playwright's own hover makes sure the element got it
         // (scrolled, unobscured), then whatever opens on hover (a menu, a tooltip) is shown.
+        // (Touch devices never reach here — see the refusal above.)
         await loc.hover({ position: { x: pt.x - box.x, y: pt.y - box.y } });
         await settle(page);
         events.push({ type: "frame", image: await shot("state", step.mask), transition: "cut" }, { type: "hold", seconds: 0.6 });
@@ -990,7 +1049,9 @@ async function runAction(args: RunActionArgs): Promise<number> {
       }
       events.push({ type: "click", at: pt });
       await watch.beforeClick();
-      await loc.click({ position: { x: pt.x - box.x, y: pt.y - box.y } });
+      // A touch device has no mouse to click with — tap, the way a finger actually would.
+      if (touch) await loc.tap({ position: { x: pt.x - box.x, y: pt.y - box.y } });
+      else await loc.click({ position: { x: pt.x - box.x, y: pt.y - box.y } });
       pushCheck(stepResult, { click: a.target, ok: true });
 
       // A click may navigate: whatever was highlighted at click time (`hb` above) belongs to the
@@ -1066,9 +1127,11 @@ async function runAction(args: RunActionArgs): Promise<number> {
       seen.push(await accessibleName(loc));
       const box = await boxOf(a.target, page);
       const pt = center(box);
-      if (a.target.label) pt.x = Math.round(box.x + Math.min(box.w * 0.3, 140));
-      await page.mouse.move(pt.x, pt.y, { steps: 4 });
-      await page.waitForTimeout(160);
+      if (a.target.label) pt.x = Math.round(box.x + Math.min(box.w * 0.3, 140 * placementScale));
+      if (!touch) {
+        await page.mouse.move(pt.x, pt.y, { steps: 4 });
+        await page.waitForTimeout(160);
+      }
       await paint(page);
       events.push({ type: "move", to: pt });
       events.push({ type: "frame", image: await shot("hover", step.mask), transition: "cut" });
@@ -1088,7 +1151,8 @@ async function runAction(args: RunActionArgs): Promise<number> {
           await loc.selectOption(a.option);
         }
       } else {
-        await loc.click({ position: { x: pt.x - box.x, y: pt.y - box.y } });
+        if (touch) await loc.tap({ position: { x: pt.x - box.x, y: pt.y - box.y } });
+        else await loc.click({ position: { x: pt.x - box.x, y: pt.y - box.y } });
         // Captured before the option click: the trigger's own accessible name/text is expected to
         // change to the picked option, so a fresh `getByRole(..., { name: oldName })` re-lookup
         // afterwards would (correctly) stop matching — see `comboboxShowsOption`.
@@ -1096,7 +1160,8 @@ async function runAction(args: RunActionArgs): Promise<number> {
         const listbox = await resolveComboboxListbox(loc, page);
         const optionLoc = listbox.getByRole("option", { name: a.option, exact: true });
         await optionLoc.waitFor({ state: "visible", timeout: waitCap(10_000) });
-        await optionLoc.click();
+        if (touch) await optionLoc.tap();
+        else await optionLoc.click();
         const confirmed = triggerHandle ? await comboboxShowsOption(triggerHandle, a.option) : false;
         if (!confirmed) {
           throw new Error(

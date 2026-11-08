@@ -1,9 +1,12 @@
 // Builds the generated blocks (see markers.ts) for one page: frontmatter, intro, "before you
 // start", the numbered steps (with their screenshot), "good to know", and the last-checked line.
-import type { Walkthrough, Step } from "../walkthrough/index.js";
+import type { Device, Walkthrough, Step } from "../walkthrough/index.js";
 import { personaRole } from "../walkthrough/persona.js";
 import { stepInstruction } from "../walkthrough/describe.js";
 import type { AidaConfig } from "../config/types.js";
+import type { ManifestStep } from "../capture/types.js";
+import { stepAltText } from "./alt-text.js";
+import { deviceShotsAttr } from "./device-shots.js";
 import { FRONTMATTER_KEY, type GeneratedBlock } from "./markers.js";
 
 /** config `roles`: role id -> what readers call it. See `AidaConfig.roles`. */
@@ -36,6 +39,10 @@ export interface PageFrontmatter {
   lastChecked?: string;
   passed: boolean;
   links?: FrontmatterLinks;
+  /** Every device this walkthrough is shown on, primary first (decision 40, M43b) — unset or a
+   * single device omits the field (desktop-only, same as a page built before M43b); the help
+   * app's guide header shows a `<DeviceSwitch>` when there's more than one (lib/source.ts). */
+  devices?: Device[];
 }
 
 function yamlString(s: string): string {
@@ -65,6 +72,7 @@ export function buildFrontmatterBlock(fm: PageFrontmatter): GeneratedBlock {
   if (fm.steps !== undefined) lines.push(`steps: ${fm.steps}`);
   if (fm.lastChecked) lines.push(`lastChecked: ${yamlString(fm.lastChecked)}`);
   lines.push(`passed: ${fm.passed}`);
+  if (fm.devices && fm.devices.length > 1) lines.push(`devices: [${fm.devices.join(", ")}]`);
   if (fm.links?.video) lines.push(`video: ${yamlString(fm.links.video)}`);
   if (fm.links?.srt) lines.push(`srt: ${yamlString(fm.links.srt)}`);
   if (fm.links?.vtt) lines.push(`vtt: ${yamlString(fm.links.vtt)}`);
@@ -177,9 +185,42 @@ export function stepBlockKey(step: Step, stepNumber: number): string {
   return step.id ? `step-${step.id}` : `step-${stepNumber}`;
 }
 
+/** A secondary device's screenshot for one step (M43b, decision 40): `device` says whose screen
+ * it is (for alt text and the `<DeviceShots>` wrapper), `file` is where it was rendered (relative
+ * to the page, same as `StepStatus.screenshot`). */
+export interface DeviceShot {
+  device: Device;
+  file: string;
+}
+
+/** A step's device info for `buildStepBlock`/`buildPathStepBlock` (M43b, decision 40): the
+ * reader-facing note when the step only happens on some of the walkthrough's devices, any other
+ * device's screenshot for this step (the primary's own is `status.screenshot`), and every device
+ * the walkthrough shows, primary first (for the `<DeviceShots devices="…">` attribute). */
+export interface StepDeviceInfo {
+  note?: string;
+  secondary?: DeviceShot[];
+  devices?: Device[];
+}
+
 /** `data` fills `{{placeholders}}` in the words a step without `page_text`/`caption` gets from its
- * actions ("Press **Enter**."; walkthrough/describe.ts). */
-export function buildStepBlock(step: Step, stepNumber: number, status: StepStatus, data?: Record<string, unknown>): GeneratedBlock {
+ * actions ("Press **Enter**."; walkthrough/describe.ts). `mStep` is this step's manifest entry
+ * (`doc.image`'s own step), when there is capture data for it — `stepAltText` reads its `seen`/
+ * `targets` for a better screen guess; absent is fine, the alt still describes the step.
+ *
+ * `deviceInfo` (M43b): when the step only happens on some devices, a short note ("*On a phone
+ * only.*"); when more than one device has a shot for this step, both are wrapped in
+ * `<DeviceShots>` so the help app's device switch can show either (mdx.tsx) — PDF, search and
+ * llms.txt read past the wrapper to the primary's plain `![alt](file)` image (pdf/input.ts).
+ */
+export function buildStepBlock(
+  step: Step,
+  stepNumber: number,
+  status: StepStatus,
+  data?: Record<string, unknown>,
+  mStep?: Pick<ManifestStep, "seen" | "targets">,
+  deviceInfo?: StepDeviceInfo,
+): GeneratedBlock {
   const rawTitle = step.title ?? step.id ?? `Step ${stepNumber}`;
   const title = escapeMdxText(rawTitle);
   const text = escapeMdxText(stepInstruction(step, data));
@@ -188,10 +229,25 @@ export function buildStepBlock(step: Step, stepNumber: number, status: StepStatu
     lines.push(`> **Not verified.** ${status.problem ?? "this step did not pass the last capture."}`, "");
   }
   if (text) lines.push(text, "");
-  if (status.screenshot) {
+  if (deviceInfo?.note) lines.push(`*${escapeMdxText(deviceInfo.note)}*`, "");
+  const secondary = deviceInfo?.secondary ?? [];
+  if (status.screenshot && secondary.length > 0) {
     // The image alt text is rendered inside `![...]()`, not as free MDX body text, but still
-    // goes through the same MDX parser — escape it too rather than special-case it as safe.
-    lines.push(`![${title}](${status.screenshot})`);
+    // goes through the same MDX parser — escape it too rather than special-case it as safe
+    // (same escaping `title` already gets, above).
+    const alt = escapeMdxText(stepAltText(step, stepNumber, mStep, data));
+    const devices = deviceInfo?.devices ?? ["desktop" as Device, ...secondary.map((s) => s.device)];
+    lines.push(`<DeviceShots devices="${deviceShotsAttr(devices)}">`, "", `![${alt}](${status.screenshot})`, "");
+    for (const s of secondary) lines.push(`![${escapeMdxText(stepAltText(step, stepNumber, mStep, data, s.device))}](${s.file})`, "");
+    lines.push(`</DeviceShots>`);
+  } else if (status.screenshot) {
+    const alt = escapeMdxText(stepAltText(step, stepNumber, mStep, data));
+    lines.push(`![${alt}](${status.screenshot})`);
+  } else if (secondary.length > 0) {
+    // The step isn't run on the primary device at all (`devices:` excludes it) — the other
+    // device's shot is the only one there is, shown plainly, not wrapped.
+    const s = secondary[0];
+    lines.push(`![${escapeMdxText(stepAltText(step, stepNumber, mStep, data, s.device))}](${s.file})`);
   }
   return { key: stepBlockKey(step, stepNumber), content: lines.join("\n").trimEnd() };
 }
@@ -230,8 +286,16 @@ export function buildPathBlock(
 }
 
 /** One opening step of a path: the same block as a main step, keyed under the path. */
-export function buildPathStepBlock(pathId: string, step: Step, stepNumber: number, status: StepStatus, data?: Record<string, unknown>): GeneratedBlock {
-  const block = buildStepBlock(step, stepNumber, status, data);
+export function buildPathStepBlock(
+  pathId: string,
+  step: Step,
+  stepNumber: number,
+  status: StepStatus,
+  data?: Record<string, unknown>,
+  mStep?: Pick<ManifestStep, "seen" | "targets">,
+  deviceInfo?: StepDeviceInfo,
+): GeneratedBlock {
+  const block = buildStepBlock(step, stepNumber, status, data, mStep, deviceInfo);
   return { ...block, key: `path-${pathId}-${stepBlockKey(step, stepNumber)}` };
 }
 
@@ -256,6 +320,9 @@ export interface PathClipEmbed {
   src: string;
   vtt?: string;
   srt?: string;
+  /** The clip's transcript (M42a; render/clips.ts `pathClipLinks`) — the help app's `VideoEmbed`
+   * shows it next to the player. */
+  transcript?: string;
   /** Absent for a path that runs to its own end. */
   continueAt?: { step: number; title?: string; t?: number };
   mainVideoAt?: string;
@@ -270,7 +337,9 @@ function clock(seconds: number): string {
  * path's crops instead. */
 export function buildPathClipBlock(path: { id: string; title: string }, clip: PathClipEmbed): GeneratedBlock {
   const attr = (name: string, value: string | undefined) => (value ? ` ${name}={${JSON.stringify(value)}}` : "");
-  const lines = [`<VideoEmbed${attr("src", clip.src)}${attr("vtt", clip.vtt)}${attr("srt", clip.srt)}${attr("title", path.title)} />`];
+  const lines = [
+    `<VideoEmbed${attr("src", clip.src)}${attr("vtt", clip.vtt)}${attr("srt", clip.srt)}${attr("transcript", clip.transcript)}${attr("title", path.title)} />`,
+  ];
   if (clip.mainVideoAt && clip.continueAt) {
     const at = clip.continueAt.t !== undefined ? ` (${clock(clip.continueAt.t)})` : "";
     lines.push("", `Watch the rest from [step ${clip.continueAt.step} in the main video${at}](${clip.mainVideoAt}).`);

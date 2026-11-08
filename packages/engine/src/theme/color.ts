@@ -229,6 +229,21 @@ export function isGrayish(value: string): boolean {
   return Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b) < 0.08;
 }
 
+/**
+ * A plain linear-channel sRGB mix of `a` and `b` (`t` = how much of `b`, 0..1) — the video
+ * player used to do this on the CSS side with `color-mix()`, which can't be contrast-checked at
+ * build time; render/brand.ts's `videoTextColors` does it here instead, in a value a test can
+ * assert a ratio against. Returns `a` unparsed when either colour can't be read.
+ */
+export function mixColors(a: string, b: string, t: number): string {
+  const ca = parseColor(a);
+  const cb = parseColor(b);
+  if (!ca || !cb) return toCssColor(a);
+  const amount = clamp01(t);
+  const ch = (x: number, y: number) => Math.round(clamp01(x + (y - x) * amount) * 255);
+  return `rgb(${ch(ca.r, cb.r)} ${ch(ca.g, cb.g)} ${ch(ca.b, cb.b)})`;
+}
+
 /** Same colour (within rounding) — or the same normalised string when either can't be parsed. */
 export function sameColor(a: string, b: string): boolean {
   const ca = parseColor(a);
@@ -261,6 +276,47 @@ export function readableForeground(background: string): string {
 export function isReadable(fg: string, bg: string, min = 4.5): boolean {
   const ratio = contrastRatio(fg, bg);
   return ratio === undefined || ratio >= min;
+}
+
+/**
+ * A version of `value` that reaches `min` contrast (default 4.5:1, WCAG AA for text) against
+ * every colour in `backgrounds`, for when a brand colour doubles as *text* (a link, an active
+ * nav item, a citation) rather than a fill — a fill only needs its own paired foreground to be
+ * readable (see `foregroundOn` in theme/write.ts), but text drawn in the brand colour itself has
+ * to contrast with whatever it sits on. Nudges HSL lightness — darker when the backgrounds are
+ * mostly light, lighter when they're mostly dark — keeping hue and saturation, so the colour
+ * still reads as "the brand colour", just usable as text. Already-readable colours pass through
+ * unchanged (only normalised via `toCssColor`). Unparseable colours (`var()`, `color-mix()`) are
+ * returned as-is: there's nothing to nudge without knowing the resolved value.
+ */
+export function textSafeVariant(value: string, backgrounds: string | string[], min = 4.5): string {
+  const css = toCssColor(value);
+  const c = parseColor(css);
+  const bgs = (Array.isArray(backgrounds) ? backgrounds : [backgrounds]).map(parseColor).filter((b): b is Rgba => !!b);
+  if (!c || bgs.length === 0) return css;
+
+  const worstRatio = (fg: Rgba) => Math.min(...bgs.map((bg) => contrastRatio(fg, bg)!));
+  if (worstRatio(c) >= min) return css;
+
+  const hsl = rgbToHsl(c);
+  const avgLum = bgs.reduce((sum, bg) => sum + relativeLuminance(bg), 0) / bgs.length;
+  const darker = avgLum > 0.18; // mostly-light backgrounds need darker text, and vice versa
+  let best = css;
+  let bestRatio = worstRatio(c);
+  for (let step = 1; step <= 100; step++) {
+    const l = hsl.l + (darker ? -step : step);
+    if (l < 0 || l > 100) break;
+    // Check the *rounded* colour `formatHsl` would actually return — rounding s/l can nudge a
+    // borderline ratio back under `min`, so the candidate tested has to be the candidate kept.
+    const candidate = formatHsl({ h: hsl.h, s: hsl.s, l });
+    const ratio = worstRatio(parseColor(candidate)!);
+    if (ratio > bestRatio) {
+      bestRatio = ratio;
+      best = candidate;
+    }
+    if (ratio >= min) return candidate;
+  }
+  return best;
 }
 
 /**

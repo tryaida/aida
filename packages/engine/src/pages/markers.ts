@@ -41,7 +41,7 @@ export const FRONTMATTER_KEY = "frontmatter";
  * last time a human touched the frontmatter. Keys not in this set (title, for, and anything a
  * person adds) are treated as human-editable, same as any other block.
  */
-const FRONTMATTER_ENGINE_KEYS = new Set(["walkthrough", "steps", "lastChecked", "passed", "video", "srt", "vtt"]);
+const FRONTMATTER_ENGINE_KEYS = new Set(["walkthrough", "steps", "lastChecked", "passed", "video", "srt", "vtt", "devices"]);
 
 /**
  * Frontmatter keys another stage patches in after the page is built (`pdf`/`pdfCard`, written by

@@ -1,5 +1,5 @@
 import type { Page, BrowserContext, APIRequestContext } from "playwright";
-import type { Persona, Viewport } from "../walkthrough/index.js";
+import type { Device, Persona, Viewport } from "../walkthrough/index.js";
 import type { PronunciationMap } from "../voice/types.js";
 
 /** Context passed to a sign-in adapter: everything it needs to establish a session. */
@@ -162,6 +162,21 @@ export interface CaptureSettings {
 
 /** `CaptureSettings` with every default filled in (`apiOrigins` stays optional). */
 export type ResolvedCaptureSettings = Required<Omit<CaptureSettings, "apiOrigins">> & Pick<CaptureSettings, "apiOrigins">;
+
+/**
+ * Phone capture settings (decision 40): the viewport, pixel density and user agent the phone
+ * capture context (and its `devices: [..., "phone"]` captures) uses. Unset fields fall back to
+ * `DEFAULT_PHONE_SETTINGS` — see there for why those particular defaults. Chromium only (aida
+ * pins Playwright's bundled Chromium, decision 14): there's no WebKit/Safari user agent to offer.
+ */
+export interface PhoneConfig {
+  viewport?: Viewport;
+  deviceScaleFactor?: number;
+  userAgent?: string;
+}
+
+/** `PhoneConfig` with every default filled in. */
+export type ResolvedPhoneSettings = Required<PhoneConfig>;
 
 /**
  * `aida publish --to <host>` settings (src/publish/**; docs/scope.md "Runs on Node, deploys
@@ -434,6 +449,14 @@ export interface AidaConfig {
   viewport?: Viewport;
   deviceScaleFactor?: number;
   /**
+   * Devices every walkthrough is captured and shown on by default (decision 40), first =
+   * primary. A walkthrough's own `devices` wins over this; with neither set, the brief's readers
+   * decide (`devices/index.ts` `devicesFor()`), falling back to `["desktop"]`.
+   */
+  devices?: Device[];
+  /** Phone capture settings, used when a walkthrough captures on `"phone"`; see `PhoneConfig`. */
+  phone?: PhoneConfig;
+  /**
    * A local mail catcher for capture: the app's outgoing email (pointed at 127.0.0.1:`port` in
    * its own SMTP settings) is caught in memory, never sent, and `showEmail` actions show it.
    */
@@ -468,6 +491,9 @@ export interface AidaConfig {
   budget?: BudgetConfig;
   /** Who the help site is written for, e.g. ["office-staff", "judges"]. Site-copy only. */
   readers?: string[];
+  /** The language readers read the help in, as a BCP 47 tag (`en`, `en-GB`). Default
+   * `DEFAULT_LANG` ("en"): the help site's `<html lang>`, PDF language, caption tracks, transcripts. */
+  lang?: string;
   /**
    * What readers call each sign-in role. Keys are the role ids walkthroughs use in
    * `start.signed_in_as` / `start.persona.role`; values are the words pages, PDFs and procedures
@@ -557,6 +583,28 @@ export const DEFAULT_CAPTURE_SETTINGS: Required<Omit<CaptureSettings, "apiOrigin
   maxTypeMs: 1500,
 };
 
+/** Fills in defaults for any settings `config.phone` left unset — use at capture call sites
+ * instead of reading `config.phone` directly (same pattern as `resolveCaptureSettings`). */
+export function resolvePhoneSettings(phone: PhoneConfig | undefined): ResolvedPhoneSettings {
+  return {
+    viewport: phone?.viewport ?? DEFAULT_PHONE_SETTINGS.viewport,
+    deviceScaleFactor: phone?.deviceScaleFactor ?? DEFAULT_PHONE_SETTINGS.deviceScaleFactor,
+    userAgent: phone?.userAgent ?? DEFAULT_PHONE_SETTINGS.userAgent,
+  };
+}
+
+/**
+ * A common Android phone in Chromium: Playwright's own bundled `devices["Pixel 7"]` descriptor
+ * (412x839 viewport, DPR 2.625, isMobile/hasTouch, and a user agent that always matches the
+ * Chromium build Playwright actually launches — picking a hand-written UA risked drifting out of
+ * step with it). Chromium only (decision 14): there's no WebKit/Safari phone to emulate.
+ */
+export const DEFAULT_PHONE_SETTINGS: ResolvedPhoneSettings = {
+  viewport: { width: 412, height: 839 },
+  deviceScaleFactor: 2.625,
+  userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.4 Mobile Safari/537.36",
+};
+
 export const DEFAULT_MODEL_TIERS: Required<ModelTiers> = {
   fast: "claude-haiku-4-5",
   standard: "claude-sonnet-5",
@@ -565,5 +613,7 @@ export const DEFAULT_MODEL_TIERS: Required<ModelTiers> = {
 
 /** The capture browser's locale when the config sets none. */
 export const DEFAULT_CAPTURE_LOCALE = "en-US";
+/** The help's language when `lang` is unset. */
+export const DEFAULT_LANG = "en";
 /** The capture browser's time zone when the config sets none. */
 export const DEFAULT_CAPTURE_TIMEZONE = "UTC";

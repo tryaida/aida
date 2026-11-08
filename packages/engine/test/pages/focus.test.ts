@@ -7,6 +7,7 @@ import {
   CROP_CLASSES,
   CROP_REFINE,
   FOCUS_CROP,
+  FOCUS_CROP_PHONE,
   FRAME_DIFF,
   appearedRegion,
   cropClassFor,
@@ -456,5 +457,68 @@ describe("crop class review fixes (M36)", () => {
     expect(centred.x).toBeLessThan(700);
     expect(c.x <= 495 || c.x >= 700).toBe(true);
     expect(c.x + c.w).toBeGreaterThanOrEqual(t.x + t.w);
+  });
+});
+
+// M43b (decision 40): a phone-sized (portrait) viewport crops vertically with context, never
+// sideways like the desktop rules (FOCUS_CROP) — those would give a crop wider than the whole
+// phone screen is ever going to be.
+describe("focusCrop (phone/portrait viewport)", () => {
+  const PHONE = { width: 412, height: 839 };
+
+  it("keeps the full screen width (minus a small margin) and crops vertically around the target", () => {
+    const target = { x: 150, y: 600, w: 120, h: 40 };
+    const crop = focusCrop([target], PHONE)!;
+    expect(crop).toBeDefined();
+    expect(crop.w).toBe(PHONE.width - FOCUS_CROP_PHONE.sideMargin * 2);
+    expect(crop.x).toBe(FOCUS_CROP_PHONE.sideMargin);
+    expect(crop.y).toBeLessThanOrEqual(target.y);
+    expect(crop.y + crop.h).toBeGreaterThanOrEqual(target.y + target.h);
+  });
+
+  it("is never shorter than minHeightShare of the screen", () => {
+    const crop = focusCrop([{ x: 150, y: 400, w: 40, h: 20 }], PHONE)!;
+    // `focusCrop` returns whole pixels (`Math.round`), so allow for rounding down by at most 1px.
+    expect(crop.h).toBeGreaterThanOrEqual(Math.floor(PHONE.height * FOCUS_CROP_PHONE.minHeightShare));
+  });
+
+  it("grows taller for a target that needs more context, capped at the screen height", () => {
+    const crop = focusCrop([{ x: 150, y: 100, w: 40, h: 700 }], PHONE)!;
+    expect(crop.h).toBeLessThanOrEqual(PHONE.height);
+  });
+
+  it("returns nothing with no target, same as the desktop rule", () => {
+    expect(focusCrop([], PHONE)).toBeUndefined();
+  });
+
+  it("a landscape viewport still uses the desktop rule (never the phone one)", () => {
+    const crop = focusCrop([{ x: 700, y: 400, w: 100, h: 30 }], VIEWPORT)!;
+    expect(crop.w).toBe(FOCUS_CROP.minWidth);
+  });
+});
+
+describe("planStepFigures aligns by stepIndex, not array position (M43b)", () => {
+  it("a device-only step missing from this device's manifest doesn't shift later steps' numbers", () => {
+    // Walkthrough has 3 steps; this device (e.g. desktop) skipped step 2 (a phone-only step), so
+    // its manifest has only 2 entries, stepIndex 0 and 2.
+    const manifest: Pick<CaptureManifest, "steps"> = {
+      steps: [
+        step({ stepIndex: 0, events: [{ type: "frame", image: "01.png", transition: "cut" }], doc: { image: "01.png", highlights: [] } }),
+        step({ stepIndex: 2, events: [{ type: "frame", image: "03.png", transition: "cut" }], doc: { image: "03.png", highlights: [] } }),
+      ],
+    };
+    const plans = planStepFigures(wf([{}, {}, {}]), manifest);
+    expect(plans.map((p) => p.step)).toEqual([1, 3]);
+  });
+
+  it("falls back to array position when no manifest step carries stepIndex (pre-M43a manifest)", () => {
+    const manifest: Pick<CaptureManifest, "steps"> = {
+      steps: [
+        step({ events: [{ type: "frame", image: "01.png", transition: "cut" }], doc: { image: "01.png", highlights: [] } }),
+        step({ events: [{ type: "frame", image: "02.png", transition: "cut" }], doc: { image: "02.png", highlights: [] } }),
+      ],
+    };
+    const plans = planStepFigures(wf([{}, {}]), manifest);
+    expect(plans.map((p) => p.step)).toEqual([1, 2]);
   });
 });

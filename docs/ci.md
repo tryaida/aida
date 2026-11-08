@@ -18,7 +18,9 @@ Three jobs:
 
 - **`aida-ci`** (every PR push): maps the diff to affected walkthroughs (`aida affected`),
   re-captures them, diffs the new screenshots against what's already published, and posts/updates
-  one PR comment. Each affected walkthrough is tiered:
+  one PR comment. A walkthrough also captured on a phone (decision 40) is still diffed on its
+  primary device alone — the screenshot diff never compares phone screenshots; `aida-publish`
+  (below) is what keeps those current. Each affected walkthrough is tiered:
   - **cosmetic** — capture passed, whether or not the screenshot moved. The comment says it needs
     no action; it refreshes and publishes automatically once the PR merges.
   - **broken** — a step's locator or a check failed. The comment shows the trimmed failure and
@@ -40,9 +42,11 @@ Three jobs:
 - **`aida-prune-previews`** (PR closed, same repo only): removes that PR's folder from the
   `aida-previews` branch the screenshot diffs were pushed to.
 
-- **`aida-publish`** (push to `main` — a merged PR): re-captures whatever that push affected and
-  republishes the refreshed screenshots/pages straight into the help app's `content/docs/`/
-  `public/`, then commits with the workflow's own `GITHUB_TOKEN`. No video render here — that's a
+- **`aida-publish`** (push to `main` — a merged PR): re-captures whatever that push affected —
+  every device it's shown on, not just the primary, so a walkthrough's phone screenshots stay
+  current too (decision 40) — and republishes the refreshed screenshots/pages straight into the
+  help app's `content/docs/`/`public/`, then commits with the workflow's own `GITHUB_TOKEN`. No
+  video render here — that's a
   `aida build` concern, run locally or in its own job, not a CI concern (decisions #22: "CI does
   deterministic work only"). This is the "cosmetic... publishes on merge" half of the three-tier
   design; nobody is asked, because nothing semantic changed.

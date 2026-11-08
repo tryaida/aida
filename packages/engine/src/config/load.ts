@@ -125,6 +125,7 @@ export async function loadConfig(configPath: string): Promise<ResolvedConfig> {
 async function resolveConfig(config: AidaConfig, configDir: string): Promise<ResolvedConfig> {
   if (!config.app?.baseUrl) throw new Error("config.app.baseUrl is required");
   if (!config.walkthroughsDir) throw new Error("config.walkthroughsDir is required");
+  checkDevices(config.devices);
 
   const signIn = config.signIn ? await resolveSignIn(config.signIn, configDir) : undefined;
   const signInHash = config.signIn ? signInFingerprint(config.signIn, configDir) : undefined;
@@ -153,6 +154,23 @@ async function resolveConfig(config: AidaConfig, configDir: string): Promise<Res
     database,
     states,
   };
+}
+
+/** `config.devices` (decision 40): a non-empty list of known devices, each once — the first is
+ * the primary, so a typo or a repeat would silently change which screenshots keep plain names. */
+export function checkDevices(devices: unknown): void {
+  if (devices === undefined) return;
+  const known = ["desktop", "phone"];
+  if (!Array.isArray(devices) || devices.length === 0) {
+    throw new Error(`config.devices must be a non-empty list of ${known.map((d) => `"${d}"`).join(" or ")} (the first is the primary device)`);
+  }
+  for (const d of devices) {
+    if (typeof d !== "string" || !known.includes(d)) {
+      throw new Error(`config.devices: unknown device ${JSON.stringify(d)} (use ${known.map((k) => `"${k}"`).join(" or ")})`);
+    }
+  }
+  const repeated = devices.find((d, i) => devices.indexOf(d) !== i);
+  if (repeated !== undefined) throw new Error(`config.devices lists "${repeated}" more than once`);
 }
 
 /** The sign-in adapter's identity for the saved-session key: its module file's content plus the

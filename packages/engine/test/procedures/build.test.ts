@@ -125,6 +125,26 @@ describe("buildProcedure", () => {
     expect(readFileSync(publicScreenshot)).not.toEqual(TINY_PNG);
   });
 
+  it("removes step screenshots an earlier build published that the procedure no longer lists", () => {
+    const captureDir = tmpDir("aida-proc-capture-");
+    const publicDir = tmpDir("aida-proc-public-");
+    const pagesDir = tmpDir("aida-proc-pages-");
+    writeCapture(captureDir);
+    writePagesScreenshots(pagesDir, "add-competitor", 2);
+    const shots = join(publicDir, "screenshots", "add-competitor");
+    mkdirSync(join(shots, "paths"), { recursive: true });
+    for (const stale of ["step-03.png", "phone-step-02.png", "paths/old-step-01.png"]) writeFileSync(join(shots, stale), TINY_PNG);
+    writeFileSync(join(shots, "phone-poster-step-02.png"), TINY_PNG); // index-stage's, not ours
+
+    buildProcedure(walkthrough(), captureDir, { publicDir, pagesDir });
+    expect(existsSync(join(shots, "step-01.png"))).toBe(true);
+    expect(existsSync(join(shots, "step-02.png"))).toBe(true);
+    expect(existsSync(join(shots, "step-03.png"))).toBe(false);
+    expect(existsSync(join(shots, "phone-step-02.png"))).toBe(false);
+    expect(existsSync(join(shots, "paths", "old-step-01.png"))).toBe(false);
+    expect(existsSync(join(shots, "phone-poster-step-02.png"))).toBe(true);
+  });
+
   it("keeps start.role the role id and puts the reader's name for it in start.roleName (M26)", () => {
     const captureDir = tmpDir("aida-proc-capture-");
     writeCapture(captureDir);
@@ -154,6 +174,96 @@ describe("buildProcedure", () => {
     writeCapture(captureDir, { ok: false });
     const proc = buildProcedure(walkthrough(), captureDir, { publicDir: tmpDir("aida-proc-public-") });
     expect(proc).toBeUndefined();
+  });
+
+  // M43b (decision 40): a step also captured on a phone gets its own `phoneScreenshot` URL,
+  // staged from the page's own `screenshots/phone-step-NN.png` (never a raw capture frame).
+  it("adds phoneScreenshot when the page rendered one, and omits it for a step that has none", () => {
+    const captureDir = tmpDir("aida-proc-capture-");
+    const publicDir = tmpDir("aida-proc-public-");
+    const pagesDir = tmpDir("aida-proc-pages-");
+    writeCapture(captureDir);
+    writePagesScreenshots(pagesDir, "add-competitor", 2);
+    // Only step 1 has a phone shot (e.g. step 2 is desktop-only, or the phone capture stopped there).
+    mkdirSync(join(pagesDir, "add-competitor", "screenshots"), { recursive: true });
+    writeFileSync(join(pagesDir, "add-competitor", "screenshots", "phone-step-01.png"), BLURRED_PNG);
+
+    const proc = buildProcedure(walkthrough(), captureDir, { publicDir, pagesDir });
+    expect(proc!.steps[0].phoneScreenshot).toBe("/screenshots/add-competitor/phone-step-01.png");
+    expect(existsSync(join(publicDir, "screenshots", "add-competitor", "phone-step-01.png"))).toBe(true);
+    expect(proc!.steps[1].phoneScreenshot).toBeUndefined();
+  });
+
+  it("aligns steps by stepIndex, not array position, when a device-only step is absent from the manifest", () => {
+    const captureDir = tmpDir("aida-proc-capture-");
+    mkdirSync(join(captureDir, "frames"), { recursive: true });
+    writeFileSync(join(captureDir, "frames", "s1.png"), TINY_PNG);
+    writeFileSync(join(captureDir, "frames", "s3.png"), TINY_PNG);
+    // 3-step walkthrough; this device's manifest skipped the middle (device-only) step — its two
+    // entries carry stepIndex 0 and 2, not array positions 0 and 1.
+    const manifest: CaptureManifest = {
+      workflow: "add-competitor",
+      baseUrl: "http://127.0.0.1:3100",
+      viewport: { width: 1440, height: 810 },
+      deviceScaleFactor: 2,
+      steps: [
+        { id: "open", stepIndex: 0, camera: "full", cameraBox: null, events: [], doc: { image: "s1.png", highlights: [] }, impact: { urls: [], requests: [] }, checks: [] },
+        { id: "end", stepIndex: 2, camera: "full", cameraBox: null, events: [], doc: { image: "s3.png", highlights: [] }, impact: { urls: [], requests: [] }, checks: [] },
+      ],
+    };
+    writeFileSync(join(captureDir, "manifest.json"), JSON.stringify(manifest));
+    const validation: ValidationResult = {
+      workflow: "add-competitor",
+      ranAt: "2026-10-20T00:00:05.000Z",
+      baseUrl: "http://127.0.0.1:3100",
+      ok: true,
+      steps: [
+        { id: "open", title: "Open", checks: [], ok: true, ms: 1 },
+        { id: "end", title: "End", checks: [], ok: true, ms: 1 },
+      ],
+      dbChecks: [],
+      problems: { console: [], page: [], server: [] },
+    };
+    writeFileSync(join(captureDir, "validation.json"), JSON.stringify(validation));
+
+    const wf: Walkthrough = {
+      walkthrough: "add-competitor",
+      title: "Add a competitor",
+      steps: [
+        { id: "open", title: "Open", page_text: "Open it.", actions: [] },
+        { id: "middle", title: "Phone-only step", page_text: "Tap the menu.", actions: [], devices: ["phone"] },
+        { id: "end", title: "End", page_text: "Finish.", actions: [] },
+      ],
+    };
+    const proc = buildProcedure(wf, captureDir, { publicDir: tmpDir("aida-proc-public-") });
+    expect(proc).toBeDefined();
+    // The last step is really walkthrough step 3 ("End"), not array position 1 ("Phone-only step").
+    expect(proc!.steps.map((s) => s.n)).toEqual([1, 3]);
+    expect(proc!.steps[1]).toMatchObject({ n: 3, title: "End" });
+
+    // With the page's phone screenshot for it, the phone-only step is listed too: phone shot
+    // only, and which devices it happens on.
+    const pagesDir = tmpDir("aida-proc-pages-");
+    const publicDir = tmpDir("aida-proc-public-");
+    writePagesScreenshots(pagesDir, "add-competitor", 3);
+    writeFileSync(join(pagesDir, "add-competitor", "screenshots", "phone-step-02.png"), BLURRED_PNG);
+    const withPhone = buildProcedure(wf, captureDir, { publicDir, pagesDir });
+    expect(withPhone!.steps.map((s) => s.n)).toEqual([1, 2, 3]);
+    expect(withPhone!.steps[1]).toEqual({
+      n: 2,
+      title: "Phone-only step",
+      instruction: "Tap the menu.",
+      phoneScreenshot: "/screenshots/add-competitor/phone-step-02.png",
+      devices: ["phone"],
+    });
+  });
+
+  it("returns undefined when the capture says it wasn't captured", () => {
+    const captureDir = tmpDir("aida-proc-capture-");
+    writeCapture(captureDir);
+    const validation = JSON.parse(readFileSync(join(captureDir, "validation.json"), "utf8"));
+    writeFileSync(join(captureDir, "validation.json"), JSON.stringify({ ...validation, notCaptured: "blocked" }));
+    expect(buildProcedure(walkthrough(), captureDir, { publicDir: tmpDir("aida-proc-public-") })).toBeUndefined();
   });
 });
 

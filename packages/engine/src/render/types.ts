@@ -121,7 +121,30 @@ export interface TimelineBrand {
   /** True when `logoSrc` came from `logoDark` (made for dark backgrounds); otherwise the player
    * puts a light logo on a light tile if it would be too dark to read on the night canvas. */
   logoForDark?: boolean;
-  colors?: { primary: string; accent: string; primaryForeground?: string; background?: string; foreground?: string };
+  colors?: {
+    primary: string;
+    accent: string;
+    primaryForeground?: string;
+    background?: string;
+    foreground?: string;
+    /** `primary` used as text in the player (minimal's chip number, friendly's eyebrow) —
+     * render/brand.ts's `timelineBrand` prefers `videoTextColors`' style-specific value (checked
+     * against `paper`/`chip`, the actual surfaces) over the artifact-wide `primaryText`, which is
+     * only checked against `background`. */
+    primaryText?: string;
+    /** Caption/chip/title colours (render/brand.ts's `videoTextColors`, decision 39): the dark
+     * canvas (bold) or light one (minimal/friendly), and the text colours already verified
+     * >= 4.5:1 against it, so player.css paints these rather than deriving them with
+     * `color-mix()`. */
+    night?: string;
+    night2?: string;
+    paper?: string;
+    /** Friendly's caption chip background, already verified safe for `ink` on top of it. */
+    chip?: string;
+    ink?: string;
+    ink2?: string;
+    ink3?: string;
+  };
   font?: string;
   headingFont?: string;
   /** https stylesheet the player loads (capped wait) before the first frame. */
@@ -141,7 +164,20 @@ export interface TimelineBrand {
 export interface Timeline {
   fps: number;
   viewport: { w: number; h: number };
+  /** The output frame's pixel size (M43c). Desktop is exactly `{ w: 1920, h: 1080 }` (unset ->
+   * player.js/video.ts fall back to that, so an older timeline plays exactly as before); a phone
+   * walkthrough's own video is portrait `{ w: 1080, h: 1920 }` (`devices/index.ts`'s
+   * `DEFAULT_PHONE_SETTINGS` reader, not `viewport` — `viewport` stays the *capture* size). */
+  frame?: { w: number; h: number };
   stage: { x: number; y: number; w: number; h: number };
+  /** Caption/chip band rectangle (M43c). Unset -> player.css's own fixed desktop position (its
+   * long-standing `top: 970px; height: 100px`, left/width still read from `stage` as before) —
+   * so an older (desktop) timeline renders pixel-identically without this field. `buildTimeline`
+   * always sets it from M43c on, landscape included, with those exact numbers. */
+  band?: { x: number; y: number; w: number; h: number };
+  /** "mouse" (an arrow cursor, the default) or "touch" (a soft tap circle — M43c, phone videos):
+   * which pointer player.js draws. Unset -> "mouse", so an older timeline is unaffected. */
+  pointer?: "mouse" | "touch";
   fade: number;
   brand: TimelineBrand;
   intro: {
@@ -241,6 +277,26 @@ export interface RenderOptions {
   /** Push the camera in toward each step's target (M34). Default true; steps with their own
    * `camera: { focus }` keep it. */
   zoomToTarget?: boolean;
+  /** config.lang (BCP-47, e.g. "en"), for the mp4's audio/subtitle stream language tags (M42a).
+   * Default "en". */
+  lang?: string;
+  /** Which device this render is for (M43c, decision 40) — picks the output frame (desktop:
+   * 1920x1080 landscape; phone: 1080x1920 portrait), the pointer (mouse vs. a touch tap circle)
+   * and whether a browser-chrome bar can show at all (never on phone). Default "desktop". */
+  device?: import("../walkthrough/types.js").Device;
+  /** Appended before the extension on every output file: `""` (default, today's plain
+   * `<id>.mp4`) for a walkthrough's primary device; `".phone"` for a secondary phone video
+   * (`<id>.phone.mp4` + `.phone.srt`/`.phone.vtt`/`.phone.chapters.vtt`/`.phone.transcript.md`). */
+  fileSuffix?: string;
+  /** Render each walkthrough path's short clip too (decision 34/37). Default true; the pipeline
+   * sets this false for a secondary device's render — paths are captured on the primary device
+   * only (pipeline.ts), so there's nothing of this device's own to clip. */
+  pathClips?: boolean;
+  /** Whole-walkthrough step numbers for a device-filtered walkthrough (decision 40): `numbers[i]`
+   * is the 1-based position in the unfiltered walkthrough of `written.steps[i]`, `total` its step
+   * count. Chips, chapters, highlight badges and transcript headings then match the page's
+   * numbering. Omitted (or identity): numbered by position, exactly as before. */
+  stepNumbering?: { numbers: number[]; total: number };
 }
 
 export interface RenderResult {
@@ -272,6 +328,8 @@ export interface PathClipResult {
   mp4?: string;
   srt?: string;
   vtt?: string;
+  /** `<id>.path-<pathId>.transcript.md` (M42a). */
+  transcript?: string;
   timelineJson?: string;
   durationSec?: number;
   /** True when the clip was unchanged (hash matched) or not rendered (see `notRendered`). */

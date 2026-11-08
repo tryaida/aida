@@ -19,7 +19,26 @@
   const BLUR_MOSAIC_FACTOR = 20
   const BLUR_MOSAIC_MAX_CELLS = 1
   const VW = TL.viewport.w, VH = TL.viewport.h
-  const K = TL.stage.w / VW
+  // The output frame (M43c): desktop's long-standing 1920x1080 when the timeline doesn't say
+  // (an older render, or a hand-built fixture) — never anything player.js infers from the
+  // viewport, so a non-16:9 capture viewport on an old timeline still renders exactly as before.
+  const FRAME = TL.frame || { w: 1920, h: 1080 }
+  const PORTRAIT = FRAME.h > FRAME.w
+  // A landscape (desktop) frame keeps the long-standing width-only scale exactly, whatever the
+  // capture viewport's aspect; only a portrait (phone) frame fits the viewport inside the stage
+  // both ways (M43c), so a tall phone capture never overflows it.
+  const K = PORTRAIT ? Math.min(TL.stage.w / VW, TL.stage.h / VH) : TL.stage.w / VW
+  const html = document.documentElement
+  Object.assign(html.style, { width: `${FRAME.w}px`, height: `${FRAME.h}px` })
+  Object.assign(document.body.style, { width: `${FRAME.w}px`, height: `${FRAME.h}px` })
+  html.classList.toggle('frame-portrait', PORTRAIT)
+  // Touch (M43c, decision 40): a soft tap circle instead of an arrow cursor. `TAP_OFFSET` is the
+  // translate correction `renderAt`'s cursor placement applies — the arrow's tip sits near (3, 2)
+  // in its 30x30 viewBox (hence the mouse cursor's long-standing `-2, -1`); the tap circle is
+  // centred in the same box, at (15, 15).
+  const POINTER = TL.pointer === 'touch' ? 'touch' : 'mouse'
+  html.classList.add(`pointer-${POINTER}`)
+  const TAP_OFFSET = POINTER === 'touch' ? { x: 15, y: 15 } : { x: 2, y: 1 }
 
   // ------------------------------------------------------------ static DOM
   // The window (M34): an optional browser bar (`TL.chrome` px, the bold preset) above the stage.
@@ -31,10 +50,17 @@
   $('chrome').style.height = `${CHROME}px`
   win.classList.toggle('has-chrome', CHROME > 0)
   const band = $('band')
-  Object.assign(band.style, { left: `${TL.stage.x}px`, width: `${TL.stage.w}px` })
+  // `TL.band` (M43c): the desktop default matches the old fixed CSS (top:970px/height:100px)
+  // exactly, so this is a no-op change in output for every existing (landscape) timeline; an
+  // older timeline with no `band` at all keeps the plain CSS default, untouched.
+  const BAND = TL.band || { x: TL.stage.x, y: 970, w: TL.stage.w, h: 100 }
+  Object.assign(band.style, { left: `${BAND.x}px`, top: `${BAND.y}px`, width: `${BAND.w}px`, height: `${BAND.h}px` })
   const imgA = $('imgA'), imgB = $('imgB')
   const spot = $('spot'), cursor = $('cursor'), cam = $('cam')
   const blurLayer = $('blurLayer'), calloutLayer = $('calloutLayer'), calloutLegend = $('calloutLegend')
+  // Portrait only: the camera is the phone capture's own size. A landscape frame keeps the fixed
+  // 1440x810 camera from player.css, as every desktop render always has.
+  if (PORTRAIT) Object.assign(cam.style, { width: `${VW}px`, height: `${VH}px` })
   const ripples = TL.clicks.map(() => { const r = document.createElement('div'); r.className = 'ripple'; cam.insertBefore(r, cursor); return r })
 
   // ------------------------------------------------------------ brand (static, set once)
@@ -326,7 +352,7 @@
       const cs = (1 / Math.sqrt(z)) * press / K * 1.15
       const cVis = ramp(t, TL.stageIn.t1 - 0.2, 0.4)
       cursor.style.opacity = cVis
-      cursor.style.transform = `translate(${p.x - 2}px, ${p.y - 1}px) scale(${cs})`
+      cursor.style.transform = `translate(${p.x - TAP_OFFSET.x}px, ${p.y - TAP_OFFSET.y}px) scale(${cs})`
 
       // Click ripples.
       TL.clicks.forEach((k, i) => {

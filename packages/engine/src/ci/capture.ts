@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
 import type { ResolvedConfig } from "../config/index.js";
 import { loadWalkthroughFile } from "../walkthrough/index.js";
-import type { Persona, Walkthrough } from "../walkthrough/index.js";
+import type { Device, Persona, Walkthrough } from "../walkthrough/index.js";
 import { capturePaths, comparePathRuns, pathsPassed, prunePathDirs, recordPathDiffs, runCapture, runLevelFailure } from "../capture/index.js";
 import type { CaptureRunResult } from "../capture/runner.js";
 import type { FailureReport } from "../capture/types.js";
@@ -15,6 +15,8 @@ import { markNotCaptured } from "../capture/not-captured.js";
 import { recordCaptureDriftResult, type CaptureDriftRecord } from "../outline/record.js";
 import { resetDatabase } from "../capture/reset.js";
 import type { DriftEntry } from "../outline/schema.js";
+import { ciCaptureDirFor, devicesFor } from "../devices/index.js";
+import { briefPath, loadBrief } from "../brief/consumers.js";
 
 function storageStateKey(baseUrl: string, walkthrough: Walkthrough, config: Pick<ResolvedConfig, "signIn" | "signInHash">): string {
   return sessionKey(baseUrl, walkthrough.start?.persona, config); // persona normalised at load: always an object
@@ -34,6 +36,8 @@ export interface CiCaptureResult {
   outline?: { card: string; drift: DriftEntry[] };
   /** "outline: not updated: …" when the outline file couldn't be read or written. */
   outlineNote?: string;
+  /** Why this (secondary) device wasn't captured at all (ci/planned.ts, capture/secondary.ts). */
+  notCaptured?: string;
 }
 
 /** Where this walkthrough sits in a planned run (decision 28; states/order.ts). */
@@ -46,10 +50,26 @@ export interface CiCaptureOptions {
   /** Record outline drift on the walkthrough's card (M29). On for the PR check (`aida ci`), off
    * for `aida ci --publish`: its bot commits to main, and an outline edit there isn't a person's. */
   recordDrift?: boolean;
+  /**
+   * Capture this device instead of the walkthrough's own resolved primary (decision 40, M43a).
+   * `aida ci`'s deterministic PR check always captures the primary device — whatever
+   * `devicesFor()` resolves it to, desktop unless the brief makes a walkthrough phone-primary —
+   * since that's the one its screenshot diff compares. `aida ci --publish` also captures every
+   * secondary device this way (ci/planned.ts `allDevices`), one call per device.
+   */
+  device?: Device;
+  /**
+   * Capture this walkthrough's paths too (decision 34). Default true. `aida ci --publish`'s
+   * secondary-device calls (M43b) pass false: paths are only ever captured for the primary
+   * device (decision 40) — a secondary call must neither recapture nor prune the primary's own
+   * path captures sitting in a different directory than this device's `captureDir`.
+   */
+  includePaths?: boolean;
 }
 
-/** Loads `file`, runs capture into `<buildDir>/<id>/ci/capture`, and returns the outcome without
- * throwing — a failed capture is a normal `aida ci` result (status "failed"), not a crash. */
+/** Loads `file`, runs capture into `<buildDir>/<id>/ci/capture` (or `<buildDir>/<id>/ci/<device>/
+ * capture` for a non-desktop device), and returns the outcome without throwing — a failed
+ * capture is a normal `aida ci` result (status "failed"), not a crash. */
 export async function captureWalkthroughForCi(
   file: string,
   config: ResolvedConfig,
@@ -57,7 +77,11 @@ export async function captureWalkthroughForCi(
   planned: CiCaptureOptions = {},
 ): Promise<CiCaptureResult> {
   const walkthrough = loadWalkthroughFile(file);
-  const captureDir = join(config.buildDir, walkthrough.walkthrough, "ci", "capture");
+  // The walkthrough's own primary device (desktop unless the brief/config makes it phone-first) —
+  // same resolution `aida build` uses, so CI's one capture is of the device whose screenshot
+  // actually matters for this walkthrough.
+  const device = planned.device ?? devicesFor(walkthrough, config, loadBrief(briefPath(config)))[0];
+  const captureDir = ciCaptureDirFor(config.buildDir, walkthrough.walkthrough, device);
   mkdirSync(captureDir, { recursive: true });
 
   const baseUrl = appUrl ?? walkthrough.start?.baseUrl ?? config.app.baseUrl;
@@ -78,8 +102,12 @@ export async function captureWalkthroughForCi(
     // Other ways in first (decision 34; capture/paths.ts): reset → path → … → reset → main, so
     // CI's pages show them verified and dependants see the main run's data.
     let pathRun: Awaited<ReturnType<typeof capturePaths>> | undefined;
-    if ((walkthrough.paths ?? []).length === 0) prunePathDirs(captureDir, walkthrough);
-    else {
+    if (planned.includePaths === false) {
+      // A secondary device's call (decision 40, M43b): paths are the primary's alone — this
+      // device's own `captureDir` never held them, so there's nothing here to prune either.
+    } else if ((walkthrough.paths ?? []).length === 0) {
+      prunePathDirs(captureDir, walkthrough);
+    } else {
       pathRun = await capturePaths({
         walkthrough,
         config: ciConfig,
@@ -89,6 +117,7 @@ export async function captureWalkthroughForCi(
         canReset: resetAllowed,
         cannotResetReason: "it runs inside a dependency chain, where a reset would erase the data an earlier walkthrough left",
         stabilize: false,
+        device,
       });
     }
 
@@ -103,6 +132,7 @@ export async function captureWalkthroughForCi(
       storageStatePath,
       runId: planned.runId,
       personaFor: planned.personaFor,
+      device,
     });
     writeFileSync(join(captureDir, "manifest.json"), `${JSON.stringify(result.manifest, null, 2)}\n`);
     writeFileSync(join(captureDir, "run.json"), `${JSON.stringify(result.run, null, 2)}\n`);

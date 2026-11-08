@@ -12,6 +12,7 @@ data:
 setup:
   steps:
     - id: first-answer
+      devices: [desktop]
       actions:
         - do: goto
           path: /invite/seed-0559
@@ -26,8 +27,25 @@ setup:
           target: { role: button, name: Save availability }
         - do: click
           target: { role: button, name: Back to poll }
+    - id: first-answer-phone
+      devices: [phone]
+      actions:
+        - do: goto
+          path: /invite/seed-0559
+        - do: click
+          target: { role: radio, name: "Yes", nth: 0 }
+        - do: click
+          target: { role: button, name: Continue }
+        - do: type
+          target: { label: Name, within: { role: dialog, name: New participant } }
+          text: "{{voter.name}}"
+        - do: click
+          target: { role: button, name: Save availability }
+        - do: click
+          target: { role: button, name: Back to poll }
 steps:
   - id: open-menu
+    devices: [desktop]
     title: Open the menu by your name
     say: To take your answer off a poll, open its link again and open the menu next to your name.
     caption: Open the menu next to your name.
@@ -35,6 +53,16 @@ steps:
     actions:
       - do: click
         target: { role: button, name: More options, within: { role: row, hasText: "{{voter.name}}" } }
+        highlight: true
+  - id: open-menu-phone
+    devices: [phone]
+    title: Open the menu by your name
+    say: To take your answer off a poll, open its link again and tap the menu next to your name at the top.
+    caption: Open the menu next to your name.
+    page_text: Open the poll's link again, in the same browser you answered in. Tap the menu next to your name at the top.
+    actions:
+      - do: click
+        target: { role: button, name: More options }
         highlight: true
   - id: choose-delete
     title: Choose Delete

@@ -1,10 +1,12 @@
 // Shared types for the pages module: builds a Markdown help page (+ annotated screenshots)
 // from a Walkthrough and its capture output. See markers.ts for the generated/human-edit split.
+import type { Device } from "../walkthrough/types.js";
 
 export interface BuildPageOptions {
   /** Directory holding a render() output (`<videoDir>/<id>/<id>.mp4` etc.) — video/caption links are added when present. */
   videoDir?: string;
-  /** Width in px to resize annotated screenshots to. Default 1280. */
+  /** Width in px to resize annotated screenshots to. Default 1280 (desktop) / 540 (phone) — see
+   * `screenshotWidthFor` in build.ts. Set to override either. */
   screenshotWidth?: number;
   /** config.readers — who the help site is written for; used to humanise a persona role id into
    * a reader-facing name in "Before you start" (see `readerNameForRole` in content.ts). */
@@ -14,6 +16,15 @@ export interface BuildPageOptions {
   /** Where print figures (`printFigures`) are written. Default `<captureDir>/print` — build
    * output that is never staged into the help app. */
   printDir?: string;
+  /** Every device this walkthrough is shown on (decision 40), primary first — `devicesFor()`'s
+   * result. Default `["desktop"]`, same as a page built before M43b. Drives the reader-facing
+   * device-only note and which steps get a `<DeviceShots>` wrapper. */
+  devices?: Device[];
+  /** Each device *after* the primary (`devices[0]`, whose capture is `captureDir`) and where its
+   * own capture lives (`captureDirFor(buildDir, id, device)`). A device missing here, or whose
+   * capture dir has no `manifest.json`/`validation.json`, simply gets no screenshots — a failed
+   * secondary capture never fails the page (decision 40). */
+  secondaryCaptures?: { device: Device; captureDir: string }[];
 }
 
 /** One generated block the rebuild found a human edit in, instead of overwriting. */

@@ -22,7 +22,7 @@
 // runs its own steps to its own end.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Persona, Walkthrough } from "../walkthrough/index.js";
+import type { Device, Persona, Walkthrough } from "../walkthrough/index.js";
 import { newRunId, pathWalkthrough } from "../walkthrough/index.js";
 import type { ResolvedConfig } from "../config/types.js";
 import { resolveCaptureSettings } from "../config/types.js";
@@ -64,6 +64,9 @@ export interface CapturePathsOptions {
   /** Default true. False (`aida ci`): no frame stabilization against the path's previous run. */
   stabilize?: boolean;
   log?: (...args: unknown[]) => void;
+  /** Which device to capture every path as (decision 40, M43a) — the walkthrough's own primary
+   * device, since paths are only ever captured for it. Default `"desktop"`. */
+  device?: Device;
 }
 
 export interface CapturePathsResult {
@@ -145,6 +148,7 @@ export async function capturePaths(opts: CapturePathsOptions): Promise<CapturePa
           runId: newRunId(),
           personaFor: opts.personaFor,
           log: opts.log,
+          device: opts.device,
         });
       const { result, frameDiff } =
         opts.stabilize === false ? { result: await capture(), frameDiff: undefined } : await withFrameStabilization(outDir, stabilizeOpts, capture);

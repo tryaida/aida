@@ -108,6 +108,14 @@ export function formatReport(report: BuildReport): string {
     for (const stage of ["capture", "voice", "render", "pages", "pdf", "qa"] as BuildStageName[]) {
       lines.push(stageLine(stage, w.stages[stage]));
     }
+    // A secondary device's capture failure (decision 40) is a warning, never this walkthrough's
+    // own failure — printed here, not among `failures`, which only lists what made `ok: false`.
+    for (const [device, result] of Object.entries(w.deviceResults ?? {})) {
+      if (!result.ok) lines.push(`    ${device}: FAILED (non-fatal) — ${result.failure ?? "capture failed"}`);
+      // A render-only failure (M43c): this device's capture passed, but its own video didn't.
+      else if (result.render && !result.render.ok) lines.push(`    ${device} render: FAILED (non-fatal) — ${result.render.failure ?? "render failed"}`);
+    }
+    if (w.phoneRender) lines.push(`    phone: ${w.phoneRender.durationSec.toFixed(1)}s`);
     for (const f of w.failures ?? []) lines.push(...failureLines(w.walkthrough, f));
   }
   if (report.index) {

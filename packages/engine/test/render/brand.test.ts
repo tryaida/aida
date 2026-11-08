@@ -9,11 +9,15 @@ import {
   resolveArtifactBrand,
   safeFontUrl,
   timelineBrand,
+  videoTextColors,
+  type ArtifactColors,
 } from "../../src/render/brand.js";
+import { contrastRatio } from "../../src/theme/color.js";
 import { buildTimeline } from "../../src/render/timeline.js";
 import { computeSceneHash } from "../../src/render/segments.js";
 import type { CaptureManifest } from "../../src/capture/index.js";
 import type { Walkthrough } from "../../src/walkthrough/types.js";
+import type { BrandStyle } from "../../src/theme/style.js";
 
 const TINY_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
@@ -194,5 +198,84 @@ describe("resolveArtifactBrand: theme alignment with the help app", () => {
   it("derives a Google Fonts URL for a known family when fontUrl is unset (same as the site)", () => {
     const b = resolveArtifactBrand({ configDir: "/x", brand: { font: "Inter" } });
     expect(b.fontUrl).toMatch(/^https:\/\/fonts\.googleapis\.com\/css2\?family=Inter/);
+  });
+});
+
+describe("videoTextColors: caption/chip/title contrast per preset", () => {
+  const STYLES: BrandStyle[] = ["bold", "minimal", "friendly"];
+  const PRIMARIES: Record<"pale" | "mid" | "dark", string> = {
+    pale: "#7dd3fc", // sky-300: light enough that white *and* the raw ink can fail outright
+    mid: "hsl(38 92% 55%)", // amber: white-on-this fails 4.5 (color.test.ts), so ink has to earn it
+    dark: "#1e3a8a", // already carries on white, but not necessarily on the dark "night" canvas
+  };
+
+  function colorsFor(primary: string): ArtifactColors {
+    return { ...NEUTRAL_COLORS, primary };
+  }
+
+  for (const style of STYLES) {
+    for (const [label, primary] of Object.entries(PRIMARIES)) {
+      it(`${style}/${label}: ink, ink2 and ink3 each clear 4.5:1 against every surface they're drawn on`, () => {
+        const colors = colorsFor(primary);
+        const text = videoTextColors(colors, style);
+        const surfaces = style === "bold" ? [text.night] : text.chip ? [text.paper!, text.chip] : [text.paper!];
+        for (const surface of surfaces) {
+          expect(contrastRatio(text.ink, surface), `ink vs ${surface}`).toBeGreaterThanOrEqual(4.5);
+          expect(contrastRatio(text.ink2, surface), `ink2 vs ${surface}`).toBeGreaterThanOrEqual(4.5);
+          expect(contrastRatio(text.ink3, surface), `ink3 vs ${surface}`).toBeGreaterThanOrEqual(4.5);
+        }
+      });
+    }
+  }
+
+  it("bold: night2 is darker-mixed than night (the gradient still reads as two distinct tones)", () => {
+    const text = videoTextColors(colorsFor("#1e3a8a"), "bold");
+    expect(text.night).not.toBe(text.night2);
+  });
+
+  it("bold: ink3 (the eyebrow/credit label) clears 4.5:1 against night2 too, not just night", () => {
+    for (const [, primary] of Object.entries(PRIMARIES)) {
+      const text = videoTextColors(colorsFor(primary), "bold");
+      expect(contrastRatio(text.ink3, text.night2), `ink3 vs night2 (${primary})`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("minimal: has a paper canvas and no caption chip (friendly-only)", () => {
+    const text = videoTextColors(colorsFor("#7dd3fc"), "minimal");
+    expect(text.paper).toBeDefined();
+    expect(text.chip).toBeUndefined();
+  });
+
+  it("friendly: the caption chip is lighter than the paper canvas underneath it", () => {
+    const text = videoTextColors(colorsFor("#7dd3fc"), "friendly");
+    expect(text.chip).toBeDefined();
+    expect(contrastRatio(text.chip!, "#000000")).toBeGreaterThan(contrastRatio(text.paper!, "#000000")!);
+  });
+
+  it("minimal/friendly: primaryText clears 4.5:1 against every surface it's drawn on (paper, chip)", () => {
+    for (const style of ["minimal", "friendly"] as const) {
+      for (const [, primary] of Object.entries(PRIMARIES)) {
+        const text = videoTextColors(colorsFor(primary), style);
+        expect(text.primaryText).toBeDefined();
+        const surfaces = text.chip ? [text.paper!, text.chip] : [text.paper!];
+        for (const surface of surfaces) {
+          expect(contrastRatio(text.primaryText!, surface), `primaryText vs ${surface} (${style}/${primary})`).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    }
+  });
+
+  it("bold has no video-specific primaryText (never drawn as text there)", () => {
+    expect(videoTextColors(colorsFor("#1e3a8a"), "bold").primaryText).toBeUndefined();
+  });
+});
+
+describe("timelineBrand: video-specific primaryText", () => {
+  it("uses the paper/chip-checked primaryText, not the generic background-checked one", () => {
+    // amber on white background passes generically, but not on minimal's paper canvas as text.
+    const brand = resolveArtifactBrand({ configDir: "/x", brand: { primaryColor: "hsl(38 92% 55%)", style: "minimal" } });
+    const tb = timelineBrand(brand);
+    expect(tb.colors?.primaryText).toBeDefined();
+    expect(tb.colors?.primaryText).not.toBe(brand.colors.primaryText);
   });
 });

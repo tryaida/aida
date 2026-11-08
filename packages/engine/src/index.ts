@@ -7,7 +7,7 @@
 // So: values only from dependency-free modules; every module's types via `export type *`; the
 // full runtime API is "aida-docs/dist/engine.js" (src/engine.ts). A new module goes in both files.
 export { defineConfig } from "./config/define.js";
-export { DEFAULT_MODEL_TIERS, DEFAULT_CAPTURE_SETTINGS, resolveCaptureSettings } from "./config/types.js";
+export { DEFAULT_MODEL_TIERS, DEFAULT_CAPTURE_SETTINGS, DEFAULT_PHONE_SETTINGS, resolveCaptureSettings, resolvePhoneSettings } from "./config/types.js";
 export type * from "./walkthrough/index.js";
 export type * from "./config/index.js";
 export type * from "./capture/index.js";
@@ -34,4 +34,5 @@ export type * from "./theme/index.js";
 export type * from "./safety/index.js";
 export type * from "./states/index.js";
 export type * from "./outline/index.js";
+export type * from "./devices/index.js";
 export type { PlaywrightDraft } from "./walkthrough/convert-playwright.js";

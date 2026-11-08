@@ -63,7 +63,8 @@ page HTML, console log, video, or the rest of the app.
    three directly instead of re-reading the failure snapshot's trimmed text by eye. When the
    failing page is one you only reach by saving, `aida inspect --config <cfg> --walkthrough <id>
    --after <stepBeforeTheFailingOne> --json` replays the walkthrough's real steps (it writes, like
-   capture) and scans the page they leave.
+   capture) and scans the page they leave. A **phone** failure (`phone: FAILED`): inspect with
+   `--device phone` and split the step (cheat sheet → "Phone and computer"); keep desktop's step.
 3. Fix the smallest thing that explains the mismatch: a renamed label, a changed role, a step that
    needs a `waitFor` first, or a target that needs `within`/`exact` to disambiguate. A step
    missing entirely (the failure is really "nothing to click" — an unscripted required field or a

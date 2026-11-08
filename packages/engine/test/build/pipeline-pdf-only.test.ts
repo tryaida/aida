@@ -1,9 +1,10 @@
 // `aida build --only pdf` (no pages stage this run) renders PDFs from the pages an earlier build
 // left on disk, instead of reporting OK and building nothing.
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { rm } from "node:fs/promises";
+import { PDFDocument } from "pdf-lib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ResolvedConfig } from "../../src/config/index.js";
 import type { BuildPageResult } from "../../src/pages/index.js";
@@ -13,13 +14,20 @@ vi.mock("../../src/pdf/index.js", async (importOriginal) => {
   return {
     ...mod,
     launchBrowser: vi.fn(async () => ({ close: vi.fn(async () => undefined) })),
-    buildWalkthroughPdf: vi.fn(async (input: { id: string; publishable: boolean }) => ({
-      id: input.id,
-      file: `${input.id}.pdf`,
-      cardFile: `${input.id}.card.pdf`,
-      skipped: false,
-      excluded: !input.publishable,
-    })),
+    buildWalkthroughPdf: vi.fn(async (input: { id: string; publishable: boolean }, opts: { pdfDir: string }) => {
+      const file = join(opts.pdfDir, `${input.id}.pdf`);
+      const cardFile = join(opts.pdfDir, `${input.id}.card.pdf`);
+      if (input.publishable) {
+        // A real, loadable PDF, but untagged with no /Lang or Title — fails the `a11y:pdf` check
+        // on purpose, so the review's deleted-orphan scenario (finding 9) can be driven end to
+        // end through the real `runPdfA11yCheck`/`runQa`/`checkPdfAccessibility` chain, not mocked.
+        mkdirSync(opts.pdfDir, { recursive: true });
+        const bytes = await (await PDFDocument.create()).save();
+        writeFileSync(file, bytes);
+        writeFileSync(cardFile, bytes);
+      }
+      return { id: input.id, file, cardFile, skipped: false, excluded: !input.publishable };
+    }),
     buildManualPdf: vi.fn(async () => ({ file: "manual.pdf", skipped: false, pageCount: 1, included: [] })),
   };
 });
@@ -113,5 +121,31 @@ describe("aida build --only pdf", () => {
 
     expect(buildWalkthroughPdf).not.toHaveBeenCalled();
     expect(result.walkthroughs[0].stages.pdf).toMatchObject({ status: "skipped", detail: expect.stringContaining("pages stage") });
+  });
+
+  // Review finding 9 (build/pipeline.ts `runPdfA11yCheck`): a PDF that fails its own `a11y:pdf`
+  // check must not survive as an orphan — it ships unlinked (the page it belongs to is now
+  // unpublished) but was still staged into the help app's public/pdf before this fix.
+  it("deletes <id>.pdf/<id>.card.pdf when the pdf a11y check fails, and never stages them", async () => {
+    const config = fakeConfig();
+    config.helpApp = join(mkdtempSync(join(tmpdir(), "aida-pdf-only-help-")), "help");
+    dirs.push(config.helpApp);
+    writeWalkthrough(config, "bad-a11y");
+    writeBuiltPage(config, "bad-a11y", true);
+
+    const result = await runPipeline(config, { configPath: "x", walkthroughIds: [], only: ["pdf"], json: false });
+
+    const pdfDir = join(config.outDir, "pdf");
+    expect(existsSync(join(pdfDir, "bad-a11y.pdf"))).toBe(false);
+    expect(existsSync(join(pdfDir, "bad-a11y.card.pdf"))).toBe(false);
+    expect(result.walkthroughs[0].stages.qa?.status).toBe("failed");
+    expect(result.walkthroughs[0].stages.qa?.detail).toContain("check(s) failed");
+
+    // Never reaches public/pdf (stagePdfsToHelpApp copies whatever is left in pdfDir).
+    expect(existsSync(join(config.helpApp, "public", "pdf", "bad-a11y.pdf"))).toBe(false);
+
+    // manual.pdf is built after this run's qa flip, so it already sees the walkthrough as
+    // unpublishable (ordering: per-guide PDFs, then manual — build/pipeline.ts, pdf/build.ts).
+    expect(vi.mocked(buildManualPdf).mock.calls[0][0]).toMatchObject([{ id: "bad-a11y", publishable: false }]);
   });
 });

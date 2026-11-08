@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path, { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { loadConfig } from "../../src/config/load.js";
+import { checkDevices, loadConfig } from "../../src/config/load.js";
 import { sessionKey } from "../../src/capture/session-key.js";
 import { storageStateKey } from "../../src/commands/inspect.js";
 
@@ -240,3 +240,27 @@ describe("loadConfig — .ts config, real process boundary", () => {
 function pathToFileUrl(p: string): string {
   return new URL(`file://${p}`).href;
 }
+
+describe("config devices", () => {
+  it("accepts unset, one device or both, primary first", () => {
+    expect(() => checkDevices(undefined)).not.toThrow();
+    expect(() => checkDevices(["phone"])).not.toThrow();
+    expect(() => checkDevices(["desktop", "phone"])).not.toThrow();
+  });
+
+  it("refuses an empty list, an unknown device and a repeat", () => {
+    expect(() => checkDevices([])).toThrow(/non-empty list/);
+    expect(() => checkDevices("phone")).toThrow(/non-empty list/);
+    expect(() => checkDevices(["desktop", "tablet"])).toThrow(/unknown device "tablet"/);
+    expect(() => checkDevices(["phone", "phone"])).toThrow(/"phone" more than once/);
+  });
+
+  it("loadConfig refuses a bad devices list", async () => {
+    const dir = tmpDir();
+    writeFileSync(
+      join(dir, "aida.config.mjs"),
+      `export default { app: { baseUrl: "http://127.0.0.1:3100" }, walkthroughsDir: "./walkthroughs", devices: ["desktop", "watch"] };`,
+    );
+    await expect(loadConfig(join(dir, "aida.config.mjs"))).rejects.toThrow(/unknown device "watch"/);
+  });
+});

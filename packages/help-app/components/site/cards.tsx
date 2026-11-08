@@ -21,12 +21,17 @@ export function GuideCard({ url, title, description, poster, steps, video, lastC
   return (
     <Link
       href={url}
-      className="group flex flex-col overflow-hidden rounded-[calc(var(--brand-radius)+2px)] border border-fd-border bg-fd-card text-fd-card-foreground shadow-xs transition hover:-translate-y-0.5 hover:border-fd-primary/40 hover:shadow-lg"
+      className="group flex flex-col overflow-hidden rounded-[calc(var(--brand-radius)+2px)] border border-fd-border bg-fd-card text-fd-card-foreground shadow-xs transition hover:-translate-y-0.5 hover:border-fd-primary/40 hover:shadow-lg motion-reduce:transition-none motion-reduce:hover:translate-y-0"
     >
       <div className="relative aspect-[16/9] overflow-hidden border-b border-fd-border bg-fd-muted">
         {poster ? (
           // eslint-disable-next-line @next/next/no-img-element -- screenshots are already sized by the engine
-          <img src={poster} alt="" loading="lazy" className="size-full object-cover object-top transition duration-300 group-hover:scale-[1.02]" />
+          <img
+            src={poster}
+            alt=""
+            loading="lazy"
+            className="size-full object-cover object-top transition duration-300 group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+          />
         ) : (
           <div className="flex size-full items-center justify-center text-fd-muted-foreground">
             <ListOrdered className="size-8 opacity-40" />
@@ -34,12 +39,12 @@ export function GuideCard({ url, title, description, poster, steps, video, lastC
         )}
         {video ? (
           <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-full bg-black/70 px-2 py-0.5 text-xs font-medium text-white backdrop-blur">
-            <PlayCircle className="size-3.5" /> Video
+            <PlayCircle aria-hidden="true" className="size-3.5" /> Video
           </span>
         ) : null}
       </div>
       <div className="flex flex-1 flex-col gap-1.5 p-4">
-        <h3 className="font-heading font-semibold leading-snug group-hover:text-fd-primary">{title}</h3>
+        <h3 className="font-heading font-semibold leading-snug group-hover:text-fd-primary-text">{title}</h3>
         {description ? <p className="line-clamp-2 text-sm text-fd-muted-foreground">{description}</p> : null}
         <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 pt-2 text-xs text-fd-muted-foreground">
           {steps ? <span>{plural(steps, "step")}</span> : null}
@@ -63,13 +68,13 @@ export function SectionCard({ url, title, description, icon, guides }: SectionCa
   return (
     <div className="flex flex-col rounded-[calc(var(--brand-radius)+2px)] border border-fd-border bg-fd-card p-5 text-fd-card-foreground shadow-xs">
       <div className="flex items-start gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--brand-radius)] bg-fd-primary/10 text-fd-primary [&_svg]:size-5">
+        <span aria-hidden="true" className="flex size-10 shrink-0 items-center justify-center rounded-[var(--brand-radius)] bg-fd-primary/10 text-fd-primary-text [&_svg]:size-5">
           {icon ?? <FolderOpen />}
         </span>
         <div className="min-w-0">
           <h3 className="font-heading font-semibold leading-snug">
             {url ? (
-              <Link href={url} className="hover:text-fd-primary">
+              <Link href={url} className="hover:text-fd-primary-text">
                 {title}
               </Link>
             ) : (
@@ -87,9 +92,9 @@ export function SectionCard({ url, title, description, icon, guides }: SectionCa
             <li key={g.url}>
               <Link
                 href={g.url}
-                className="group flex items-center gap-2 rounded-md px-1 py-1.5 text-sm hover:text-fd-primary"
+                className="group flex items-center gap-2 rounded-md px-1 py-1.5 text-sm hover:text-fd-primary-text"
               >
-                <ChevronRight className="size-3.5 shrink-0 text-fd-muted-foreground group-hover:text-fd-primary" />
+                <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-fd-muted-foreground group-hover:text-fd-primary-text" />
                 <span className="truncate">{g.title}</span>
               </Link>
             </li>
@@ -97,7 +102,7 @@ export function SectionCard({ url, title, description, icon, guides }: SectionCa
         </ul>
       ) : null}
       {url && guides.length > shown.length ? (
-        <Link href={url} className="mt-2 text-sm font-medium text-fd-primary hover:underline">
+        <Link href={url} className="mt-2 text-sm font-medium text-fd-primary-text hover:underline">
           All {plural(guides.length, "guide")}
         </Link>
       ) : null}

@@ -73,13 +73,14 @@ and validate YAML concurrently: capture must never run from two at once (see ste
    ```
    (or `reorderSteps`/`removeStep`/`setPageBlock`, see `aida edit --help`). `setStepField`
    covers `say`/`caption`/`page_text`/`title`/`hold` and the plain-words `do`/`check` fields;
-   `setStepActions` replaces a step's whole `actions:` list; `aida edit setData <file>
-   <dotted.path> <value>` changes a `data:` value (it rejects leaving a `{{...}}` unresolved).
+   `setStepActions` replaces a step's whole `actions:` list; `aida edit setData <file> <dotted.path>
+   <value>` changes a `data:` value (no `{{...}}` left unresolved).
    **Other ways to start the task** (card `paths:`, the brief's "Several ways to do one thing"):
    one walkthrough, not one per way. `aida inspect` each way's start page, then add a `paths:`
    entry (cheat sheet → "Several ways to do one task"): `start.page`, opening steps (each with a
    `say`: it narrates the path's clip), `joins:` (the main step it meets; none if it uses its own
    form to the end, last step a check), a `when:` from the brief; edit with `aida edit addPath`.
+   **Phone readers** (card says `phone`): cheat sheet → "Phone and computer" (`--device phone`).
 4. **Demo data and state**: invented values through example.com/reserved phone ranges (see
    `references/safety.md`), written into `data:` directly when authoring, or via `aida edit
    setData` on a repair. A walkthrough that changes data declares it (from the card):
@@ -125,5 +126,4 @@ and validate YAML concurrently: capture must never run from two at once (see ste
 
 ## Token rules
 
-See `references/tokens.md`. You see only this one walkthrough's card and capture report — never
-another walkthrough's files, and never the full app digest.
+See `references/tokens.md`. Only this walkthrough's card and capture report: never another's files or the app digest.

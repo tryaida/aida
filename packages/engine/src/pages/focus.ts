@@ -242,7 +242,11 @@ export function planStepFigures(
   let unseenOverlay = false;
   for (let i = 0; i < manifest.steps.length; i++) {
     const m = manifest.steps[i];
-    const wfStep = wf.steps[i];
+    // `m`'s position in the walkthrough's own `steps` (M43a `stepIndex`), not its position in
+    // this (possibly device-filtered) manifest array — a manifest written before M43a never set
+    // `stepIndex`, and never filtered a step either, so position is exactly right for it too.
+    const wfIndex = m.stepIndex ?? i;
+    const wfStep = wf.steps[wfIndex];
     const before = route;
     const visited = (m.impact?.urls ?? []).map(pathnameOf).filter((p): p is string => Boolean(p));
     const after = visited.length > 0 ? visited[visited.length - 1] : before;
@@ -286,7 +290,8 @@ export function planStepFigures(
     }
     const newScreen = first || unseenOverlay || plan.route !== lastShownRoute;
     plans.push({
-      step: i + 1,
+      // The walkthrough's own step number, not this manifest array's position — see `wfIndex`.
+      step: wfIndex + 1,
       frame: plan.frame,
       targets: plan.targets,
       points: plan.points,
@@ -314,12 +319,41 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 /**
+ * Focus-crop geometry for a phone-sized (portrait) capture viewport (M43b, decision 40): the
+ * desktop rules above (`FOCUS_CROP`) crop sideways around a target that sits in a wide screen —
+ * on a phone, the screen is already as narrow as it'll get, so cropping sideways buys nothing
+ * and a tight desktop-style box reads as a meaningless sliver. A phone crop instead keeps the
+ * full screen width and crops vertically: the target with context above/below, never shorter
+ * than `minHeightShare` of the screen (enough to still show what app/screen it's on).
+ */
+export const FOCUS_CROP_PHONE = {
+  /** Context kept above and below the target. */
+  contextY: 60,
+  /** A phone crop is never shorter than this share of the screen's height. */
+  minHeightShare: 0.55,
+  /** Small margin either side so the crop isn't flush with the screen's edges. */
+  sideMargin: 12,
+} as const;
+
+function focusCropPhone(targets: Box[], viewport: { width: number; height: number }, points: Point[]): Box | undefined {
+  const F = FOCUS_CROP_PHONE;
+  const t = targetBox(targets, points);
+  if (!t) return undefined;
+  const w = Math.max(1, viewport.width - F.sideMargin * 2);
+  const h = Math.min(viewport.height, Math.max(viewport.height * F.minHeightShare, t.h + F.contextY * 2));
+  const y = clamp(t.y + t.h / 2 - h / 2, 0, viewport.height - h);
+  return { x: F.sideMargin, y: Math.round(y), w: Math.round(w), h: Math.round(h) };
+}
+
+/**
  * The focus crop for a step: the target(s) with enough surrounding UI to orient, held to a
  * sensible aspect and a minimum size, centred on the target and kept inside the frame. Undefined
  * when there's nothing to focus on, or the crop would cover most of the screen anyway (then the
- * full screen reads better).
+ * full screen reads better). A portrait (phone) viewport uses `focusCropPhone`'s rules instead of
+ * the desktop ones below — see its own doc comment.
  */
 export function focusCrop(targets: Box[], viewport: { width: number; height: number }, points: Point[] = []): Box | undefined {
+  if (viewport.height > viewport.width) return focusCropPhone(targets, viewport, points);
   const F = FOCUS_CROP;
   const t = targetBox(targets, points);
   if (!t) return undefined;

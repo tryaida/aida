@@ -20,7 +20,15 @@ export interface AnnotateOptions {
   blur?: Box[];
 }
 
-const DEFAULT_WIDTH = 1280;
+/** Output width for a screenshot from a desktop-sized capture viewport. A phone-sized capture
+ * (M43b, decision 40) uses `PHONE_WIDTH` instead — see `pages/build.ts`'s `screenshotWidthFor` —
+ * since resizing a ~412px-wide phone frame up to this width would both blur it and make it
+ * absurdly tall (~1280x2600). */
+export const DEFAULT_WIDTH = 1280;
+/** Output width for a screenshot from a phone-sized capture viewport (`pages/build.ts`
+ * `screenshotWidthFor`): big enough to read clearly, not so big it upscales a ~412px capture
+ * into mush. */
+export const PHONE_WIDTH = 540;
 const PAD = 8;
 const CALLOUT_COLOR = "#2563eb";
 const USER_CALLOUT_COLOR = "#dc2626";

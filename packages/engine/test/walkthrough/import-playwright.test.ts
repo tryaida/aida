@@ -48,6 +48,25 @@ describe("runImportPlaywright", () => {
     expect(out2).toContain("walkthrough: ui-a-second-scenario");
   });
 
+  it("takes several files (a glob the shell already expanded), each once", async () => {
+    const a = path.join(dir, "things.spec.ts");
+    const b = path.join(dir, "others.spec.ts");
+    await writeFile(a, SPEC, "utf8");
+    await writeFile(b, SPEC, "utf8");
+    const outDir = path.join(dir, "drafts");
+
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    let payload: { files: number };
+    try {
+      const code = await runImportPlaywright([a, b, a], outDir, true);
+      expect(code).toBe(0);
+      payload = JSON.parse(log.mock.calls[0][0] as string);
+    } finally {
+      log.mockRestore();
+    }
+    expect(payload.files).toBe(2);
+  });
+
   it("writes drafts into --out when given, and reports mapped/unmapped counts as JSON", async () => {
     const input = path.join(dir, "things.spec.ts");
     await writeFile(input, SPEC, "utf8");

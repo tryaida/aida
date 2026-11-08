@@ -268,3 +268,69 @@ steps:
     expect(readdirSync(join(dir, ".build", ".aida-session"))).toHaveLength(1);
   }, 30_000);
 });
+
+describe("runCaptureCommand with a secondary device (decision 40)", () => {
+  function writeTwoDeviceWalkthrough(dir: string): void {
+    mkdirSync(join(dir, "walkthroughs"), { recursive: true });
+    // Step 2 is phone-only and can't run there (no hover on a touch screen), so the phone capture
+    // fails while the desktop one passes.
+    writeFileSync(
+      join(dir, "walkthroughs", "two-devices.yaml"),
+      `
+walkthrough: two-devices
+title: t
+start:
+  page: /
+steps:
+  - id: look
+    actions:
+      - do: expect
+        target:
+          text: Capture fixture
+  - id: phone-hover
+    devices: [phone]
+    actions:
+      - do: hover
+        target:
+          text: Capture fixture
+`,
+    );
+  }
+
+  async function capture(dir: string, device?: "desktop" | "phone"): Promise<{ code: number; out: { walkthroughs: { device?: string; ok: boolean; secondary?: boolean }[] } }> {
+    const lines: string[] = [];
+    const log = console.log;
+    console.log = (line: string) => void lines.push(line);
+    try {
+      const code = await runCaptureCommand({ configPath: join(dir, "aida.config.mjs"), walkthroughIds: [], json: true, ...(device ? { device } : {}) });
+      return { code, out: JSON.parse(lines.join("\n")) };
+    } finally {
+      console.log = log;
+    }
+  }
+
+  it("captures phone first, reports its failure as a secondary result, and exits 0 when the primary passed", async () => {
+    const dir = tmpProjectDir();
+    writeConfig(dir, `devices: ["desktop", "phone"],`);
+    writeTwoDeviceWalkthrough(dir);
+
+    const { code, out } = await capture(dir);
+
+    expect(code).toBe(0);
+    expect(out.walkthroughs.map((s) => [s.device, s.ok, Boolean(s.secondary)])).toEqual([
+      ["desktop", true, false],
+      ["phone", false, true],
+    ]);
+  }, 60_000);
+
+  it("`--device phone` on a desktop-primary walkthrough captures phone as the secondary it is", async () => {
+    const dir = tmpProjectDir();
+    writeConfig(dir, `devices: ["desktop", "phone"],`);
+    writeTwoDeviceWalkthrough(dir);
+
+    const { code, out } = await capture(dir, "phone");
+
+    expect(code).toBe(0);
+    expect(out.walkthroughs).toEqual([expect.objectContaining({ device: "phone", ok: false, secondary: true })]);
+  }, 60_000);
+});

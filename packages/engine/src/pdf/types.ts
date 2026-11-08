@@ -60,6 +60,9 @@ export interface BuildPdfOptions {
   siteUrl?: string;
   /** Where downloaded brand font files are cached. Default `.aida-cache/fonts` (fonts.ts). */
   fontCacheDir?: string;
+  /** config.lang (BCP-47), for `<html lang>`, PDF metadata and the manual's cover/contents.
+   * Default "en" (config/types.ts `DEFAULT_LANG`). */
+  lang?: string;
 }
 
 export interface PdfBuildResult {
@@ -114,6 +117,8 @@ export interface PdfPageInput {
   pathClips?: string[];
   /** The guide's path on the help site (`/how-do-i/payments/record-a-payment`), for its QR code. */
   sitePath?: string;
+  /** config.lang (BCP-47), for `<html lang>` and this guide's PDF/card metadata. Default "en". */
+  lang?: string;
 }
 
 export interface CardStepInput {
@@ -132,4 +137,7 @@ export interface CardStepInput {
   thumbnailSrc?: string;
   /** The step's print figure, when pages made one: the card shows its focus crop. */
   figure?: PrintFigure;
+  /** Alt text for the step's card image (pages/alt-text.ts `stepAltText`); falls back to `title`
+   * if unset (older `CardStepInput`s built by hand). */
+  alt?: string;
 }

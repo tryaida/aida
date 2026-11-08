@@ -1,6 +1,7 @@
 // Shared types for the engine's procedures builder (scope.md "Agent connector (MCP server)":
 // `get_procedure` "returns structured steps an agent can follow"; build-plan.md M15 step 1).
 // A procedure is the structured, agent-readable form of one published walkthrough.
+import type { Device } from "../walkthrough/index.js";
 
 export interface ProcedureStep {
   n: number;
@@ -11,6 +12,13 @@ export interface ProcedureStep {
   /** URL to this step's annotated screenshot, relative to the help app's site root
    * (e.g. "/screenshots/add-competitor/step-01.png"), when one was captured. */
   screenshot?: string;
+  /** URL to this step's phone screenshot (decision 40, M43b), when the walkthrough was also
+   * captured on a phone and this step has one (a device-only step the phone skips, or a failed
+   * phone capture, has none). */
+  phoneScreenshot?: string;
+  /** The devices this step happens on, when it's device-only (the walkthrough step's own
+   * `devices:`, decision 40). A step the primary device never runs has only `phoneScreenshot`. */
+  devices?: Device[];
   /** Seconds into the walkthrough's rendered video this step begins, when a render exists. */
   videoTimeSec?: number;
 }

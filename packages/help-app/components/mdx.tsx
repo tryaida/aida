@@ -4,6 +4,7 @@ import { ImageZoom } from "fumadocs-ui/components/image-zoom";
 import type { MDXComponents } from "mdx/types";
 import type { ComponentProps } from "react";
 import { VideoEmbed } from "./video-embed";
+import { DeviceShots } from "./device-shots";
 
 /** Step headings the engine writes as `#### 3. Choose the competitor` get a numbered badge. */
 function StepHeading({ children, ...props }: ComponentProps<"h4">) {
@@ -37,6 +38,7 @@ export function getMDXComponents(components?: MDXComponents) {
     h4: StepHeading,
     img: Screenshot,
     VideoEmbed,
+    DeviceShots,
     ...components,
   } satisfies MDXComponents;
 }

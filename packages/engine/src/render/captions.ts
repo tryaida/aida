@@ -112,12 +112,14 @@ export function toVtt(captions: TimelineCaption[], opts: WrapOptions = {}): stri
   return `WEBVTT\n\n${cues}`;
 }
 
-/** WebVTT chapters track, one cue per step (the timeline's chips). */
+/** WebVTT chapters track, one cue per step (the timeline's chips). Each cue's id is the step's
+ * own number on the page (a video that skips another device's steps numbers them 1, 3, 4…), so
+ * the help site's chapter list matches the page; position only when a chip has no number. */
 export function toChaptersVtt(chips: TimelineChip[]): string {
   const cues = chips
     .map((c) => ({ ...c, title: cueLine(c.title) }))
     .filter((c) => c.title.length > 0)
-    .map((c, i) => `${i + 1}\n${vttTime(c.t0)} --> ${vttTime(c.t1)}\n${vttEscape(c.title)}\n`)
+    .map((c, i) => `${/^\d+$/.test(c.num) ? c.num : i + 1}\n${vttTime(c.t0)} --> ${vttTime(c.t1)}\n${vttEscape(c.title)}\n`)
     .join("\n");
   return `WEBVTT\n\n${cues}`;
 }

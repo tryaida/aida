@@ -73,6 +73,16 @@ describe("validatePath", () => {
     const results = validatePath(dir);
     expect(results.every((r) => r.ok)).toBe(true);
   });
+
+  it("takes several files (a glob the shell already expanded), each once, still checking duplicates", async () => {
+    const a = path.join(dir, "a.yaml");
+    const b = path.join(dir, "b.yaml");
+    await writeFile(a, VALID, "utf8");
+    await writeFile(b, VALID, "utf8");
+    const results = validatePath([a, b, a]);
+    expect(results).toHaveLength(2);
+    expect(results.every((r) => !r.ok)).toBe(true);
+  });
 });
 
 describe("runValidate", () => {

@@ -110,11 +110,40 @@ function relocateStagedPage(contentDir: string, page: StagedPage, placement: Lib
   return join(dest, name);
 }
 
+/** Another device's page screenshot (`phone-step-NN.png`; pages/device-shots.ts). */
+const SECONDARY_SHOT = /^(desktop|phone)-step-/;
+
+/** The largest of `names` in `dir` (the earliest on a tie), or undefined when there are none. */
+function largestFile(dir: string, names: string[]): string | undefined {
+  let best: string | undefined;
+  let bestSize = -1;
+  for (const name of names) {
+    const size = statSync(join(dir, name)).size;
+    if (size > bestSize) {
+      best = name;
+      bestSize = size;
+    }
+  }
+  return best;
+}
+
 const MEDIA_FILES = (id: string): [string, string][] => [
   ["video", `${id}.mp4`],
   ["vtt", `${id}.vtt`],
   ["srt", `${id}.srt`],
   ["chapters", `${id}.chapters.vtt`],
+  /** The main video's transcript (M42a; render/transcript.ts). */
+  ["transcript", `${id}.transcript.md`],
+];
+
+/** A secondary phone device's own video (M43c, decision 40) — `<id>.phone.mp4` etc, next to the
+ * primary device's; same frontmatter-key-to-file mapping as `MEDIA_FILES`, "phone"-prefixed. */
+const PHONE_MEDIA_FILES = (id: string): [string, string][] => [
+  ["phoneVideo", `${id}.phone.mp4`],
+  ["phoneVtt", `${id}.phone.vtt`],
+  ["phoneSrt", `${id}.phone.srt`],
+  ["phoneChapters", `${id}.phone.chapters.vtt`],
+  ["phoneTranscript", `${id}.phone.transcript.md`],
 ];
 
 /**
@@ -137,7 +166,16 @@ function embeddedClipPaths(pageFile: string, id: string): Set<string> {
   return out;
 }
 
-function stageMedia(id: string, pageFile: string, publicDir: string, videoDir: string | undefined, wf?: Walkthrough): Record<string, FrontmatterValue> {
+function stageMedia(
+  id: string,
+  pageFile: string,
+  publicDir: string,
+  videoDir: string | undefined,
+  wf?: Walkthrough,
+  /** Whether this walkthrough's phone video is current (`IndexStageOptions.phoneVideos`): false
+   * removes it from the site; undefined stages it when it exists. */
+  phoneCurrent?: boolean,
+): Record<string, FrontmatterValue> {
   const fields: Record<string, FrontmatterValue> = {};
   const destDir = join(publicDir, "videos", id);
   const sameDir = videoDir !== undefined && resolve(join(videoDir, id)) === resolve(destDir);
@@ -154,19 +192,39 @@ function stageMedia(id: string, pageFile: string, publicDir: string, videoDir: s
     }
     fields[key] = existsSync(dest) ? `/videos/${id}/${file}` : null;
   }
+  // The phone video (M43c): staged like the main one, but only while it's current — a phone that
+  // is no longer a secondary device, or whose capture or QA failed, never leaves it on the site.
+  for (const [key, file] of PHONE_MEDIA_FILES(id)) {
+    const dest = join(destDir, file);
+    if (phoneCurrent === false) {
+      if (!sameDir) rmSync(dest, { force: true });
+      fields[key] = null;
+      continue;
+    }
+    if (videoDir && !sameDir) {
+      const src = join(videoDir, id, file);
+      if (existsSync(src)) {
+        mkdirSync(destDir, { recursive: true });
+        linkOrCopy(src, dest);
+      } else {
+        rmSync(dest, { force: true });
+      }
+    }
+    fields[key] = existsSync(dest) ? `/videos/${id}/${file}` : null;
+  }
   // Each path's short clip (M35): `<id>.path-<pathId>.mp4` + captions at these same `/videos/<id>/`
   // URLs — only the clips the page embeds (pages/build.ts embeds a clip only for a path whose
   // capture passed) and, when the walkthrough is known, that it still has (`pathClipLinks`).
   // Every other clip file is removed from the site, render folder or not.
   if (videoDir && !sameDir) {
-    const isClip = (name: string) => name.startsWith(`${id}.path-`) && /\.(mp4|srt|vtt)$/.test(name);
+    const isClip = (name: string) => name.startsWith(`${id}.path-`) && /\.(mp4|srt|vtt|transcript\.md)$/.test(name);
     const embedded = embeddedClipPaths(pageFile, id);
     const known = wf ? new Set(pathClipLinks(videoDir, wf).map((c) => c.pathId)) : undefined;
     const keep = new Set([...embedded].filter((p) => !known || known.has(p)));
     const wanted: string[] = [];
     for (const pathId of keep) {
       const files = pathClipFiles(join(videoDir, id), id, pathId);
-      for (const f of [files.mp4, files.srt, files.vtt]) if (existsSync(f)) wanted.push(basename(f));
+      for (const f of [files.mp4, files.srt, files.vtt, files.transcript]) if (existsSync(f)) wanted.push(basename(f));
     }
     if (wanted.length > 0) mkdirSync(destDir, { recursive: true });
     for (const name of wanted) linkOrCopy(join(videoDir, id, name), join(destDir, name));
@@ -174,18 +232,11 @@ function stageMedia(id: string, pageFile: string, publicDir: string, videoDir: s
   }
 
   // Poster: the step screenshot with the most visual detail (largest file; earliest on a tie) —
-  // a first step is often a half-loaded screen or a spinner.
+  // a first step is often a half-loaded screen or a spinner. The primary device's own shots only
+  // (`step-NN.png`), never another device's `<device>-step-NN.png`.
   const shotsDir = join(dirname(pageFile), "screenshots");
   const shots = existsSync(shotsDir) ? readdirSync(shotsDir).filter((n) => /\.(png|jpe?g|webp)$/i.test(n)).sort() : [];
-  let poster: string | undefined;
-  let posterSize = -1;
-  for (const name of shots) {
-    const size = statSync(join(shotsDir, name)).size;
-    if (size > posterSize) {
-      poster = name;
-      posterSize = size;
-    }
-  }
+  const poster = largestFile(shotsDir, shots.filter((n) => !SECONDARY_SHOT.test(n)));
   if (poster) {
     const dest = join(publicDir, "screenshots", id, poster);
     mkdirSync(dirname(dest), { recursive: true });
@@ -193,6 +244,28 @@ function stageMedia(id: string, pageFile: string, publicDir: string, videoDir: s
     fields.poster = `/screenshots/${id}/${poster}`;
   } else {
     fields.poster = null;
+  }
+
+  // Phone poster (M43c): the same "most visual detail" pick over the page's own phone screenshots
+  // (`phone-step-NN.png`, blur burned in like every page screenshot) — never a raw capture frame,
+  // and a landscape shot makes a poor portrait-video poster. Only with a phone video to go with
+  // it; any other `phone-*` poster for this id (an older pick, or a raw-frame copy an earlier
+  // build made) is removed. `phone-step-NN.png` files are get_procedure's and are left alone.
+  const phonePoster = fields.phoneVideo ? largestFile(shotsDir, shots.filter((n) => /^phone-step-\d+\.png$/.test(n))) : undefined;
+  const posterName = phonePoster ? `phone-poster-${phonePoster.slice("phone-".length)}` : undefined;
+  const publicShots = join(publicDir, "screenshots", id);
+  if (existsSync(publicShots)) {
+    for (const name of readdirSync(publicShots)) {
+      if (name.startsWith("phone-") && !/^phone-step-\d+\.png$/.test(name) && name !== posterName) rmSync(join(publicShots, name), { force: true });
+    }
+  }
+  if (phonePoster && posterName) {
+    const dest = join(publicShots, posterName);
+    mkdirSync(dirname(dest), { recursive: true });
+    copyFileSync(join(shotsDir, phonePoster), dest);
+    fields.phonePoster = `/screenshots/${id}/${posterName}`;
+  } else {
+    fields.phonePoster = null;
   }
   return fields;
 }
@@ -314,6 +387,11 @@ export interface IndexStageOptions {
   /** Walkthrough ids in outline.yaml card order: pages in each section follow it (then a
    * create-to-delete order by title). */
   outlineOrder?: string[];
+  /** Per walkthrough id, whether its phone video (M43c) is current — phone is one of its
+   * secondary devices and that capture passed (built by the caller: this module never resolves
+   * devices itself). False removes `<id>.phone.*` from the site and the page's phone keys; an id
+   * left out stages its phone video when one exists. */
+  phoneVideos?: Record<string, boolean>;
 }
 
 export interface IndexStageResult {
@@ -402,7 +480,7 @@ export function runIndexStage(opts: IndexStageOptions): IndexStageResult {
       if (opts.helpApp) removePublishedMedia(publicDir, p.id, videoDir);
       continue;
     }
-    finishStagedPage(file, p.id, placement, opts.helpApp ? stageMedia(p.id, file, publicDir, videoDir, walkthroughs.get(p.id)) : undefined, walkthroughs.get(p.id));
+    finishStagedPage(file, p.id, placement, opts.helpApp ? stageMedia(p.id, file, publicDir, videoDir, walkthroughs.get(p.id), opts.phoneVideos?.[p.id]) : undefined, walkthroughs.get(p.id));
   }
 
   // 2. Pages this run didn't rebuild: move to their current spot when the walkthrough is known.
@@ -412,7 +490,7 @@ export function runIndexStage(opts: IndexStageOptions): IndexStageResult {
     const keep = copies.find((c) => c.rel === placement.dir) ?? copies[0];
     for (const copy of copies) if (copy !== keep) removeStagedPage(copy.dir);
     const file = relocateStagedPage(contentDir, keep, placement);
-    finishStagedPage(file, id, placement, opts.helpApp ? stageMedia(id, file, publicDir, videoDir, walkthroughs.get(id)) : undefined, walkthroughs.get(id));
+    finishStagedPage(file, id, placement, opts.helpApp ? stageMedia(id, file, publicDir, videoDir, walkthroughs.get(id), opts.phoneVideos?.[id]) : undefined, walkthroughs.get(id));
   }
 
   // 3. Walkthroughs deleted from disk.

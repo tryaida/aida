@@ -75,6 +75,26 @@ export function withOrigin(path: string, origin: string | undefined): string {
   return `${origin}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
+/** Where a Tab keydown on the dialog should redirect focus, so it loops inside the dialog
+ * instead of escaping to the page behind it (WCAG 2.2 AA focus trap) — the pure decision, kept
+ * apart from the DOM lookups (`querySelectorAll`, `document.activeElement`) so it's testable
+ * without a browser. `isFirstFocused`/`isLastFocused` say whether the dialog's first/last
+ * focusable element currently has focus. */
+export type FocusRedirect = "first" | "last" | "none";
+export function focusTrapRedirect(key: string, shiftKey: boolean, isFirstFocused: boolean, isLastFocused: boolean): FocusRedirect {
+  if (key !== "Tab") return "none";
+  if (shiftKey && isFirstFocused) return "last";
+  if (!shiftKey && isLastFocused) return "first";
+  return "none";
+}
+
+/** Focusable elements inside `root`, in DOM (tab) order — the dialog's own close/new-chat
+ * buttons, citation/guide links, and the question input and send button. */
+const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+function focusableElements(root: HTMLElement): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+}
+
 async function* parseNdjson(body: ReadableStream<Uint8Array>): AsyncGenerator<Record<string, unknown>> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -157,6 +177,11 @@ export function ChatWidget({ apiBase = "/api/chat", currentPath, title = "Help c
   const [busy, setBusy] = useState(false);
   const [restored, setRestored] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const wasOpen = useRef(false);
+  const wasBusy = useRef(false);
   const origin = helpSiteOrigin(apiBase);
 
   // Restore after mount (not during render) so server and client markup match.
@@ -177,6 +202,35 @@ export function ChatWidget({ apiBase = "/api/chat", currentPath, title = "Help c
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [turns, open]);
+
+  // Return focus to the toggle button whenever the dialog closes (Escape, the close button, or
+  // programmatically) — WCAG 2.2 AA focus management, so closing the dialog doesn't drop focus
+  // back to the top of the page.
+  useEffect(() => {
+    if (wasOpen.current && !open) toggleRef.current?.focus();
+    wasOpen.current = open;
+  }, [open]);
+
+  // Escape closes the dialog even when focus isn't inside it — review finding: the question
+  // input used to go `disabled` while busy, which drops focus to `<body>` (outside the dialog's
+  // own onKeyDown), so Escape silently stopped working mid-answer. A document-level listener
+  // (scoped to `open`) doesn't depend on where focus currently is.
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
+  // Refocus the question input once an answer finishes — defensive, in case focus moved away
+  // while `readOnly` (below) blocked typing; the input itself never loses focus just by going
+  // `readOnly` (unlike `disabled`, which this used to be).
+  useEffect(() => {
+    if (wasBusy.current && !busy) inputRef.current?.focus();
+    wasBusy.current = busy;
+  }, [busy]);
   /* eslint-enable react-hooks/rules-of-hooks */
 
   async function ask(q: string) {
@@ -232,15 +286,38 @@ export function ChatWidget({ apiBase = "/api/chat", currentPath, title = "Help c
 
   const empty = turns.length === 0;
   const href = (url: string) => withOrigin(url, origin);
+  // Announces once an answer finishes (not every streamed delta) — a polite live region, not
+  // the full answer text (already readable in the bubble; errors get their own role="alert").
+  const lastTurn = turns[turns.length - 1];
+  const liveAnnouncement = lastTurn && lastTurn.role === "assistant" && lastTurn.done && !lastTurn.error ? "Answer ready." : "";
+  const panelId = "aida-help-chat-panel";
 
   return (
     <div className="not-prose fixed bottom-4 right-4 z-50 text-sm print:hidden">
       {open ? (
         <div
+          ref={dialogRef}
+          id={panelId}
           role="dialog"
+          aria-modal="true"
           aria-label={title}
           onKeyDown={(e) => {
-            if (e.key === "Escape") setOpen(false);
+            // Escape is handled by the document-level listener above (it has to be: this handler
+            // only ever sees the key when focus is still inside the dialog).
+            if (e.key === "Tab" && dialogRef.current) {
+              const focusables = focusableElements(dialogRef.current);
+              const first = focusables[0];
+              const last = focusables[focusables.length - 1];
+              if (!first || !last) return;
+              const redirect = focusTrapRedirect(e.key, e.shiftKey, document.activeElement === first, document.activeElement === last);
+              if (redirect === "first") {
+                e.preventDefault();
+                first.focus();
+              } else if (redirect === "last") {
+                e.preventDefault();
+                last.focus();
+              }
+            }
           }}
           className="flex h-[min(36rem,calc(100vh-2rem))] w-[min(26rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-[calc(var(--brand-radius,0.5rem)+6px)] border border-fd-border bg-fd-background shadow-2xl"
         >
@@ -255,7 +332,13 @@ export function ChatWidget({ apiBase = "/api/chat", currentPath, title = "Help c
             {!empty && !busy ? (
               <button
                 type="button"
-                onClick={() => setTurns([])}
+                onClick={() => {
+                  // Review finding: this button disappears once `turns` is empty (the `!empty`
+                  // guard above), which drops focus to the body if it was focused when clicked —
+                  // move focus to the question input instead, same as closing it any other way.
+                  setTurns([]);
+                  inputRef.current?.focus();
+                }}
                 aria-label="Start a new chat"
                 title="New chat"
                 className="rounded-md p-1.5 text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-foreground"
@@ -272,10 +355,14 @@ export function ChatWidget({ apiBase = "/api/chat", currentPath, title = "Help c
               <CloseIcon />
             </button>
           </div>
+          {/* Visually hidden; announces once an answer finishes, not every streamed token. */}
+          <div aria-live="polite" aria-atomic="true" className="sr-only">
+            {liveAnnouncement}
+          </div>
           <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
             {empty ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-fd-muted-foreground">
-                <span className="flex size-10 items-center justify-center rounded-full bg-fd-primary/10 text-fd-primary">
+                <span className="flex size-10 items-center justify-center rounded-full bg-fd-primary/10 text-fd-primary-text">
                   <ChatIcon />
                 </span>
                 <p className="font-medium text-fd-foreground">Ask a question</p>
@@ -306,12 +393,21 @@ export function ChatWidget({ apiBase = "/api/chat", currentPath, title = "Help c
             }}
           >
             <input
+              ref={inputRef}
               className="min-w-0 flex-1 rounded-full border border-fd-border bg-fd-background px-4 py-2 outline-none focus:border-fd-primary focus:ring-2 focus:ring-fd-primary/20"
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               placeholder="Ask a question…"
               aria-label="Ask the help chat"
-              disabled={busy}
+              // Not `disabled`: a disabled input is removed from the tab order and, if it had
+              // focus (the common case — this is autoFocused), the browser drops focus to
+              // `<body>` on submit. That broke Escape (the dialog's own onKeyDown never saw it
+              // again) and let Tab walk straight out of the aria-modal dialog. `readOnly` blocks
+              // editing while busy without any of that — the input stays focused and tabbable;
+              // the send button (below) is still the thing that actually guards against a
+              // double-submit.
+              readOnly={busy}
+              aria-disabled={busy}
               autoFocus
             />
             <button
@@ -326,10 +422,13 @@ export function ChatWidget({ apiBase = "/api/chat", currentPath, title = "Help c
         </div>
       ) : (
         <button
+          ref={toggleRef}
           type="button"
           onClick={() => setOpen(true)}
           aria-label="Ask a question"
-          className="inline-flex items-center gap-2 rounded-full bg-fd-primary p-3 font-medium text-fd-primary-foreground shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl sm:py-2.5 sm:pe-4 sm:ps-3"
+          aria-expanded={false}
+          aria-controls={panelId}
+          className="inline-flex items-center gap-2 rounded-full bg-fd-primary p-3 font-medium text-fd-primary-foreground shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl motion-reduce:hover:translate-y-0 sm:py-2.5 sm:pe-4 sm:ps-3"
         >
           <ChatIcon />
           <span className="hidden sm:inline">{empty ? "Ask a question" : "Continue chat"}</span>
@@ -355,13 +454,17 @@ function AssistantTurn({ turn, thinking, href }: { turn: Turn; thinking: boolean
         {turn.text ? (
           <ChatMarkdown text={turn.text} citations={turn.citations} href={href} />
         ) : thinking ? (
-          <span className="inline-flex gap-1 py-1" aria-label="Thinking">
-            <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" />
-            <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" />
-            <span className="size-1.5 animate-bounce rounded-full bg-current" />
+          <span className="inline-flex gap-1 py-1" role="status" aria-label="Thinking">
+            <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.3s] motion-reduce:animate-none" />
+            <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.15s] motion-reduce:animate-none" />
+            <span className="size-1.5 animate-bounce rounded-full bg-current motion-reduce:animate-none" />
           </span>
         ) : null}
-        {turn.error ? <div className="text-red-600 dark:text-red-400">{turn.error}</div> : null}
+        {turn.error ? (
+          <div role="alert" className="text-red-600 dark:text-red-400">
+            {turn.error}
+          </div>
+        ) : null}
       </div>
       {guides.map((c) => {
         const proc = procedureFor(c)!;
@@ -375,15 +478,15 @@ function AssistantTurn({ turn, thinking, href }: { turn: Turn; thinking: boolean
               <img src={href(proc.firstScreenshot)} alt="" className="h-14 w-20 shrink-0 rounded-md border border-fd-border object-cover object-top" />
             ) : null}
             <span className="min-w-0 flex-1">
-              <span className="line-clamp-2 font-medium leading-snug group-hover:text-fd-primary">
-                {guides.length > 1 ? <span className="me-1 text-fd-primary">{c.n}</span> : null}
+              <span className="line-clamp-2 font-medium leading-snug group-hover:text-fd-primary-text">
+                {guides.length > 1 ? <span className="me-1 text-fd-primary-text">{c.n}</span> : null}
                 {c.title}
               </span>
               <span className="mt-0.5 block text-xs text-fd-muted-foreground">
                 {proc.stepCount ? `${proc.stepCount} steps` : "Guide"}
                 {proc.firstVideoTimeSec !== undefined ? " · with video" : ""}
                 {" · "}
-                <span className="whitespace-nowrap text-fd-primary">Open guide →</span>
+                <span className="whitespace-nowrap text-fd-primary-text">Open guide →</span>
               </span>
             </span>
           </a>
@@ -396,7 +499,7 @@ function AssistantTurn({ turn, thinking, href }: { turn: Turn; thinking: boolean
             <a
               key={c.n}
               href={href(c.url)}
-              className="rounded-full border border-fd-border bg-fd-card px-2.5 py-1 text-fd-foreground hover:border-fd-primary/50 hover:text-fd-primary"
+              className="rounded-full border border-fd-border bg-fd-card px-2.5 py-1 text-fd-foreground hover:border-fd-primary/50 hover:text-fd-primary-text"
             >
               {c.title}
             </a>

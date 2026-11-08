@@ -39,7 +39,8 @@ describe("aida init brand + theme", () => {
     expect(result.brand.name).toBe("Acme");
     expect(result.brand.logo).toBe("../public/acme-logo.svg");
     expect(result.brand.logoDark).toBe("../public/acme-logo-white.svg");
-    expect(result.theme?.warnings).toEqual([]);
+    // Only contrast notes (decision 39): the detected green is darkened a little where it's text.
+    expect(result.theme?.warnings.filter((w) => !w.startsWith("contrast:"))).toEqual([]);
 
     const help = join(dir, "help");
     const config = readFileSync(join(help, "aida.config.ts"), "utf8");

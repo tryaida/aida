@@ -42,6 +42,14 @@ describe("toChaptersVtt", () => {
     const cues = parseVtt(vtt);
     expect(cues).toHaveLength(2);
   });
+
+  it("ids each cue with the step's own number, so a device-filtered video matches the page", () => {
+    const chips: TimelineChip[] = [
+      { t0: 0, t1: 5, num: "1", eyebrow: "", title: "Open Competitors" },
+      { t0: 5, t1: 9, num: "3", eyebrow: "", title: "Save" },
+    ];
+    expect(toChaptersVtt(chips)).toMatch(/^3\n00:00:05\.000 --> /m);
+  });
 });
 
 describe("wrapCaption", () => {

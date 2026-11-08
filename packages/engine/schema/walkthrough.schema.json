@@ -25,6 +25,17 @@
     "section": {
       "type": "string"
     },
+    "devices": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "desktop",
+          "phone"
+        ]
+      }
+    },
     "verifiedAgainst": {
       "type": "object",
       "properties": {
@@ -371,6 +382,17 @@
                 "id"
               ],
               "additionalProperties": false
+            }
+          },
+          "devices": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "desktop",
+                "phone"
+              ]
             }
           },
           "actions": {
@@ -1249,6 +1271,17 @@
                   ]
                 }
               },
+              "devices": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "desktop",
+                    "phone"
+                  ]
+                }
+              },
               "chapter": {},
               "say": {},
               "caption": {},
@@ -1486,6 +1519,17 @@
                       "id"
                     ],
                     "additionalProperties": false
+                  }
+                },
+                "devices": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "desktop",
+                      "phone"
+                    ]
                   }
                 },
                 "actions": {

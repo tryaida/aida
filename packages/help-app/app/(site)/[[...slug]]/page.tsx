@@ -13,6 +13,7 @@ import { Clock, ListOrdered, PlayCircle, UserRound } from "lucide-react";
 import { getMDXComponents } from "@/components/mdx";
 import { LastCheckedBadge } from "@/components/last-checked-badge";
 import { VideoEmbed } from "@/components/video-embed";
+import { GuideDeviceSwitch } from "@/components/guide-device-switch";
 import { PageActions } from "@/components/site/page-actions";
 import { HomeLibrary, SectionLibrary } from "@/components/site/library";
 import { SearchTrigger } from "@/components/site/search-trigger";
@@ -41,7 +42,7 @@ function Home({ page }: { page: LoadedPage }) {
       <section className="aida-hero not-prose relative mb-10 overflow-hidden rounded-[calc(var(--brand-radius)+8px)] border border-fd-border px-6 py-10 sm:px-10 sm:py-14">
         <div className="relative grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_22rem]">
           <div className="flex min-w-0 flex-col items-start gap-5">
-            <div className="flex items-center gap-3 text-sm font-medium text-fd-primary">
+            <div className="flex items-center gap-3 text-sm font-medium text-fd-primary-text">
               <BrandLogo className="size-9" />
               <span>{brand.name === "Help" ? "Help centre" : `${brand.name} help centre`}</span>
             </div>
@@ -65,8 +66,8 @@ function Home({ page }: { page: LoadedPage }) {
                       href={item.url}
                       className="group flex items-center gap-3 rounded-[var(--brand-radius)] px-2 py-2 text-sm hover:bg-fd-accent"
                     >
-                      <PlayCircle className="size-4 shrink-0 text-fd-primary" />
-                      <span className="flex-1 truncate font-medium group-hover:text-fd-primary">{item.name}</span>
+                      <PlayCircle aria-hidden="true" className="size-4 shrink-0 text-fd-primary-text" />
+                      <span className="flex-1 truncate font-medium group-hover:text-fd-primary-text">{item.name}</span>
                       {data.steps ? <span className="text-xs text-fd-muted-foreground">{data.steps}</span> : null}
                     </Link>
                   </li>
@@ -116,24 +117,41 @@ function Guide({ page }: { page: LoadedPage }) {
           <LastCheckedBadge lastChecked={d.lastChecked} passed={d.passed ?? false} />
           {d.steps ? (
             <span className="inline-flex items-center gap-1.5">
-              <ListOrdered className="size-4" /> {plural(d.steps, "step")}
+              <ListOrdered aria-hidden="true" className="size-4" /> {plural(d.steps, "step")}
             </span>
           ) : null}
           {d.for ? (
             <span className="inline-flex items-center gap-1.5">
-              <UserRound className="size-4" /> For {d.for.charAt(0).toLowerCase() + d.for.slice(1)}
+              <UserRound aria-hidden="true" className="size-4" /> For {d.for.charAt(0).toLowerCase() + d.for.slice(1)}
             </span>
           ) : null}
           {d.video ? (
-            <a href="#video" className="inline-flex items-center gap-1.5 hover:text-fd-primary print:hidden">
-              <Clock className="size-4" /> Watch the video
+            <a href="#video" className="inline-flex items-center gap-1.5 hover:text-fd-primary-text print:hidden">
+              <Clock aria-hidden="true" className="size-4" /> Watch the video
             </a>
           ) : null}
+          <GuideDeviceSwitch devices={d.devices} />
         </div>
         <PageActions pdf={d.pdf} pdfCard={d.pdfCard} />
       </header>
       {d.video ? (
-        <VideoEmbed src={d.video} vtt={d.vtt} srt={d.srt} poster={d.poster} chapters={d.chapters} title={d.title} />
+        <VideoEmbed
+          id="video"
+          src={d.video}
+          vtt={d.vtt}
+          srt={d.srt}
+          poster={d.poster}
+          chapters={d.chapters}
+          transcript={d.transcript}
+          title={d.title}
+          // A secondary phone device's own portrait video (decision 40, M43c) — VideoEmbed shows
+          // a DeviceSwitch and plays/subtitles whichever device the reader has chosen.
+          phone={
+            d.phoneVideo
+              ? { src: d.phoneVideo, vtt: d.phoneVtt, srt: d.phoneSrt, poster: d.phonePoster, chapters: d.phoneChapters, transcript: d.phoneTranscript }
+              : undefined
+          }
+        />
       ) : null}
       <DocsBody className="aida-guide">
         <MDX components={getMDXComponents()} />

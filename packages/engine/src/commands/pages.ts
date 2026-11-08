@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { loadConfig } from "../config/index.js";
 import { loadWalkthroughFile } from "../walkthrough/index.js";
 import { buildPage, type BuildPageResult } from "../pages/index.js";
+import { captureDirFor, devicesFor } from "../devices/index.js";
+import { briefPath, loadBrief } from "../brief/consumers.js";
 
 export interface RunPagesOptions {
   configPath: string;
@@ -25,13 +27,18 @@ export async function runPages(walkthroughArg: string, opts: RunPagesOptions, js
   const file = resolveWalkthroughFile(config.walkthroughsDir, walkthroughArg);
   const wf = loadWalkthroughFile(file);
 
-  const captureDir = join(config.buildDir, wf.walkthrough, "capture");
+  // Every device this walkthrough is shown on (decision 40, M43b), primary first — same
+  // resolution `aida build` uses, so `aida pages` (this command, for one walkthrough at a time)
+  // reads the primary's capture from the right directory and picks up any phone capture too.
+  const devices = devicesFor(wf, config, loadBrief(briefPath(config)));
+  const captureDir = captureDirFor(config.buildDir, wf.walkthrough, devices[0]);
   const outDir = opts.outDir ?? join(config.outDir, "pages");
   const videoDir = opts.videoDir ?? join(config.outDir, "videos");
+  const secondaryCaptures = devices.slice(1).map((device) => ({ device, captureDir: captureDirFor(config.buildDir, wf.walkthrough, device) }));
 
   let result: BuildPageResult;
   try {
-    result = await buildPage(wf, captureDir, outDir, { videoDir, readers: config.readers, roles: config.roles });
+    result = await buildPage(wf, captureDir, outDir, { videoDir, readers: config.readers, roles: config.roles, devices, secondaryCaptures });
   } catch (err) {
     const message = (err as Error).message;
     if (json) console.log(JSON.stringify({ ok: false, walkthrough: wf.walkthrough, error: message }));

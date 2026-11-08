@@ -36,12 +36,17 @@ vi.mock("../../src/pages/index.js", async (importOriginal) => {
   return { ...mod, buildPage: vi.fn() };
 });
 vi.mock("../../src/qa/index.js", () => ({ runQa: vi.fn() }));
+vi.mock("../../src/capture/reset.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../../src/capture/reset.js")>();
+  return { ...mod, resetDatabase: vi.fn(async () => {}) };
+});
 
 const { runCapture } = await import("../../src/capture/index.js");
 const { buildVoiceManifest } = await import("../../src/commands/voice.js");
 const { render } = await import("../../src/render/index.js");
 const { buildPage } = await import("../../src/pages/index.js");
 const { runQa } = await import("../../src/qa/index.js");
+const { resetDatabase } = await import("../../src/capture/reset.js");
 const { runPipeline, pagesInputHash } = await import("../../src/build/pipeline.js");
 
 const dirs: string[] = [];
@@ -56,6 +61,7 @@ afterEach(async () => {
   vi.mocked(render).mockReset();
   vi.mocked(buildPage).mockReset();
   vi.mocked(runQa).mockReset();
+  vi.mocked(resetDatabase).mockReset();
   while (dirs.length) await rm(dirs.pop()!, { recursive: true, force: true });
 });
 
@@ -652,5 +658,192 @@ describe("report.json names each failed check and its files (M26)", () => {
     const result = await runPipeline(config, { configPath: "x", walkthroughIds: [], only: ["capture"], json: false });
     expect(result.walkthroughs[0].ok).toBe(true);
     expect(result.walkthroughs[0].failures).toBeUndefined();
+  });
+});
+
+describe("runPipeline: a secondary phone video (M43c, decision 40)", () => {
+  function fakeRenderResult(id: string, outDir: string, suffix = ""): import("../../src/render/index.js").RenderResult {
+    return {
+      id,
+      outDir: join(outDir, id),
+      srt: join(outDir, id, `${id}${suffix}.srt`),
+      vtt: join(outDir, id, `${id}${suffix}.vtt`),
+      chaptersVtt: join(outDir, id, `${id}${suffix}.chapters.vtt`),
+      timelineJson: join(outDir, id, suffix ? `timeline${suffix}.json` : "timeline.json"),
+      stills: [],
+      durationSec: suffix ? 9 : 12,
+      skipped: false,
+      frames: suffix ? 90 : 120,
+      wallTimeMs: 1,
+      mp4: join(outDir, id, `${id}${suffix}.mp4`),
+    };
+  }
+
+  it("renders the primary device, then a secondary phone's own video, with the right device/fileSuffix/pathClips options", async () => {
+    const config = fakeConfig({ devices: ["desktop", "phone"] } as Partial<ResolvedConfig>);
+    writeFileSync(join(config.walkthroughsDir, "fixture.yaml"), ["walkthrough: fixture", "title: Fixture", "steps:", "  - id: only-step", '    title: "Do the thing"'].join("\n"));
+    // The secondary phone's capture, then the primary (desktop) — `runCaptureForDevice` calls
+    // `runCapture` once per device, secondaries first (reset → phone → reset → desktop).
+    vi.mocked(runCapture)
+      .mockResolvedValueOnce({ manifest: fakeManifest(), run: { capturedAt: new Date().toISOString(), durationMs: 1 }, validation: fakeValidation(true), framesDir: "/tmp/frames" })
+      .mockResolvedValueOnce({ manifest: fakeManifest(), run: { capturedAt: new Date().toISOString(), durationMs: 1 }, validation: fakeValidation(true), framesDir: "/tmp/frames" });
+    vi.mocked(render)
+      .mockResolvedValueOnce(fakeRenderResult("fixture", join(config.outDir, "videos")))
+      .mockResolvedValueOnce(fakeRenderResult("fixture", join(config.outDir, "videos"), ".phone"));
+
+    const result = await runPipeline(config, { configPath: "x", walkthroughIds: [], only: ["capture", "render"], json: false });
+
+    expect(render).toHaveBeenCalledTimes(2);
+    const [primaryArgs, phoneArgs] = vi.mocked(render).mock.calls;
+    expect(primaryArgs[1]).toMatchObject({ device: "desktop" });
+    expect(primaryArgs[1].fileSuffix).toBeUndefined();
+    expect(phoneArgs[1]).toMatchObject({ device: "phone", fileSuffix: ".phone", pathClips: false });
+
+    const w = result.walkthroughs.find((x) => x.walkthrough === "fixture")!;
+    expect(w.ok).toBe(true);
+    expect(w.devices).toEqual(["desktop", "phone"]);
+    expect(w.render).toMatchObject({ durationSec: 12 });
+    expect(w.phoneRender).toMatchObject({ durationSec: 9 });
+  });
+
+  it("never renders a phone video when the phone capture didn't pass, and never fails the walkthrough's own render stage for it", async () => {
+    const config = fakeConfig({ devices: ["desktop", "phone"] } as Partial<ResolvedConfig>);
+    writeFileSync(join(config.walkthroughsDir, "fixture.yaml"), ["walkthrough: fixture", "title: Fixture", "steps:", "  - id: only-step", '    title: "Do the thing"'].join("\n"));
+    // The phone is captured first (reset → phone → reset → desktop), so its run is the first call.
+    vi.mocked(runCapture)
+      .mockResolvedValueOnce({ manifest: fakeManifest(), run: { capturedAt: new Date().toISOString(), durationMs: 1 }, validation: fakeValidation(false), framesDir: "/tmp/frames" })
+      .mockResolvedValueOnce({ manifest: fakeManifest(), run: { capturedAt: new Date().toISOString(), durationMs: 1 }, validation: fakeValidation(true), framesDir: "/tmp/frames" });
+    vi.mocked(render).mockResolvedValueOnce(fakeRenderResult("fixture", join(config.outDir, "videos")));
+
+    const result = await runPipeline(config, { configPath: "x", walkthroughIds: [], only: ["capture", "render"], json: false });
+
+    // Only the primary device's video — the failed phone capture is non-fatal.
+    expect(render).toHaveBeenCalledTimes(1);
+    const w = result.walkthroughs.find((x) => x.walkthrough === "fixture")!;
+    expect(w.ok).toBe(true);
+    expect(w.stages.render?.status).not.toBe("failed");
+    expect(w.phoneRender).toBeUndefined();
+    expect(w.deviceResults?.phone?.ok).toBe(false);
+  });
+  /** Records the order of resets and captures (device + run id) for one run. */
+  function recordCaptures(events: string[], runIds: Record<string, string | undefined>): void {
+    vi.mocked(resetDatabase).mockImplementation(async () => {
+      events.push("reset");
+    });
+    vi.mocked(runCapture).mockImplementation(async (opts) => {
+      events.push(`capture:${opts.device}`);
+      runIds[opts.device ?? "desktop"] = opts.runId;
+      return { manifest: fakeManifest(), run: { capturedAt: new Date().toISOString(), durationMs: 1 }, validation: fakeValidation(true), framesDir: "/tmp/frames" };
+    });
+  }
+  const database = { url: async () => "postgres://127.0.0.1:5432/demo", query: async () => [], reset: async () => {} };
+
+  it("captures phone before the primary, bracketed by resets, on its own run id (a walkthrough that changes data)", async () => {
+    const config = fakeConfig({ devices: ["desktop", "phone"], database } as unknown as Partial<ResolvedConfig>);
+    writeFileSync(join(config.walkthroughsDir, "fixture.yaml"), ["walkthrough: fixture", "title: Fixture", "leaves: [receipt-scanned]", "steps:", "  - id: only-step", '    title: "Do the thing"'].join("\n"));
+    const events: string[] = [];
+    const runIds: Record<string, string | undefined> = {};
+    recordCaptures(events, runIds);
+
+    const result = await runPipeline(config, { configPath: "x", walkthroughIds: [], only: ["capture"], json: false });
+
+    expect(events).toEqual(["reset", "capture:phone", "reset", "capture:desktop"]);
+    expect(runIds.phone).toBeTruthy();
+    expect(runIds.phone).not.toBe(runIds.desktop);
+    const w = result.walkthroughs.find((x) => x.walkthrough === "fixture")!;
+    expect(w.ok).toBe(true);
+    expect(w.deviceResults?.phone?.ok).toBe(true);
+  });
+
+  it("doesn't capture phone for a walkthrough that changes data when no reset is allowed (--no-reset), and says why", async () => {
+    const config = fakeConfig({ devices: ["desktop", "phone"], database } as unknown as Partial<ResolvedConfig>);
+    writeFileSync(join(config.walkthroughsDir, "fixture.yaml"), ["walkthrough: fixture", "title: Fixture", "leaves: [receipt-scanned]", "steps:", "  - id: only-step", '    title: "Do the thing"'].join("\n"));
+    // An older passing phone capture, which must not stay looking current.
+    const phoneDir = join(config.buildDir, "fixture", "phone", "capture");
+    mkdirSync(phoneDir, { recursive: true });
+    writeFileSync(join(phoneDir, "validation.json"), JSON.stringify(fakeValidation(true)));
+    const events: string[] = [];
+    recordCaptures(events, {});
+
+    const result = await runPipeline(config, { configPath: "x", walkthroughIds: [], only: ["capture"], json: false, noReset: true });
+
+    expect(events).toEqual(["capture:desktop"]);
+    const w = result.walkthroughs.find((x) => x.walkthrough === "fixture")!;
+    expect(w.ok).toBe(true);
+    expect(w.deviceResults?.phone).toMatchObject({ ok: false, failure: expect.stringMatching(/needs a database reset between devices/) });
+    expect(JSON.parse(readFileSync(join(phoneDir, "validation.json"), "utf8"))).toMatchObject({ ok: false, notCaptured: expect.stringMatching(/--no-reset/) });
+  });
+
+  it("still captures phone for a read-only walkthrough without resets, sharing the run's id", async () => {
+    const config = fakeConfig({ devices: ["desktop", "phone"] } as Partial<ResolvedConfig>);
+    writeFileSync(join(config.walkthroughsDir, "fixture.yaml"), ["walkthrough: fixture", "title: Fixture", "steps:", "  - id: only-step", '    title: "Do the thing"'].join("\n"));
+    const events: string[] = [];
+    const runIds: Record<string, string | undefined> = {};
+    recordCaptures(events, runIds);
+
+    await runPipeline(config, { configPath: "x", walkthroughIds: [], only: ["capture"], json: false, noReset: true });
+
+    expect(events).toEqual(["capture:phone", "capture:desktop"]);
+    expect(runIds.phone).toBe(runIds.desktop);
+  });
+
+  it("removes a stale phone render when phone is no longer a secondary device", async () => {
+    const config = fakeConfig();
+    writeWalkthrough(config.walkthroughsDir, "fixture");
+    const videoStepDir = join(config.outDir, "videos", "fixture");
+    mkdirSync(join(videoStepDir, ".compose.phone"), { recursive: true });
+    for (const name of ["fixture.phone.mp4", "fixture.phone.vtt", "fixture.phone.transcript.md", "timeline.phone.json", "fixture.mp4"]) writeFileSync(join(videoStepDir, name), "x");
+    mockCaptureOnce(true);
+    vi.mocked(render).mockResolvedValueOnce(fakeRenderResult("fixture", join(config.outDir, "videos")));
+
+    await runPipeline(config, { configPath: "x", walkthroughIds: [], only: ["capture", "render"], json: false });
+
+    expect(existsSync(join(videoStepDir, "fixture.mp4"))).toBe(true);
+    for (const name of ["fixture.phone.mp4", "fixture.phone.vtt", "fixture.phone.transcript.md", "timeline.phone.json", ".compose.phone"]) {
+      expect(existsSync(join(videoStepDir, name))).toBe(false);
+    }
+  });
+
+  it("QAs the phone video on its own: a phone QA failure drops the phone media, never the page or stages.qa", async () => {
+    const config = fakeConfig({ devices: ["desktop", "phone"] } as Partial<ResolvedConfig>);
+    writeWalkthrough(config.walkthroughsDir, "fixture");
+    const pagesDir = join(config.outDir, "pages");
+    const videoStepDir = join(config.outDir, "videos", "fixture");
+    mkdirSync(videoStepDir, { recursive: true });
+    for (const name of ["fixture.mp4", "fixture.phone.mp4", "fixture.phone.vtt"]) writeFileSync(join(videoStepDir, name), "x");
+    mockCaptureOnce(true); // phone
+    mockCaptureOnce(true); // desktop
+    vi.mocked(buildPage).mockResolvedValueOnce(fakePageResult("fixture", pagesDir));
+    vi.mocked(runQa).mockImplementation(async (target: string) => {
+      const bad = target.includes(".phone.");
+      return { target, ok: !bad, checks: [{ check: "video:loudness", ok: !bad, details: "x" }] } as never;
+    });
+
+    const result = await runPipeline(config, { configPath: "x", walkthroughIds: [], only: ["capture", "pages", "qa"], json: false });
+
+    const w = result.walkthroughs.find((x) => x.walkthrough === "fixture")!;
+    expect(w.stages.qa?.status).toBe("ok");
+    expect(w.ok).toBe(true);
+    expect(w.deviceResults?.phone?.qa).toEqual({ ok: false, problems: 2 });
+    expect(existsSync(join(videoStepDir, "fixture.phone.mp4"))).toBe(false);
+    expect(existsSync(join(videoStepDir, "fixture.mp4"))).toBe(true);
+    // qa.json sits at <buildDir>/<id>/qa.json and never lists the phone's checks.
+    const qa = JSON.parse(readFileSync(join(config.buildDir, "fixture", "qa.json"), "utf8"));
+    expect(qa.ok).toBe(true);
+    expect(JSON.stringify(qa)).not.toContain(".phone.");
+  });
+
+  it("writes a phone-primary walkthrough's qa.json at <buildDir>/<id>/qa.json, where loadBuiltPage and failures read it", async () => {
+    const config = fakeConfig({ devices: ["phone"] } as Partial<ResolvedConfig>);
+    writeWalkthrough(config.walkthroughsDir, "fixture");
+    const pagesDir = join(config.outDir, "pages");
+    mockCaptureOnce(true);
+    vi.mocked(buildPage).mockResolvedValueOnce(fakePageResult("fixture", pagesDir));
+    vi.mocked(runQa).mockImplementation(async (target: string) => ({ target, ok: true, checks: [] }) as never);
+
+    await runPipeline(config, { configPath: "x", walkthroughIds: [], only: ["capture", "pages", "qa"], json: false });
+
+    expect(existsSync(join(config.buildDir, "fixture", "qa.json"))).toBe(true);
+    expect(existsSync(join(config.buildDir, "fixture", "phone", "qa.json"))).toBe(false);
   });
 });

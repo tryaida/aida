@@ -86,7 +86,10 @@ export function sliceTimelineForScene(tl: Timeline, scene: TimelineScene): Recor
     entryState,
     fps: tl.fps,
     viewport: tl.viewport,
+    frame: tl.frame,
     stage: tl.stage,
+    band: tl.band,
+    pointer: tl.pointer,
     fade: tl.fade,
     brand: tl.brand,
     intro: tl.intro,
@@ -263,7 +266,8 @@ export async function renderScenesToSegments(opts: {
   let framesSkipped = 0;
   if (toRender.length > 0) {
     const concurrency = Math.max(1, Math.min(opts.concurrency ?? defaultConcurrency(), toRender.length));
-    const { pages, close } = await openRenderBrowser(bundleDir, quality.deviceScaleFactor, concurrency);
+    const frameSize = timeline.frame ? { width: timeline.frame.w, height: timeline.frame.h } : undefined;
+    const { pages, close } = await openRenderBrowser(bundleDir, quality.deviceScaleFactor, concurrency, frameSize);
     try {
       let next = 0;
       const worker = async (page: import("playwright").Page) => {

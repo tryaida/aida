@@ -12,6 +12,7 @@ data:
     note: I can only stay until 4 on the Friday.
 steps:
   - id: mark-dates
+    devices: [desktop]
     title: Mark your dates
     say: Mark the dates that work for you, then continue.
     caption: Mark your dates, then continue.
@@ -19,6 +20,18 @@ steps:
     actions:
       - do: click
         target: { role: button, name: Pending, nth: 0 }
+        highlight: true
+      - do: click
+        target: { role: button, name: Continue }
+  - id: mark-dates-phone
+    devices: [phone]
+    title: Mark your dates
+    say: Tap yes, if need be or no under each date that works for you, then continue.
+    caption: Mark your dates, then continue.
+    page_text: Under each date, tap **Yes**, **If need be** or **No**, then select **Continue**.
+    actions:
+      - do: click
+        target: { role: radio, name: "Yes", nth: 0 }
         highlight: true
       - do: click
         target: { role: button, name: Continue }

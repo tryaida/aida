@@ -15,6 +15,7 @@
   #nd-toc,
   [data-search],
   [data-aida-widget],
+  .skip-link,
   .aida-video,
   .fd-sidebar,
   .fd-toc {
@@ -41,6 +42,18 @@
     width: 100% !important;
     box-shadow: none !important;
     break-inside: avoid;
+  }
+
+  /* A step shown on more than one device (decision 40, M43b): print always shows the primary
+   * device's image, regardless of which one the reader had chosen on screen. */
+  .aida-device-shots [data-device] {
+    display: none !important;
+  }
+  .aida-device-shots [data-primary] {
+    display: block !important;
+  }
+  .aida-device-shots .aida-phone-shot .aida-screenshot {
+    max-width: 60mm !important;
   }
 
   /* Keep each step's heading with its text and screenshot. */

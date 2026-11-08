@@ -15,5 +15,13 @@ export {
   chaptersOf,
   screenshotFile,
 } from "./content.js";
-export type { StepStatus, PageFrontmatter, FrontmatterLinks } from "./content.js";
+export type { StepStatus, PageFrontmatter, FrontmatterLinks, PathClipEmbed, DeviceShot, StepDeviceInfo } from "./content.js";
+export { stepAltText } from "./alt-text.js";
 export { readFrontmatter, bodyOf, setFrontmatterFields, frontmatterBlock, type FrontmatterValue } from "./frontmatter.js";
+export {
+  deviceOnlyNote,
+  deviceShotsAttr,
+  secondaryPathScreenshotFile,
+  secondaryScreenshotFile,
+  stripDeviceShots,
+} from "./device-shots.js";

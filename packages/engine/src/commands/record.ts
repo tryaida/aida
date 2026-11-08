@@ -17,7 +17,7 @@ import type { Page } from "playwright";
 import { loadConfig } from "../config/index.js";
 import type { ResolvedConfig } from "../config/index.js";
 import { loadWalkthroughFile, newRunId } from "../walkthrough/index.js";
-import type { Persona, Walkthrough } from "../walkthrough/index.js";
+import type { Device, Persona, Walkthrough } from "../walkthrough/index.js";
 import { assertWritesAllowed, formatFailureLines, runCapture, runLevelFailure } from "../capture/index.js";
 import type { FailureReport } from "../capture/index.js";
 import { captureSafetyRefusal } from "../safety/index.js";
@@ -40,6 +40,10 @@ export interface RunRecordOptions {
   /** Default true: replay the draft once after saving it. */
   replay?: boolean;
   json?: boolean;
+  /** Recording and its replay stay on desktop for now (decision 40 ships phone for capture/build,
+   * not the recorder); accepted so a caller passing `"desktop"` explicitly doesn't need a special
+   * case. Any other value is rejected by the CLI before this runs. */
+  device?: Device;
   /** Default false (a window the person clicks in). Tests record headless with `drive`. */
   headless?: boolean;
   /** Does the clicking instead of a person (tests). Recording finishes when it resolves. */
@@ -149,6 +153,7 @@ export async function runRecordCommand(opts: RunRecordOptions): Promise<number> 
       personaFor: lookup(config),
       stopAfterStep: RECORD_STEP,
       record: false,
+      device: opts.device ?? "desktop",
       headless: opts.headless ?? false,
       log: json ? undefined : (...a: unknown[]) => console.error("[record]", ...a),
       onStopped: async (page) => {
@@ -227,6 +232,7 @@ export async function runRecordCommand(opts: RunRecordOptions): Promise<number> 
         runId: process.env.AIDA_RUN_ID || newRunId(),
         personaFor: lookup(config),
         record: false,
+        device: opts.device ?? "desktop",
         log: json ? undefined : (...a: unknown[]) => console.error("[replay]", ...a),
       });
       replayFailure = replay.failure;

@@ -80,8 +80,10 @@ than deleting it.
   `Getting started`, the rest first in their sections) and say in each `purpose` what comes next.
   One card per task, never one walkthrough for a whole job; steps outside the app aren't captured.
   A pitfall in **Where people get stuck** that a task can show belongs on its card as a note.
-- A reader whose `devices` lists only `phone` (or puts it first) gets their cards captured at
-  phone size: note `phone` on the card so the writer sets `start.viewport`.
+- A reader whose `devices` includes `phone` gets their walkthroughs captured on a phone as well,
+  automatically (decision 40): pages get phone screenshots and a portrait video. Note `phone` on
+  the card so the writer checks the phone layout, which often differs (a menu behind a button, a
+  list instead of a table).
 - Keep the outline small enough to review in one sitting. If discover turned up more tasks than
   make a sane first site, cut to the top ones and say what you cut and why.
 

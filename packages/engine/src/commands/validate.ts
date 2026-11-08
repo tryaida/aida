@@ -154,13 +154,16 @@ function validateFile(file: string): ValidateResult {
   }
 }
 
-export function validatePath(target: string, opts: ValidateOptions = {}): ValidateResult[] {
-  const results = findWalkthroughFiles(target).map(validateFile);
+export function validatePath(target: string | string[], opts: ValidateOptions = {}): ValidateResult[] {
+  // Several targets: usually a glob the shell expanded (`walkthroughs/*.yaml`), each file once.
+  const targets = Array.isArray(target) ? target : [target];
+  const results = [...new Set(targets.flatMap((t) => findWalkthroughFiles(t)))].map(validateFile);
   // Across files: data states (needs/leaves/clears, cycles, {{run.*}} on screen); states/validate.ts.
-  return applyStateChecks(markDuplicateIds(results), { target, states: opts.states, roles: opts.roles });
+  // Files from one folder read their siblings there, as a single file does.
+  return applyStateChecks(markDuplicateIds(results), { target: targets[0], states: opts.states, roles: opts.roles });
 }
 
-export function runValidate(target: string, json: boolean, opts: ValidateOptions = {}): number {
+export function runValidate(target: string | string[], json: boolean, opts: ValidateOptions = {}): number {
   let results: ValidateResult[];
   try {
     results = validatePath(target, opts);

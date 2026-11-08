@@ -4,7 +4,9 @@
 // render/brand.ts's `resolveArtifactBrand`): colours, fonts, logo and product name.
 import type { Walkthrough } from "../walkthrough/index.js";
 import { stepInstruction } from "../walkthrough/describe.js";
+import { stepAltText } from "../pages/alt-text.js";
 import { NEUTRAL_COLORS, cssColor, fontStack, imageDataUrl, isWordmark, safeFontName, safeFontUrl, type ArtifactColors } from "../render/brand.js";
+import { textSafeVariant } from "../theme/color.js";
 import { escapeHtml, markdownToHtml } from "./markdown.js";
 import { guideUrl, qrSvg } from "./qr.js";
 import { HeadingSlugger, stripMarkdown } from "../index-search/build.js";
@@ -28,6 +30,8 @@ export interface PdfTheme {
   /** House style preset: cover layout, screenshot framing, ring shape. */
   style: "minimal" | "friendly" | "bold";
   tagline?: string;
+  /** BCP-47 tag (config.lang) for `<html lang>`. Always set — `pdfTheme` defaults it to "en". */
+  lang: string;
 }
 
 /** The name beside the logo, left out when the logo is a wordmark that already spells it. */
@@ -36,15 +40,25 @@ function brandName(theme: PdfTheme, name: string | undefined): string {
   return `<span>${escapeHtml(name)}</span>`;
 }
 
-/** `PdfBrand` (any vintage) -> a fully-populated theme. */
-export function pdfTheme(brand?: PdfBrand): PdfTheme {
+/** `PdfBrand` (any vintage) -> a fully-populated theme. `lang` is config.lang (BCP-47); unset or
+ * blank defaults to "en", same as `DEFAULT_LANG` (config/types.ts) — html.ts doesn't import config
+ * to keep this module decoupled from it (same reasoning as render/brand.ts's `BrandConfigLike`). */
+export function pdfTheme(brand?: PdfBrand, lang?: string): PdfTheme {
   const c = brand?.colors ?? {};
   const primary = cssColor(c.primary) ?? cssColor(brand?.primaryColor);
+  const primaryResolved = primary ?? NEUTRAL_COLORS.primary;
+  const accentResolved = cssColor(c.accent) ?? primary ?? NEUTRAL_COLORS.accent;
+  const backgroundResolved = cssColor(c.background) ?? NEUTRAL_COLORS.background;
   const colors: ArtifactColors = {
-    primary: primary ?? NEUTRAL_COLORS.primary,
+    primary: primaryResolved,
     primaryForeground: cssColor(c.primaryForeground) ?? NEUTRAL_COLORS.primaryForeground,
-    accent: cssColor(c.accent) ?? primary ?? NEUTRAL_COLORS.accent,
-    background: cssColor(c.background) ?? NEUTRAL_COLORS.background,
+    // `primary`/`accent` used as *text* (h2/h3 headings, links, list markers below) rather than
+    // a fill: nudged for >= 4.5:1 on the page's own background (cssColor(c.primaryText) carries
+    // one a caller already computed, e.g. render/brand.ts's resolveArtifactBrand).
+    primaryText: cssColor(c.primaryText) ?? textSafeVariant(primaryResolved, backgroundResolved, 4.5),
+    accent: accentResolved,
+    accentText: cssColor(c.accentText) ?? textSafeVariant(accentResolved, backgroundResolved, 4.5),
+    background: backgroundResolved,
     foreground: cssColor(c.foreground) ?? NEUTRAL_COLORS.foreground,
     muted: cssColor(c.muted) ?? NEUTRAL_COLORS.muted,
     mutedForeground: cssColor(c.mutedForeground) ?? NEUTRAL_COLORS.mutedForeground,
@@ -62,6 +76,7 @@ export function pdfTheme(brand?: PdfBrand): PdfTheme {
     fontFaceCss: brand?.fontFaceCss,
     style: brand?.style === "minimal" || brand?.style === "friendly" ? brand.style : "bold",
     ...(brand?.tagline ? { tagline: brand.tagline } : {}),
+    lang: lang?.trim() || "en",
   };
 }
 
@@ -81,7 +96,9 @@ const ROOT_VARS = (t: PdfTheme): string => `
   :root {
     --primary: ${t.colors.primary};
     --primary-fg: ${t.colors.primaryForeground};
+    --primary-text: ${t.colors.primaryText};
     --accent: ${t.colors.accent};
+    --accent-text: ${t.colors.accentText};
     --fg: ${t.colors.foreground};
     --bg: ${t.colors.background};
     --muted: ${t.colors.muted};
@@ -110,9 +127,9 @@ const BASE_STYLE = (t: PdfTheme): string => `
   h1 { font-size: 22pt; font-weight: 800; letter-spacing: -0.015em; margin: 0 0 8pt; color: var(--fg); }
   h1::after { content: ""; display: block; width: 36pt; height: 3pt; border-radius: 2pt; margin-top: 8pt;
     background: linear-gradient(90deg, var(--primary), var(--accent)); }
-  h2 { font-size: 14pt; font-weight: 700; margin: 20pt 0 8pt; color: var(--primary); page-break-after: avoid;
+  h2 { font-size: 14pt; font-weight: 700; margin: 20pt 0 8pt; color: var(--primary-text); page-break-after: avoid;
     padding-bottom: 4pt; border-bottom: 1pt solid var(--primary-line); }
-  h3 { font-size: 9.5pt; font-weight: 700; margin: 16pt 0 6pt; color: var(--accent); text-transform: uppercase;
+  h3 { font-size: 9.5pt; font-weight: 700; margin: 16pt 0 6pt; color: var(--accent-text); text-transform: uppercase;
     letter-spacing: 0.08em; page-break-after: avoid; }
   h4 { font-size: 12pt; font-weight: 700; margin: 14pt 0 4pt; page-break-after: avoid; }
   h4.step-h { display: flex; align-items: center; gap: 8pt; }
@@ -121,12 +138,12 @@ const BASE_STYLE = (t: PdfTheme): string => `
   p { margin: 0 0 8pt; }
   ul { margin: 0 0 8pt; padding-left: 16pt; }
   li { margin: 0 0 2pt; }
-  li::marker { color: var(--primary); }
+  li::marker { color: var(--primary-text); }
   blockquote { margin: 0 0 10pt; padding: 7pt 11pt; border-left: 3pt solid var(--primary); background: var(--primary-soft);
     border-radius: 0 4pt 4pt 0; }
   code { background: var(--muted); padding: 1pt 3pt; border-radius: 3pt; font-size: 9.5pt; }
   hr { border: none; border-top: 1pt solid var(--border); margin: 14pt 0; }
-  a { color: var(--primary); text-decoration: none; }
+  a { color: var(--primary-text); text-decoration: none; }
   strong { font-weight: 700; }
   img { max-width: 100%; display: block; margin: 6pt 0 12pt; border: 0.75pt solid var(--border); border-radius: 5pt; }
   .lede { font-size: 11.5pt; color: var(--muted-fg); }
@@ -200,7 +217,7 @@ function htmlDoc(title: string, bodyHtml: string, theme: PdfTheme, opts: { allow
   const remoteFont = theme.fontFaceCss ? undefined : theme.fontUrl;
   const fontLink = remoteFont ? `<link rel="stylesheet" href="${escapeHtml(remoteFont)}">` : "";
   const faces = theme.fontFaceCss ? `<style>${theme.fontFaceCss}</style>` : "";
-  return `<!doctype html><html><head><meta charset="utf-8">${cspMeta(opts.allowRemote, remoteFont)}<title>${escapeHtml(title)}</title>
+  return `<!doctype html><html lang="${escapeHtml(theme.lang)}"><head><meta charset="utf-8">${cspMeta(opts.allowRemote, remoteFont)}<title>${escapeHtml(title)}</title>
     ${fontLink}${faces}<style>${BASE_STYLE(theme)}${opts.extraStyle ?? ""}</style></head><body class="${bodyClass}">${bodyHtml}</body></html>`;
 }
 
@@ -283,24 +300,52 @@ function fileUrl(file: string): string {
 export const FULL_SHOT_MAX_MM = 88;
 /** Tallest a stacked focus crop prints (mm). */
 export const CROP_SHOT_MAX_MM = 78;
+/** Width a portrait (phone) figure prints at in the split layout (M43b, decision 40): fixed
+ * rather than filling the column, so a narrow phone screen doesn't stretch to a desktop-sized
+ * card — the range decision 40's phone-output recommendation gives (45-55mm). */
+export const PORTRAIT_SHOT_MM = 50;
 
-function figureHtml(fig: PrintFigure, stepNumber: number, layout: "split" | "stack"): string {
+/** True when a figure's own frame is portrait — taller than wide, as a phone capture's viewport
+ * is (M43b, decision 40). Read from the figure's geometry, not any device label, so this module
+ * stays decoupled from `Device` (pdf/input.ts never passes one through). */
+function isPortrait(fig: Pick<PrintFigure, "viewport">): boolean {
+  return fig.viewport.height > fig.viewport.width;
+}
+
+/** `alt` is the step's own alt text (pages/alt-text.ts `stepAltText`), already HTML-escaped —
+ * carried in from the markdown `<img alt="…">` this figure replaces (`wrapSteps`/`pathStepHtml`'s
+ * `STEP_IMG`/`PATH_STEP_IMG` match), so the print figure never ships `alt=""` on a reader's own
+ * screenshot. */
+function figureHtml(fig: PrintFigure, stepNumber: number, layout: "split" | "stack", alt: string): string {
   const view = figureView(fig, printMode(fig));
   const maxH = view.mode === "full" ? FULL_SHOT_MAX_MM : CROP_SHOT_MAX_MM;
-  const width = layout === "split" ? "100%" : `min(100%, ${Math.round(maxH * view.aspect)}mm)`;
+  // A portrait (phone) figure never fills its split column edge-to-edge (that would stretch a
+  // narrow screen to a desktop-card width) — a fixed, legible width instead (`PORTRAIT_SHOT_MM`).
+  const width = layout === "split" ? (isPortrait(fig) ? `${PORTRAIT_SHOT_MM}mm` : "100%") : `min(100%, ${Math.round(maxH * view.aspect)}mm)`;
   const labelled = fig.callouts.map((c, i) => ({ ...c, n: i + 1 })).filter((c) => c.label);
   const legend = labelled.length > 0
     ? `<ul class="legend">${labelled.map((c) => `<li><b>${c.n}.</b> ${escapeHtml(c.label!)}</li>`).join("")}</ul>`
     : "";
-  return `<figure class="shot shot-${view.mode}" style="width:${width}"><div class="shot-frame"><div class="shot-bar"><i></i><i></i><i></i></div><div class="shot-img"><img src="${fileUrl(view.src)}" alt="" />${overlayHtml(view, stepNumber)}</div></div>${legend}</figure>`;
+  return `<figure class="shot shot-${view.mode}" style="width:${width}"><div class="shot-frame"><div class="shot-bar"><i></i><i></i><i></i></div><div class="shot-img"><img src="${fileUrl(view.src)}" alt="${alt}" />${overlayHtml(view, stepNumber)}</div></div>${legend}</figure>`;
 }
 
 /** Steps whose text is short enough to sit beside a focus crop rather than above it. */
 export const SPLIT_TEXT_MAX_CHARS = 360;
 
-/** Two columns (text | crop) for a short step with a focus crop; stacked otherwise. */
+/** Two columns (text | crop) for a short step with a focus crop; stacked otherwise. A portrait
+ * (phone) figure always sits beside the text (M43b, decision 40): stacked, the stack-layout
+ * width formula (`maxH * aspect`) would print it as a narrow sliver — a tall, narrow frame makes
+ * a small width for any height worth printing — so it's never used for one. */
 export function stepLayout(fig: PrintFigure | undefined, textChars: number): "split" | "stack" {
-  return fig && printMode(fig) === "crop" && textChars <= SPLIT_TEXT_MAX_CHARS ? "split" : "stack";
+  if (!fig) return "stack";
+  if (isPortrait(fig)) return "split";
+  return printMode(fig) === "crop" && textChars <= SPLIT_TEXT_MAX_CHARS ? "split" : "stack";
+}
+
+/** The step wrapper's own class: `layout`, plus `portrait` when `fig` is a phone-shaped figure
+ * (narrows the split layout's figure column — see `.step.split.portrait` in `GUIDE_STYLE`). */
+function stepWrapperClass(layout: "split" | "stack", fig: PrintFigure | undefined): string {
+  return fig && isPortrait(fig) ? `step ${layout} portrait` : `step ${layout}`;
 }
 
 /** True when the page's steps sit under exactly one "Part N:" chapter heading — then that
@@ -313,7 +358,7 @@ export function isSinglePart(bodyHtml: string): boolean {
  * `index.plain.md` — the generated-block markers already stripped out). `allowRemoteImages`
  * defaults to false — see `resolveImageSrc` in markdown.ts. */
 export function buildPageHtml(input: PdfPageInput, brand?: PdfBrand, allowRemoteImages?: boolean, opts: PageHtmlOptions = {}): string {
-  const theme = pdfTheme(brand);
+  const theme = pdfTheme(brand, input.lang);
   let body = markdownToHtml(input.markdown, input.baseDir, { allowRemote: allowRemoteImages });
   if (isSinglePart(body)) body = body.replace(/<h3>Part \d+:[\s\S]*?<\/h3>\s*/, "");
   const figures = new Map((input.figures ?? []).map((f) => [f.step, f] as const));
@@ -327,7 +372,7 @@ export function buildPageHtml(input: PdfPageInput, brand?: PdfBrand, allowRemote
 const GUIDE_STYLE = `
   .guide-head { display: flex; gap: 14pt; align-items: flex-start; margin: 0 0 14pt; }
   .gh-text { flex: 1; min-width: 0; }
-  .gh-eyebrow { font-size: 8pt; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); margin: 0 0 4pt; }
+  .gh-eyebrow { font-size: 8pt; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent-text); margin: 0 0 4pt; }
   .guide-head .lede { margin: 0 0 8pt; }
   .gh-facts { display: flex; flex-wrap: wrap; gap: 6pt; margin: 0; padding: 0; list-style: none; }
   .gh-facts li { font-size: 8.5pt; color: var(--muted-fg); background: var(--muted); border-radius: 10pt; padding: 2pt 8pt; margin: 0; }
@@ -352,6 +397,9 @@ const GUIDE_STYLE = `
   .step.stack .step-text h4.step-h { margin-left: -26pt; }
   .step.stack .shot { margin: 6pt 0 0 26pt; max-width: calc(100% - 26pt); }
   .step.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); column-gap: 14pt; align-items: start; }
+  /* A portrait (phone) figure prints at a fixed, narrow width (PORTRAIT_SHOT_MM) — its column
+     only needs to be that wide, not 1.2fr of the page (M43b, decision 40). */
+  .step.split.portrait { grid-template-columns: minmax(0, 1fr) auto; }
   .step.split .step-text { padding-top: 1pt; }
   .step.split .step-text p, .step.split .step-text ul { margin-left: 26pt; }
   .step blockquote { margin-left: 26pt; }
@@ -402,11 +450,15 @@ function boxSections(bodyHtml: string): string {
     .replace(/<hr \/>\s*<p><em>(Steps [\s\S]*?)<\/em><\/p>/, '<p class="verified">$1</p>');
 }
 
-const STEP_IMG = /<img alt="[^"]*" src="file:\/\/[^"]*?\/step-(\d+)\.png" \/>/;
+// Alt capture first (group 1): pages/content.ts's `stepAltText` never writes a `"` into it
+// (it's HTML-escaped by markdown.ts before this HTML exists), so `[^"]*` still stops at the
+// image's own closing quote.
+const STEP_IMG = /<img alt="([^"]*)" src="file:\/\/[^"]*?\/step-(\d+)\.png" \/>/;
 
 /** Groups each `<h4>` step heading with everything up to the next `<h2>`/`<h3>`/`<h4>` into one
  * `break-inside: avoid` block (a step is never split from its screenshot), turns a leading "N."
- * into a brand-coloured badge, and swaps the site screenshot for the step's print figure. */
+ * into a brand-coloured badge, and swaps the site screenshot for the step's print figure (keeping
+ * the site image's own alt text — `STEP_IMG`'s first group — for the figure's `<img>`). */
 function wrapSteps(bodyHtml: string, figures: Map<number, PrintFigure>): string {
   const parts = bodyHtml.split(/(?=<h4>|<h3>|<h2>|<hr \/>)/);
   return parts
@@ -417,12 +469,12 @@ function wrapSteps(bodyHtml: string, figures: Map<number, PrintFigure>): string 
         (_m, n: string, title: string) => `<h4 class="step-h"><span class="step-num">${n}</span><span>${title}</span></h4>`,
       );
       const img = STEP_IMG.exec(badged);
-      const fig = img ? figures.get(Number(img[1])) : undefined;
+      const fig = img ? figures.get(Number(img[2])) : undefined;
       const text = img ? badged.replace(img[0], "") : badged;
       const chars = text.replace(/<h4[\s\S]*?<\/h4>/, "").replace(/<[^>]+>/g, "").trim().length;
       const layout = stepLayout(fig, chars);
-      const shot = fig ? figureHtml(fig, Number(img![1]), layout) : img ? `<figure class="shot" style="width:min(100%, ${Math.round(FULL_SHOT_MAX_MM * 16 / 9)}mm)"><div class="shot-frame">${img[0]}</div></figure>` : "";
-      return `<div class="step ${layout}"><div class="step-text">${text.trim()}</div>${shot}</div>`;
+      const shot = fig ? figureHtml(fig, Number(img![2]), layout, img![1]) : img ? `<figure class="shot" style="width:min(100%, ${Math.round(FULL_SHOT_MAX_MM * 16 / 9)}mm)"><div class="shot-frame">${img[0]}</div></figure>` : "";
+      return `<div class="${stepWrapperClass(layout, fig)}"><div class="step-text">${text.trim()}</div>${shot}</div>`;
     })
     .join("\n");
 }
@@ -488,7 +540,8 @@ export function pathHeadingAnchors(markdown: string): string[] {
   return anchors;
 }
 
-const PATH_STEP_IMG = /<img alt="[^"]*" src="file:\/\/[^"]*?\/paths\/([a-z0-9-]+)-step-(\d+)\.png" \/>/;
+// Alt first (group 1), then path id, then step number — same reasoning as `STEP_IMG` above.
+const PATH_STEP_IMG = /<img alt="([^"]*)" src="file:\/\/[^"]*?\/paths\/([a-z0-9-]+)-step-(\d+)\.png" \/>/;
 
 /** The "Other ways to do this" section as print HTML; see the section comment above. */
 export function otherWaysHtml(
@@ -536,16 +589,16 @@ function pathStepHtml(part: string, pathFigures: Record<string, PrintFigure[]>):
     (_m, n: string, title: string) => `<h4 class="step-h"><span class="step-num">${n}</span><span>${title}</span></h4>`,
   );
   const img = PATH_STEP_IMG.exec(badged);
-  const fig = img ? pathFigures[img[1]]?.find((f) => f.step === Number(img[2])) : undefined;
+  const fig = img ? pathFigures[img[2]]?.find((f) => f.step === Number(img[3])) : undefined;
   const text = img ? badged.replace(img[0], "") : badged;
   const chars = text.replace(/<h4[\s\S]*?<\/h4>/, "").replace(/<[^>]+>/g, "").trim().length;
   const layout = stepLayout(fig, chars);
   const shot = fig
-    ? figureHtml(fig, Number(img![2]), layout)
+    ? figureHtml(fig, Number(img![3]), layout, img![1])
     : img
       ? `<figure class="shot" style="width:min(100%, ${Math.round(FULL_SHOT_MAX_MM * 16 / 9)}mm)"><div class="shot-frame">${img[0]}</div></figure>`
       : "";
-  return `<div class="step ${layout}"><div class="step-text">${text.trim()}</div>${shot}</div>`;
+  return `<div class="${stepWrapperClass(layout, fig)}"><div class="step-text">${text.trim()}</div>${shot}</div>`;
 }
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -557,10 +610,18 @@ export function humanDate(date: string): string {
   return `${Number(m[3])} ${MONTHS[Number(m[2]) - 1] ?? m[2]} ${m[1]}`;
 }
 
+/** Alt text for the brand logo beside the product name: empty when the name is also printed as
+ * real text right next to it (`brandName` above — decorative logo then), else the name itself,
+ * for the one case where it isn't: a wordmark logo that already spells the name visually but
+ * carries no text a screen reader can read. */
+function brandLogoAlt(theme: PdfTheme, name: string | undefined): string {
+  return name && theme.logoWide ? name : "";
+}
+
 /** A logo for a dark band: the dark-background logo bare, else the light logo on a white tile. */
-function logoOnDark(theme: PdfTheme, cls: string): string {
-  if (theme.logoDark) return `<img class="${cls}" src="${theme.logoDark}" alt="" />`;
-  if (theme.logo) return `<span class="${cls}-tile"><img class="${cls}" src="${theme.logo}" alt="" /></span>`;
+function logoOnDark(theme: PdfTheme, cls: string, alt: string): string {
+  if (theme.logoDark) return `<img class="${cls}" src="${theme.logoDark}" alt="${escapeHtml(alt)}" />`;
+  if (theme.logo) return `<span class="${cls}-tile"><img class="${cls}" src="${theme.logo}" alt="${escapeHtml(alt)}" /></span>`;
   return "";
 }
 
@@ -571,12 +632,14 @@ export interface CoverOptions {
   productName?: string;
   /** Absolute path of a clean full-screen app screenshot shown on the cover. */
   heroImage?: string;
+  /** BCP-47 tag (config.lang), for `<html lang>`. Default "en". */
+  lang?: string;
 }
 
 /** The cover page for `manual.pdf`: a branded band (logo, product name, title), then the date
  * and guide count. Rendered edge-to-edge (render.ts `bleed`). */
 export function buildCoverHtml(title: string, date: string, brand?: PdfBrand, opts: CoverOptions = {}): string {
-  const theme = pdfTheme(brand);
+  const theme = pdfTheme(brand, opts.lang);
   const name = theme.name ?? opts.productName?.trim();
   const style = `
     @page { margin: 0; }
@@ -609,7 +672,7 @@ export function buildCoverHtml(title: string, date: string, brand?: PdfBrand, op
     .has-hero .facts { flex-direction: column; gap: 6mm; }
   `;
   const hero = opts.heroImage ? `<img class="hero" src="${fileUrl(opts.heroImage)}" alt="" />` : "";
-  const brandRow = name || theme.logo || theme.logoDark ? `<div class="brand">${logoOnDark(theme, "logo")}${brandName(theme, name)}</div>` : "";
+  const brandRow = name || theme.logo || theme.logoDark ? `<div class="brand">${logoOnDark(theme, "logo", brandLogoAlt(theme, name))}${brandName(theme, name)}</div>` : "";
   const lede = name
     ? `Step-by-step guides for everyday tasks in ${escapeHtml(name)}, with a screenshot for every step.`
     : "Step-by-step guides for everyday tasks, with a screenshot for every step.";
@@ -634,9 +697,9 @@ export function buildCoverHtml(title: string, date: string, brand?: PdfBrand, op
 }
 
 /** A logo for a light background: the light logo bare, else the dark-background one on a tile. */
-function logoOnLight(theme: PdfTheme, cls: string): string {
-  if (theme.logo) return `<img class="${cls}" src="${theme.logo}" alt="" />`;
-  if (theme.logoDark) return `<span class="${cls}-tile"><img class="${cls}" src="${theme.logoDark}" alt="" /></span>`;
+function logoOnLight(theme: PdfTheme, cls: string, alt: string): string {
+  if (theme.logo) return `<img class="${cls}" src="${theme.logo}" alt="${escapeHtml(alt)}" />`;
+  if (theme.logoDark) return `<span class="${cls}-tile"><img class="${cls}" src="${theme.logoDark}" alt="${escapeHtml(alt)}" /></span>`;
   return "";
 }
 
@@ -657,7 +720,7 @@ function lightCoverHtml(title: string, date: string, theme: PdfTheme, name: stri
     .brand .logo-tile { display: inline-flex; padding: 2mm 2.5mm; background: var(--primary); border-radius: 3mm; }
     .titles { margin-top: ${friendly ? "0" : "38mm"}; max-width: 150mm; }
     .rule { width: 14mm; height: 1.2mm; border-radius: 1mm; background: var(--primary); margin-bottom: 6mm; }
-    .eyebrow { font-size: 9.5pt; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--primary); }
+    .eyebrow { font-size: 9.5pt; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--primary-text); }
     .cover h1 { color: var(--fg); font-size: ${friendly ? "38pt" : "42pt"}; line-height: 1.05; margin: 3mm 0 0; letter-spacing: -0.03em; font-weight: ${friendly ? 800 : 700}; }
     .cover h1::after { display: none; }
     .lede { font-size: 12.5pt; color: var(--muted-fg); max-width: 120mm; margin: 6mm 0 8mm; }
@@ -672,7 +735,7 @@ function lightCoverHtml(title: string, date: string, theme: PdfTheme, name: stri
     .foot { margin-top: ${opts.heroImage ? "8mm" : "auto"}; display: flex; justify-content: space-between; font-size: 8.5pt; color: var(--muted-fg);
       border-top: 0.75pt solid ${friendly ? "color-mix(in srgb, var(--primary) 18%, white)" : "var(--border)"}; padding-top: 4mm; }
   `;
-  const brandRow = name || theme.logo || theme.logoDark ? `<div class="brand">${logoOnLight(theme, "logo")}${brandName(theme, name)}</div>` : "";
+  const brandRow = name || theme.logo || theme.logoDark ? `<div class="brand">${logoOnLight(theme, "logo", brandLogoAlt(theme, name))}${brandName(theme, name)}</div>` : "";
   const eyebrow = `<div class="eyebrow">${name ? `${escapeHtml(name)} · ` : ""}Printable manual</div>`;
   const tagline = theme.tagline ? `<p class="tagline">${escapeHtml(theme.tagline)}</p>` : "";
   const text = `${friendly ? "" : '<div class="rule"></div>'}${eyebrow}<h1>${escapeHtml(title)}</h1><p class="lede">${lede}</p>${tagline}<div class="facts">${facts}</div>`;
@@ -702,8 +765,8 @@ export interface TocEntry {
  * (docs/scope.md "Printable guides": "a full manual as one PDF" with contents "by
  * section/reader"): numbered guide cards with their summary, step count and page, then a short
  * "how to use this manual" panel so a short contents page still reads as designed. */
-export function buildTocHtml(entries: TocEntry[], brand?: PdfBrand): string {
-  const theme = pdfTheme(brand);
+export function buildTocHtml(entries: TocEntry[], brand?: PdfBrand, lang?: string): string {
+  const theme = pdfTheme(brand, lang);
   const groups = new Map<string, TocEntry[]>();
   for (const e of entries) {
     const key = e.section?.trim() ? e.section.split("/").map((s) => s.trim()).filter(Boolean).join(" › ") : e.reader || "General";
@@ -720,12 +783,12 @@ export function buildTocHtml(entries: TocEntry[], brand?: PdfBrand): string {
     .toc-row { display: grid; grid-template-columns: 20pt minmax(0, 1fr) auto; column-gap: 8pt; align-items: start;
       padding: 7pt 0; border-bottom: 0.75pt solid var(--border); break-inside: avoid; }
     .toc-row:last-child { border-bottom: none; }
-    .toc-i { width: 18pt; height: 18pt; border-radius: 5pt; background: var(--primary-soft); color: var(--primary);
+    .toc-i { width: 18pt; height: 18pt; border-radius: 5pt; background: var(--primary-soft); color: var(--primary-text);
       border: 0.75pt solid var(--primary-line); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 8.5pt; }
     .toc-t { font-weight: 700; font-size: 11pt; line-height: 1.3; }
     .toc-sum { margin: 1pt 0 0; font-size: 9pt; color: var(--muted-fg); line-height: 1.45; }
     .toc-meta { margin-top: 2pt; font-size: 8pt; color: var(--muted-fg); }
-    .toc-n { font-weight: 800; font-size: 12pt; color: var(--primary); font-variant-numeric: tabular-nums; text-align: right; min-width: 18pt; }
+    .toc-n { font-weight: 800; font-size: 12pt; color: var(--primary-text); font-variant-numeric: tabular-nums; text-align: right; min-width: 18pt; }
     .toc-n small { display: block; font-size: 6.5pt; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-fg); }
     .howto { margin-top: 16pt; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8pt; break-inside: avoid; }
     .howto div { background: var(--muted); border-radius: 6pt; padding: 8pt 10pt; font-size: 8.5pt; color: var(--muted-fg); line-height: 1.45; }
@@ -778,6 +841,9 @@ export function cardStepsFor(wf: Pick<Walkthrough, "steps"> & Partial<Pick<Walkt
       title: step.title ?? step.id ?? `Step ${stepNumber}`,
       text: raw,
       screenshot: screenshotFor(stepNumber),
+      // No manifest step here (the card is built from the walkthrough alone) — `stepAltText`
+      // still gives more than the title from the instruction/callouts.
+      alt: stepAltText(step, stepNumber, undefined, wf.data),
     };
   });
 }
@@ -795,6 +861,8 @@ export interface CardRenderOptions {
   paper?: "A4" | "Letter";
   /** The full guide online: printed in the footer with a QR code. */
   guideUrl?: string;
+  /** BCP-47 tag (config.lang), for `<html lang>`. Default "en". */
+  lang?: string;
 }
 
 export interface CardLayout {
@@ -829,7 +897,7 @@ function cardPageHeightMm(paper: "A4" | "Letter" = "A4"): number {
 }
 
 function cardStrip(theme: PdfTheme, name: string | undefined, kind: string): string {
-  return `<div class="strip"><div class="who">${logoOnDark(theme, "logo")}${brandName(theme, name)}</div><div class="kind">${kind}</div></div>`;
+  return `<div class="strip"><div class="who">${logoOnDark(theme, "logo", brandLogoAlt(theme, name))}${brandName(theme, name)}</div><div class="kind">${kind}</div></div>`;
 }
 
 const CARD_STRIP_STYLE = `
@@ -852,17 +920,18 @@ export function buildCardHtml(title: string, steps: CardStepInput[], brand: PdfB
 }
 
 function cardCellImage(s: CardStepInput): string {
+  const alt = escapeHtml(s.alt ?? s.title);
   if (s.figure) {
     const view = figureView(s.figure, s.figure.crop ? "crop" : "full");
     const src = s.thumbnailSrc ?? fileUrl(view.src);
-    return `<div class="cell-img"><div class="frame" style="--ar:${view.aspect.toFixed(4)}"><img src="${src}" alt="" />${overlayHtml(view, s.number)}</div></div>`;
+    return `<div class="cell-img"><div class="frame" style="--ar:${view.aspect.toFixed(4)}"><img src="${src}" alt="${alt}" />${overlayHtml(view, s.number)}</div></div>`;
   }
-  if (s.thumbnailSrc) return `<div class="cell-img"><div class="frame" style="--ar:1.7778"><img src="${s.thumbnailSrc}" alt="" /></div></div>`;
+  if (s.thumbnailSrc) return `<div class="cell-img"><div class="frame" style="--ar:1.7778"><img src="${s.thumbnailSrc}" alt="${alt}" /></div></div>`;
   return "";
 }
 
 function buildCardGridHtml(title: string, steps: CardStepInput[], brand: PdfBrand | undefined, opts: CardRenderOptions): string {
-  const theme = pdfTheme(brand);
+  const theme = pdfTheme(brand, opts.lang);
   const name = theme.name ?? opts.productName?.trim();
   const layout = cardLayout(steps.length);
   const shown = steps.slice(0, layout.truncateAt ?? steps.length);
@@ -919,14 +988,14 @@ function buildCardGridHtml(title: string, steps: CardStepInput[], brand: PdfBran
     .frame img { display: block; width: 100%; height: 100%; margin: 0; border: 0; border-radius: 0; }
     .card-foot { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 10pt; margin-top: 7pt;
       font-size: 8pt; color: var(--muted-fg); }
-    .card-foot .url { color: var(--primary); font-weight: 600; }
+    .card-foot .url { color: var(--primary-text); font-weight: 600; }
     .card-foot .qr { width: 17mm; height: 17mm; flex: none; }
   `;
   return htmlDoc(title, html, theme, { extraStyle: style });
 }
 
 function buildCardListHtml(title: string, steps: CardStepInput[], brand: PdfBrand | undefined, opts: CardRenderOptions): string {
-  const theme = pdfTheme(brand);
+  const theme = pdfTheme(brand, opts.lang);
   const name = theme.name ?? opts.productName?.trim();
   const fontPt = opts.minFontPt ?? 10;
   const shown = opts.truncateAt !== undefined ? steps.slice(0, opts.truncateAt) : steps;

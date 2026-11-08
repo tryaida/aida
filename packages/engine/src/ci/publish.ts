@@ -56,7 +56,7 @@ export async function runCiPublish(opts: RunCiPublishOptions): Promise<CiPublish
   const appRepo = opts.appRepo ?? config.impact?.appRepo ?? process.cwd();
 
   const affected = await computeAffected({ appRepo, base: opts.base, head, config, app: config.impact?.app });
-  const walkthroughEntries = listWalkthroughs(config.walkthroughsDir, config.buildDir);
+  const walkthroughEntries = listWalkthroughs(config.walkthroughsDir, config.buildDir, config);
   const idsToPublish = affected.all ? walkthroughEntries.map((w) => w.id) : affected.walkthroughs.filter((w) => w.affected).map((w) => w.id);
 
   // Capture safety gate (decisions #27): once, before the first capture. A refusal throws and
@@ -68,13 +68,18 @@ export async function runCiPublish(opts: RunCiPublishOptions): Promise<CiPublish
   const failed: string[] = [];
   const pages: BuildPageResult[] = [];
   const procedureSources: { walkthrough: Walkthrough; captureDir: string }[] = [];
+  // Whether each republished walkthrough's phone video (rendered by an earlier `aida build`) is
+  // still current: phone is a secondary device and this run's phone capture passed.
+  const phoneVideos: Record<string, boolean> = {};
 
   // The same capture order as the PR check (ci/planned.ts; decision 28): providers pulled in and
   // captured first, a reset only at the start of a chain, `needs`/`setup` prepared, dependants of
   // a failed provider skipped. Every walkthrough the run captured and validated is republished,
   // providers included: each was seen working against the app in this run, and the PR check
-  // diffed them against the same published baseline.
-  for await (const outcome of captureInPlannedOrder(config, walkthroughEntries, idsToPublish, opts.appUrl)) {
+  // diffed them against the same published baseline. `allDevices` (decision 40, M43b): also
+  // recaptures every secondary device, so a merge keeps phone screenshots current too — unlike
+  // the PR check, which only ever diffs the primary device's screenshot.
+  for await (const outcome of captureInPlannedOrder(config, walkthroughEntries, idsToPublish, opts.appUrl, { allDevices: true })) {
     const id = outcome.id;
     const captured = outcome.captured;
     if (!captured?.ok) {
@@ -82,9 +87,16 @@ export async function runCiPublish(opts: RunCiPublishOptions): Promise<CiPublish
       continue;
     }
 
+    const devices = outcome.devices;
+    const secondaryCaptures = (outcome.secondary ?? []).map((s) => ({ device: s.device, captureDir: s.result.captureDir }));
     let page: BuildPageResult;
     try {
-      page = await buildPage(captured.walkthrough, captured.captureDir, pagesOutDir, { readers: config.readers, roles: config.roles });
+      page = await buildPage(captured.walkthrough, captured.captureDir, pagesOutDir, {
+        readers: config.readers,
+        roles: config.roles,
+        devices,
+        secondaryCaptures,
+      });
     } catch {
       failed.push(id);
       continue;
@@ -96,6 +108,7 @@ export async function runCiPublish(opts: RunCiPublishOptions): Promise<CiPublish
 
     pages.push(page);
     procedureSources.push({ walkthrough: captured.walkthrough, captureDir: captured.captureDir });
+    if (devices) phoneVideos[id] = Boolean(outcome.secondary?.find((s) => s.device === "phone")?.result.ok);
     published.push(id);
   }
 
@@ -132,6 +145,7 @@ export async function runCiPublish(opts: RunCiPublishOptions): Promise<CiPublish
     productName: config.brand?.name,
     appBrief: brief.artifacts,
     outlineOrder: outlineOrder(config),
+    phoneVideos,
   });
 
   return { published, failed, all: affected.all, copiedToHelpApp: index.copiedToHelpApp, ok: failed.length === 0 };

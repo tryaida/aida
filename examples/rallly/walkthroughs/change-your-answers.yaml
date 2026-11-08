@@ -12,6 +12,7 @@ data:
 setup:
   steps:
     - id: first-answer
+      devices: [desktop]
       actions:
         - do: goto
           path: /invite/seed-0559
@@ -26,8 +27,25 @@ setup:
           target: { role: button, name: Save availability }
         - do: click
           target: { role: button, name: Back to poll }
+    - id: first-answer-phone
+      devices: [phone]
+      actions:
+        - do: goto
+          path: /invite/seed-0559
+        - do: click
+          target: { role: radio, name: "Yes", nth: 0 }
+        - do: click
+          target: { role: button, name: Continue }
+        - do: type
+          target: { label: Name, within: { role: dialog, name: New participant } }
+          text: "{{voter.name}}"
+        - do: click
+          target: { role: button, name: Save availability }
+        - do: click
+          target: { role: button, name: Back to poll }
 steps:
   - id: open-menu
+    devices: [desktop]
     title: Open the menu by your name
     say: To change your answers, open the poll's link again and open the menu next to your name.
     caption: Open the menu next to your name.
@@ -35,6 +53,16 @@ steps:
     actions:
       - do: click
         target: { role: button, name: More options, within: { role: row, hasText: "{{voter.name}}" } }
+        highlight: true
+  - id: open-menu-phone
+    devices: [phone]
+    title: Open the menu by your name
+    say: To change your answers, open the poll's link again and tap the menu next to your name at the top.
+    caption: Open the menu next to your name.
+    page_text: Open the poll's link again, in the same browser you answered in. Tap the menu next to your name at the top.
+    actions:
+      - do: click
+        target: { role: button, name: More options }
         highlight: true
   - id: edit-votes
     title: Choose Edit votes
@@ -46,6 +74,7 @@ steps:
         target: { role: menuitem, name: Edit votes }
         highlight: true
   - id: change-a-date
+    devices: [desktop]
     title: Change your answers
     say: Your row opens for editing. Click a date to change your answer, just as before.
     caption: Click a date to change your answer.
@@ -54,7 +83,18 @@ steps:
       - do: click
         target: { role: button, name: ", No", nth: 0, within: { role: row, hasText: "{{voter.name}}" } }
         highlight: true
+  - id: change-a-date-phone
+    devices: [phone]
+    title: Change your answers
+    say: Your answers open for editing. Tap a different answer under any date.
+    caption: Tap a different answer.
+    page_text: Your answers open for editing. Under each date, tap **Yes**, **If need be** or **No**.
+    actions:
+      - do: click
+        target: { role: radio, name: "Yes", nth: 1 }
+        highlight: true
   - id: save
+    devices: [desktop]
     title: Save
     say: Save, and your new answers replace the old ones.
     caption: Save your changes.
@@ -65,6 +105,18 @@ steps:
         highlight: true
       - do: expect
         target: { role: button, name: More options, within: { role: row, hasText: "{{voter.name}}" } }
+  - id: save-phone
+    devices: [phone]
+    title: Save
+    say: Save, and your new answers replace the old ones.
+    caption: Save your changes.
+    page_text: Select **Save**. Your new answers replace the old ones. On another device, use the link in your confirmation email instead; if you didn't leave an email, ask the organizer to send you your edit link.
+    actions:
+      - do: click
+        target: { role: button, name: Save, exact: true }
+        highlight: true
+      - do: expect
+        target: { role: combobox, hasText: "{{voter.name}}" }
 validate:
   database:
     - name: two-yes

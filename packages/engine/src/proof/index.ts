@@ -25,6 +25,8 @@ import type { NarrationBeat, Timeline } from "../render/types.js";
 import { loadNarrationBeats } from "../render/voice-input.js";
 import { qualityFor } from "../render/video.js";
 import { loadWalkthroughFile, type Walkthrough } from "../walkthrough/index.js";
+import { primaryCaptureDir } from "../devices/index.js";
+import { briefPath, loadBrief } from "../brief/consumers.js";
 import { renderBrandCss } from "../theme/write.js";
 import { cardText } from "../walkthrough/cards.js";
 import { SITE_PAGE_WIDTH, sitePageHtml } from "./site-page.js";
@@ -77,7 +79,11 @@ function readJson<T>(file: string): T | undefined {
 
 /** The walkthrough to show: the one asked for, else the first (by file name) with a capture,
  * preferring one with a built page too. */
-export function pickWalkthrough(config: Pick<ResolvedConfig, "walkthroughsDir" | "buildDir">, id?: string): Picked {
+export function pickWalkthrough(
+  config: Pick<ResolvedConfig, "walkthroughsDir" | "buildDir"> & Partial<Pick<ResolvedConfig, "configDir" | "devices" | "brief">>,
+  id?: string,
+): Picked {
+  const brief = config.configDir ? loadBrief(briefPath({ configDir: config.configDir, brief: config.brief })) : undefined;
   const files = existsSync(config.walkthroughsDir)
     ? readdirSync(config.walkthroughsDir).filter((f) => /\.ya?ml$/i.test(f)).sort()
     : [];
@@ -90,7 +96,7 @@ export function pickWalkthrough(config: Pick<ResolvedConfig, "walkthroughsDir" |
       continue;
     }
     if (id && wf.walkthrough !== id) continue;
-    const captureDir = path.join(config.buildDir, wf.walkthrough, "capture");
+    const captureDir = primaryCaptureDir(config, wf, brief);
     const manifest = readJson<CaptureManifest>(path.join(captureDir, "manifest.json"));
     if (!manifest) continue;
     const page = readJson<{ result: BuildPageResult }>(path.join(config.buildDir, wf.walkthrough, "pages-cache.json"))?.result;

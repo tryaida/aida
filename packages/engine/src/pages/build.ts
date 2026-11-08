@@ -4,13 +4,17 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
-import { displayWalkthrough, libraryPlacement, pathWalkthrough, type Walkthrough, type WalkthroughPath } from "../walkthrough/index.js";
+import { displayWalkthrough, libraryPlacement, pathWalkthrough, type Device, type Walkthrough, type WalkthroughPath } from "../walkthrough/index.js";
 import type { CaptureManifest, ValidationResult } from "../capture/index.js";
+import { alignManifestToSteps, type AlignedStep } from "../capture/align.js";
+import { usableDeviceCapture } from "../capture/secondary.js";
 import { readPathCaptures, type PathCapture } from "../capture/path-files.js";
 import { redactLine } from "../capture/redact.js";
 import { appProblems } from "../capture/failure-report.js";
-import { pathClipLinks } from "../render/clips.js";
-import { annotateFrame, renderPrintFrame } from "./annotate.js";
+import { pathClipFiles, pathClipLinks } from "../render/clips.js";
+import { buildPathTranscript, buildTranscript } from "../render/transcript.js";
+import { deviceOnlyNote, secondaryScreenshotFile, stripDeviceShots } from "./device-shots.js";
+import { annotateFrame, renderPrintFrame, DEFAULT_WIDTH, PHONE_WIDTH } from "./annotate.js";
 import { PNG } from "pngjs";
 import {
   cropClassFor,
@@ -43,6 +47,8 @@ import {
   pathScreenshotFile,
   screenshotFile,
   stepBlockKey,
+  type DeviceShot,
+  type StepDeviceInfo,
   type StepStatus,
 } from "./content.js";
 import {
@@ -75,6 +81,16 @@ function readJsonIfExists<T>(file: string): T | undefined {
   return existsSync(file) ? readJson<T>(file) : undefined;
 }
 
+/** A sensible default screenshot width for `manifest.viewport` (M43b): a phone-sized capture
+ * (`config.phone`'s default viewport is 412px wide) gets `PHONE_WIDTH`, so it reads clearly
+ * without the blur/exaggerated height a straight resize to the desktop `DEFAULT_WIDTH` would
+ * give it (~1280x2600 from a 412-wide frame) — a desktop-sized one is unaffected. Only used when
+ * `opts.screenshotWidth` doesn't already say. The threshold sits well above any phone viewport
+ * and well below any desktop one (config's narrowest default desktop width is 1024). */
+function screenshotWidthFor(viewport: { width: number; height: number }): number {
+  return viewport.width < 700 ? PHONE_WIDTH : DEFAULT_WIDTH;
+}
+
 /** Order-insensitive: tries run.json first (new, timestamps-only), then validation.json/manifest.json. */
 function resolveLastChecked(captureDir: string, validation: ValidationResult | undefined, manifest: CaptureManifest): string | undefined {
   const run = readJsonIfExists<Record<string, unknown>>(path.join(captureDir, "run.json"));
@@ -82,6 +98,28 @@ function resolveLastChecked(captureDir: string, validation: ValidationResult | u
   if (fromRun) return fromRun;
   if (validation?.ranAt) return validation.ranAt;
   return manifest.capturedAt;
+}
+
+/** Writes `<id>.transcript.md` (and each path clip's own `<id>.path-<pathId>.transcript.md`) from
+ * `written` when the video is already on disk but its transcript isn't — an mp4 rendered before
+ * M42a added transcripts, or any build that selected `pages` without `render` this run (review
+ * finding build/pipeline.ts: `a11y:transcript` otherwise fails every existing project on upgrade,
+ * and every `--stages pages,qa` build after). Cheap on purpose: `buildTranscript`/
+ * `buildPathTranscript` read only `written` itself, no capture output or `timeline.json`. */
+function ensureTranscripts(written: Walkthrough, videoDir: string | undefined, id: string): void {
+  if (!videoDir) return;
+  const videoStepDir = path.join(videoDir, id);
+  const mainMp4 = path.join(videoStepDir, `${id}.mp4`);
+  const mainTranscript = path.join(videoStepDir, `${id}.transcript.md`);
+  if (existsSync(mainMp4) && !existsSync(mainTranscript)) {
+    writeFileSync(mainTranscript, buildTranscript(written));
+  }
+  for (const p of written.paths ?? []) {
+    const files = pathClipFiles(videoStepDir, id, p.id);
+    if (existsSync(files.mp4) && !existsSync(files.transcript)) {
+      writeFileSync(files.transcript, buildPathTranscript(written, p));
+    }
+  }
 }
 
 function videoLinks(videoDir: string | undefined, id: string, pageDir: string): { video?: string; srt?: string; vtt?: string } {
@@ -110,6 +148,7 @@ export async function buildPage(written: Walkthrough, captureDir: string, outDir
   }
   const manifest = readJson<CaptureManifest>(manifestPath);
   const validation = readJsonIfExists<ValidationResult>(path.join(captureDir, "validation.json"));
+  ensureTranscripts(written, opts.videoDir, id);
 
   const pageDir = path.join(outDir, id);
   const screenshotsDir = path.join(pageDir, "screenshots");
@@ -132,8 +171,11 @@ export async function buildPage(written: Walkthrough, captureDir: string, outDir
   const lastChecked = resolveLastChecked(captureDir, validation, manifest);
 
   // Per-step status + screenshot annotation. manifest/validation steps are shorter than
-  // wf.steps when capture stopped early on a failure — those later steps have no data yet.
+  // wf.steps when capture stopped early on a failure, or when a device-only step (M43b
+  // `devices:`) never ran on this device — never assume manifest/validation array position `i`
+  // is walkthrough step `i`; align by `ManifestStep.stepIndex` instead (`alignManifestToSteps`).
   const statuses: StepStatus[] = [];
+  const deviceInfos: (StepDeviceInfo | undefined)[] = [];
   const screenshotJobs: ScreenshotJob[] = [];
   // Which frame each step shows and which boxes on it are real (focus.ts) — a highlight drawn
   // before a click that opened another page belongs to that earlier frame, not `doc.image`.
@@ -141,25 +183,116 @@ export async function buildPage(written: Walkthrough, captureDir: string, outDir
   // that frame can show a screen a path blurs, with nothing covering it (M32 privacy rule).
   const blurAnywhere = [...wf.steps, ...(wf.paths ?? []).flatMap((p) => p.steps)].some((s) => (s.blur?.length ?? 0) > 0);
   const plans = new Map(planStepFigures(wf, manifest, { anyBlur: blurAnywhere, frames: frameGrays(captureDir, manifest) }).map((p) => [p.step, p] as const));
+  const primaryAligned = alignManifestToSteps(manifest.steps, wf.steps.length);
+
+  // Phone (or other secondary-device) screenshots (M43b, decision 40): every device after the
+  // primary (`opts.devices`) whose last capture passed (`usableDeviceCapture`: validation ok, not
+  // marked not captured) gets its own screenshot jobs below, rendered under `<device>-step-NN.png`
+  // names (`secondaryScreenshotFile`) once the primary's are done. A device whose last run failed,
+  // was blocked or wasn't run leaves its older manifest and frames behind; it gets no shots, and
+  // the page still builds.
+  const allDevices: Device[] = opts.devices && opts.devices.length > 0 ? opts.devices : ["desktop"];
+  interface SecondaryDevice {
+    device: Device;
+    captureDir: string;
+    manifest: CaptureManifest;
+    validation?: ValidationResult;
+    aligned: (AlignedStep<CaptureManifest["steps"][number]> | undefined)[];
+    plans: Map<number, StepFigurePlan>;
+    jobs: ScreenshotJob[];
+  }
+  const secondaryDevices: SecondaryDevice[] = [];
+  for (const sd of opts.secondaryCaptures ?? []) {
+    const usable = usableDeviceCapture(sd.captureDir);
+    if (!usable) continue;
+    const sManifest = usable.manifest;
+    secondaryDevices.push({
+      device: sd.device,
+      captureDir: sd.captureDir,
+      manifest: sManifest,
+      validation: usable.validation,
+      aligned: alignManifestToSteps(sManifest.steps, wf.steps.length),
+      plans: new Map(
+        planStepFigures(wf, sManifest, { anyBlur: blurAnywhere, frames: frameGrays(sd.captureDir, sManifest) }).map((p) => [p.step, p] as const),
+      ),
+      jobs: [],
+    });
+  }
 
   for (let i = 0; i < wf.steps.length; i++) {
     const stepNumber = i + 1;
-    const vStep = validation?.steps[i];
-    const mStep = manifest.steps[i];
-    if (!mStep) {
+    const step = wf.steps[i];
+    // A step's own `devices:` (unset = every device the walkthrough shows).
+    const stepDevices = step.devices && step.devices.length > 0 ? step.devices : undefined;
+    const note = deviceOnlyNote(stepDevices, allDevices);
+    const primaryApplies = !stepDevices || stepDevices.includes(allDevices[0]);
+
+    const secondaryShots: DeviceShot[] = [];
+    // When the primary doesn't run this step, whichever secondary device did stands in for its
+    // status (ok/problem) too — there's nothing from the primary to report instead.
+    let fallbackStatus: { ok: boolean; problem?: string } | undefined;
+    for (const sd of secondaryDevices) {
+      if (stepDevices && !stepDevices.includes(sd.device)) continue;
+      const a = sd.aligned[i];
+      if (!a || !a.mStep.doc.image) continue;
+      secondaryShots.push({ device: sd.device, file: secondaryScreenshotFile(sd.device, stepNumber) });
+      const sVStep = sd.validation?.steps[a.index];
+      const sOk = sVStep ? sVStep.ok : true;
+      if (!fallbackStatus) {
+        fallbackStatus = { ok: sOk, problem: sOk ? undefined : sVStep?.error ? redactLine(sVStep.error) : "this step did not pass the last capture" };
+      }
+      const plan = sd.plans.get(stepNumber);
+      if (plan) sd.jobs.push(screenshotJob(step, a.mStep, stepNumber, plan));
+    }
+    deviceInfos.push({ note, secondary: secondaryShots, devices: allDevices });
+
+    if (!primaryApplies) {
+      // A device-only step the primary never runs at all: the other device's shot is the page's
+      // only image for it (buildStepBlock), and its status stands in for the primary's own. With
+      // no usable capture from that device, the step shows its device-only note alone — no image
+      // and no "not verified" banner: the primary was never meant to run it, so nothing failed.
+      statuses.push(fallbackStatus ? { ...fallbackStatus } : { ok: true });
+      continue;
+    }
+
+    const primaryA = primaryAligned[i];
+    if (!primaryA) {
       statuses.push({ ok: false, problem: "not run — capture stopped before this step" });
       continue;
     }
+    const { mStep, index: mIndex } = primaryA;
+    const vStep = validation?.steps[mIndex];
     const ok = vStep ? vStep.ok : true;
     const status: StepStatus = { ok, screenshot: mStep.doc.image ? screenshotFile(stepNumber) : undefined };
     if (!ok) status.problem = vStep?.error ? redactLine(vStep.error) : "this step did not pass the last capture";
     statuses.push(status);
     const plan = plans.get(stepNumber);
-    if (mStep.doc.image && plan) screenshotJobs.push(screenshotJob(wf.steps[i], mStep, stepNumber, plan));
+    if (mStep.doc.image && plan) screenshotJobs.push(screenshotJob(step, mStep, stepNumber, plan));
   }
 
   const printDir = opts.printDir ?? path.join(captureDir, "print");
   const { screenshots, printFigures } = await renderScreenshots(captureDir, manifest, screenshotJobs, screenshotsDir, printDir, opts);
+
+  // Stale secondary-device files from an earlier build (a step removed, or this device no longer
+  // capturing) — removed even for a device with zero jobs this run, which `renderScreenshots`'
+  // own `clean` never reaches since every secondary render below passes `clean: false` (sharing
+  // `screenshotsDir` with the primary's own files and every other device's).
+  for (const device of allDevices.slice(1)) {
+    const sd = secondaryDevices.find((s) => s.device === device);
+    const wanted = new Set((sd?.jobs ?? []).map((j) => path.basename(secondaryScreenshotFile(device, j.stepNumber))));
+    const prefix = `${device}-step-`;
+    for (const entry of await readdir(screenshotsDir, { withFileTypes: true }).catch(() => [])) {
+      if (entry.isFile() && entry.name.startsWith(prefix) && !wanted.has(entry.name)) await rm(path.join(screenshotsDir, entry.name), { force: true });
+    }
+  }
+  for (const sd of secondaryDevices) {
+    if (sd.jobs.length === 0) continue;
+    await renderScreenshots(sd.captureDir, sd.manifest, sd.jobs, screenshotsDir, path.join(printDir, "device", sd.device), opts, {
+      fileName: (n) => path.basename(secondaryScreenshotFile(sd.device, n)),
+      clean: false,
+    });
+  }
+
   // Other ways to do this (decision 34): each path's opening steps, from its own capture. After
   // the main figures, whose render clears `printDir`.
   const otherWays = await buildOtherWays(wf, captureDir, screenshotsDir, printDir, validation, opts);
@@ -177,6 +310,15 @@ export async function buildPage(written: Walkthrough, captureDir: string, outDir
       lastChecked,
       passed,
       links: videoLinks(opts.videoDir, id, pageDir),
+      // Only the devices this page actually has output for: the primary, and each secondary with
+      // screenshots on this page or its own video.
+      devices: [
+        allDevices[0],
+        ...allDevices.slice(1).filter((device) => {
+          const sd = secondaryDevices.find((s) => s.device === device);
+          return (sd?.jobs.length ?? 0) > 0 || Boolean(opts.videoDir && existsSync(path.join(opts.videoDir, id, `${id}.${device}.mp4`)));
+        }),
+      ],
     }),
     buildHeaderBlock(wf),
   ];
@@ -194,7 +336,7 @@ export async function buildPage(written: Walkthrough, captureDir: string, outDir
       blocks.push(buildChapterBlock(step.chapter, chapters.indexOf(step.chapter)));
       lastChapter = step.chapter;
     }
-    blocks.push(buildStepBlock(step, i + 1, statuses[i], wf.data));
+    blocks.push(buildStepBlock(step, i + 1, statuses[i], wf.data, primaryAligned[i]?.mStep, deviceInfos[i]));
   }
 
   blocks.push(...otherWays.blocks);
@@ -234,7 +376,9 @@ export async function buildPage(written: Walkthrough, captureDir: string, outDir
   const { text, sidecar, suggestions } = mergeBlocks(migratedText, blocks, sidecarIn);
 
   writeFileSync(indexFile, text.endsWith("\n") ? text : `${text}\n`);
-  writeFileSync(plainFile, stripMarkers(text).replace(/\n{3,}/g, "\n\n"));
+  // `index.plain.md` keeps only the primary device's image (llms.txt, search, PDF — pdf/input.ts
+  // strips the same wrapper again, defensively, from its own copy of this file).
+  writeFileSync(plainFile, stripDeviceShots(stripMarkers(text)).replace(/\n{3,}/g, "\n\n"));
   writeSidecar(indexFile, sidecar);
   // Clean up the pre-rename files once migrated onto .mdx, so a page never ends up publishing
   // both an old .md and a new .mdx copy of itself.
@@ -342,14 +486,18 @@ async function buildOtherWays(
     const plans = manifest
       ? new Map(planStepFigures(run.walkthrough, manifest, { anyBlur: blurAnywhere, frames: capture ? frameGrays(capture.dir, manifest) : undefined }).map((pl) => [pl.step, pl] as const))
       : new Map<number, StepFigurePlan>();
+    // Aligned by `stepIndex`, not array position — a path step can name `devices:` too, so a
+    // path's own manifest can skip one just as the main walkthrough's can (M43b).
+    const aligned = manifest ? alignManifestToSteps(manifest.steps, p.steps.length) : [];
     for (let i = 0; i < p.steps.length; i++) {
       const n = i + 1;
-      const mStep = manifest?.steps[i];
-      const vStep = capture?.validation?.steps[i];
-      if (!mStep) {
+      const a = aligned[i];
+      if (!a) {
         statuses.push({ ok: false, problem: problem ?? "not run — capture stopped before this step" });
         continue;
       }
+      const { mStep, index: mIndex } = a;
+      const vStep = capture?.validation?.steps[mIndex];
       const ok = vStep ? vStep.ok : true;
       statuses.push({
         ok,
@@ -359,7 +507,7 @@ async function buildOtherWays(
       const plan = plans.get(n);
       if (mStep.doc.image && plan) jobs.push(screenshotJob(p.steps[i], mStep, n, plan));
     }
-    p.steps.forEach((step, i) => out.blocks.push(buildPathStepBlock(p.id, step, i + 1, statuses[i], wf.data)));
+    p.steps.forEach((step, i) => out.blocks.push(buildPathStepBlock(p.id, step, i + 1, statuses[i], wf.data, aligned[i]?.mStep)));
     // A path that runs to its own end shows all its steps and no "continue from" (decision 37).
     if (!run.alone) out.blocks.push(buildPathJoinBlock(p.id, wf.steps[run.joinIndex]!, run.joinIndex + 1));
 
@@ -447,12 +595,17 @@ async function renderScreenshots(
     const printPage = await browser.newPage({ deviceScaleFactor: scale });
     // Pass 1: the site screenshot, the clean full screen, and each step's focus crop as a size
     // class (focus.ts) — planned from its targets, refined against the clean screen.
-    const measured: { job: ScreenshotJob; framePath: string; full: string; cls?: number }[] = [];
+    // A phone-sized (portrait) capture uses its own crop rule (focus.ts `focusCropPhone`) applied
+    // directly, not the desktop size-class system below (`cropClassFor`/`placeCropClass`): that
+    // system picks among a few landscape-shaped (1.6 aspect) widths as a share of the viewport,
+    // which on a narrow phone screen are all a meaningless sliver (M43b, decision 40).
+    const portraitViewport = manifest.viewport.height > manifest.viewport.width;
+    const measured: { job: ScreenshotJob; framePath: string; full: string; cls?: number; portraitBox?: BoxLike }[] = [];
     for (const job of jobs) {
       const framePath = path.join(captureDir, "frames", job.frame);
       const outPath = path.join(screenshotsDir, naming.fileName(job.stepNumber));
       await annotateFrame(page, framePath, manifest.viewport, job.highlights, job.stepNumber, outPath, {
-        width: opts.screenshotWidth,
+        width: opts.screenshotWidth ?? screenshotWidthFor(manifest.viewport),
         callouts: job.callouts,
         blur: job.blur,
       });
@@ -463,7 +616,10 @@ async function renderScreenshots(
       await renderPrintFrame(printPage, framePath, manifest.viewport, job.blur, { full });
       const planned = focusCrop(job.plan.targets, manifest.viewport, job.plan.points);
       let cls: number | undefined;
-      if (planned) {
+      let portraitBox: BoxLike | undefined;
+      if (planned && portraitViewport) {
+        portraitBox = planned;
+      } else if (planned) {
         // Refined against the clean full screen just written (blur burned in): how much
         // context the target needs, which picks its size class.
         let refined = planned;
@@ -478,7 +634,7 @@ async function renderScreenshots(
         // A smaller class when what the bigger one adds is blank space.
         if (cls !== undefined && edges) cls = tightenCropClass(edges, cls, job.plan.targets, job.plan.points, manifest.viewport);
       }
-      measured.push({ job, framePath, full, cls });
+      measured.push({ job, framePath, full, cls, portraitBox });
     }
 
     // Pass 2: one or two neighbouring sizes across the guide (M36), each crop centred on its own
@@ -488,17 +644,17 @@ async function renderScreenshots(
     const printed = normaliseCropClasses(measured.map((m) => (m.job.plan.newScreen ? undefined : m.cls)));
     const classes = measured.map((m, i) => (m.job.plan.newScreen ? m.cls : printed[i]));
     for (let i = 0; i < measured.length; i++) {
-      const { job, framePath, full } = measured[i];
+      const { job, framePath, full, portraitBox } = measured[i];
       const cls = classes[i];
       const nn = String(job.stepNumber).padStart(2, "0");
       const cropPath = path.join(printDir, `step-${nn}.crop.png`);
       let edges: EdgeMap | undefined;
       try {
-        if (cls !== undefined) edges = readEdges(full);
+        if (cls !== undefined && !portraitBox) edges = readEdges(full);
       } catch {
         // Unreadable: centred on the target, no edge nudge.
       }
-      const box = cls !== undefined ? placeCropClass(edges, cls, job.plan.targets, job.plan.points, manifest.viewport) : undefined;
+      const box = portraitBox ?? (cls !== undefined ? placeCropClass(edges, cls, job.plan.targets, job.plan.points, manifest.viewport) : undefined);
       const cropBox = box ? await renderPrintFrame(printPage, framePath, manifest.viewport, job.blur, { crop: { box, path: cropPath } }) : undefined;
       printFigures.push({
         step: job.stepNumber,

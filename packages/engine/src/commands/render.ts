@@ -24,7 +24,8 @@ export async function runRender(walkthroughFile: string, opts: RunRenderOptions,
 
   let result: RenderResult;
   try {
-    const brand = opts.configPath ? resolveArtifactBrand(await loadConfig(opts.configPath)) : undefined;
+    const config = opts.configPath ? await loadConfig(opts.configPath) : undefined;
+    const brand = config ? resolveArtifactBrand(config) : undefined;
     result = await render(wf, {
       brand,
       outDir,
@@ -35,6 +36,9 @@ export async function runRender(walkthroughFile: string, opts: RunRenderOptions,
       force: opts.force,
       noCache: opts.noCache,
       concurrency: opts.concurrency,
+      // Same as the build (build/pipeline.ts) — standalone `aida render` without this would mux
+      // the mp4's audio/subtitle language tags as "en" even when the config says otherwise.
+      lang: config?.lang,
     });
   } catch (err) {
     const message = (err as Error).message;

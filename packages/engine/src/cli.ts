@@ -57,11 +57,11 @@ program.version(pkg.version);
 //   M40 interview
 
 program
-  .command("validate <target>")
-  .description("validate all walkthroughs in a file or directory")
+  .command("validate <targets...>")
+  .description("validate all walkthroughs in the given files or directories")
   .option("--config <path>", "aida.config.ts/.mjs whose `states` the walkthroughs' needs/leaves/clears are checked against")
   .option("--json", "print a single JSON object instead of a summary")
-  .action(async (target: string, opts: { config?: string; json?: boolean }) => {
+  .action(async (target: string[], opts: { config?: string; json?: boolean }) => {
     let states: Record<string, { setup?: unknown; check?: unknown; as?: string }> | undefined;
     let roles: Record<string, unknown> | undefined;
     if (opts.config) {
@@ -82,13 +82,13 @@ program
 const importCmd = program.command("import").description("convert another tool's format into a walkthrough");
 
 importCmd
-  .command("playwright <testFileOrGlob>")
-  .description("convert Playwright test(s) into draft walkthrough YAML")
+  .command("playwright <testFilesOrGlobs...>")
+  .description("convert Playwright test(s) into draft walkthrough YAML (files or globs; a glob your shell expands works too)")
   .option("-o, --out <dir>", "output directory (default: next to each input file)")
   .option("--force", "overwrite existing drafts")
   .option("--json", "print a single JSON object instead of a summary")
-  .action(async (pattern: string, opts: { out?: string; json?: boolean; force?: boolean }) => {
-    process.exitCode = await runImportPlaywright(pattern, opts.out, Boolean(opts.json), Boolean(opts.force));
+  .action(async (patterns: string[], opts: { out?: string; json?: boolean; force?: boolean }) => {
+    process.exitCode = await runImportPlaywright(patterns, opts.out, Boolean(opts.json), Boolean(opts.force));
   });
 
 program
@@ -98,13 +98,20 @@ program
   .option("--json", "print a single JSON object instead of a summary")
   .option("--no-reset", "skip the configured database reset before capturing")
   .option("--with-deps", "also capture the walkthroughs that leave the data these ones need (see aida order)")
-  .action(async (walkthroughs: string[], opts: { config: string; json?: boolean; reset: boolean; withDeps?: boolean }) => {
+  .option("--device <desktop|phone>", "capture only this device; default: every device the walkthrough resolves to (its own devices:, else config devices, else the brief's readers)")
+  .action(async (walkthroughs: string[], opts: { config: string; json?: boolean; reset: boolean; withDeps?: boolean; device?: string }) => {
+    if (opts.device && opts.device !== "desktop" && opts.device !== "phone") {
+      console.error(`--device must be "desktop" or "phone" (got "${opts.device}")`);
+      process.exitCode = 1;
+      return;
+    }
     process.exitCode = await runCaptureCommand({
       configPath: opts.config,
       walkthroughIds: walkthroughs,
       json: Boolean(opts.json),
       noReset: !opts.reset,
       withDeps: Boolean(opts.withDeps),
+      device: opts.device as "desktop" | "phone" | undefined,
     });
   });
 
@@ -218,10 +225,16 @@ program
   .option("--after <stepId>", "with --walkthrough: sign in as its persona, run its setup and its real actions up to and including this step (no frames or screenshots; the same safety checks as capture), then map that page. <pathId>/<stepId> replays that path instead: its start page, its opening steps, then the main steps from where it joins")
   .option("--lines <n>", "lines to print (default 80; 0 prints them all)", (v: string) => parseNonNegativeInt(v, "--lines"))
   .option("--skip <n>", "skip this many lines from the top, to read a long page a window at a time", (v: string) => parseNonNegativeInt(v, "--skip"))
+  .option("--device <desktop|phone>", "inspect as this device — a touch, mobile context for phone (config phone). Default: desktop")
   .option("--json", "print a single JSON object instead of a summary")
-  .action(async (path: string | undefined, opts: { config: string; as?: string; area?: string; click?: string[]; check?: string; select?: string[]; walkthrough?: string; after?: string; lines?: number; skip?: number; json?: boolean }) => {
+  .action(async (path: string | undefined, opts: { config: string; as?: string; area?: string; click?: string[]; check?: string; select?: string[]; walkthrough?: string; after?: string; lines?: number; skip?: number; device?: string; json?: boolean }) => {
     if (opts.select && opts.select.length !== 2) {
       console.error('--select needs exactly two values: --select "<field>" "<option>"');
+      process.exitCode = 1;
+      return;
+    }
+    if (opts.device && opts.device !== "desktop" && opts.device !== "phone") {
+      console.error(`--device must be "desktop" or "phone" (got "${opts.device}")`);
       process.exitCode = 1;
       return;
     }
@@ -238,6 +251,7 @@ program
         after: opts.after,
         lines: opts.lines,
         skip: opts.skip,
+        device: opts.device as "desktop" | "phone" | undefined,
       },
       Boolean(opts.json),
     );

@@ -2,6 +2,15 @@
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
 
+/* Registers `--color-fd-primary-text` as a Tailwind colour token (like fumadocs' own
+ * `--color-fd-primary`), so `text-fd-primary-text` works as a utility class — brand.css sets its
+ * actual value to a contrast-safe variant of the primary (decision 39: text drawn *in* the brand
+ * colour, e.g. a link or an active nav item, needs its own >= 4.5:1 check; a fill only needs its
+ * paired foreground to read, which `--color-fd-primary-foreground` already covers). */
+@theme {
+  --color-fd-primary-text: var(--brand-primary);
+}
+
 /*
  * The app's own brand: colours, radius and fonts, written by the aida engine from
  * aida.config's `brand` (`aida theme`, and every `aida build`). Edit the config, not that
@@ -13,6 +22,49 @@
  * page edges (wide screens, overscroll). */
 html {
   background-color: var(--color-fd-background);
+}
+
+/* ---- Accessibility (decision 39: WCAG 2.2 AA where the format allows). */
+
+/* Skip link: off-screen until focused, then a visible first stop before the nav/sidebar
+ * (app/layout.tsx puts it first in the body, targeting Fumadocs' `<article id="nd-page">`). */
+.skip-link {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 100;
+  transform: translateY(-150%);
+  padding: 0.5rem 1rem;
+  border-radius: var(--brand-radius);
+  background-color: var(--color-fd-background);
+  color: var(--color-fd-foreground);
+  border: 1px solid var(--color-fd-border);
+  box-shadow: 0 4px 16px -4px rgb(15 23 42 / 0.3);
+}
+.skip-link:focus {
+  transform: none;
+}
+
+/* Visible focus everywhere, `:focus-visible` only (no ring on a plain mouse click): a
+ * brand-derived ring that's >= 3:1 against its surface (--color-fd-ring, theme/write.ts). */
+:focus-visible {
+  outline: 2px solid var(--color-fd-ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Reduced motion: no animation/transition duration, and no smooth-scroll jump, for anyone whose
+ * OS asks for it — covers the chat "Thinking" dots (animate-bounce) and the hover
+ * translate/scale on cards and buttons without hunting down every utility class individually. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 body {
@@ -38,8 +90,30 @@ h4,
 /* ---- Sidebar: brand-tinted active item, a little more air between groups. */
 #nd-sidebar a[data-active="true"] {
   background-color: color-mix(in oklab, var(--color-fd-primary) 10%, transparent);
-  color: var(--color-fd-primary);
+  /* `-text`, not the plain fill colour: this is primary used *as text* on the sidebar
+   * background, which needs its own >= 4.5:1 check (decision 39). */
+  color: var(--color-fd-primary-text);
   font-weight: 500;
+}
+
+/* ---- The rest of fumadocs' own "primary used as text" spots (decision 39) that aren't the
+ * sidebar above: the active table-of-contents item (`#nd-toc`, components/toc/clerk.js's
+ * `data-[active=true]:text-fd-primary`), the active Tabs trigger (components/tabs.js's
+ * `data-[active]:text-fd-primary`), and everywhere else fumadocs applies the plain `text-fd-primary`
+ * utility as a literal class rather than a data-variant — the current breadcrumb item
+ * (layouts/docs/page/slots/breadcrumb.js) chief among them. The plain-class override catches any
+ * of those by construction (same compiled selector, so this file doesn't need to keep its own
+ * list in sync with fumadocs' components); the two data-variant ones need their own rule since
+ * Tailwind compiles `data-[active...]:text-fd-primary` to a different class than plain
+ * `text-fd-primary`. */
+#nd-toc a[data-active="true"] {
+  color: var(--color-fd-primary-text);
+}
+[role="tab"][data-active] {
+  color: var(--color-fd-primary-text);
+}
+.text-fd-primary {
+  color: var(--color-fd-primary-text);
 }
 
 /* ---- Home hero: a soft wash of the brand colours behind the search. */
@@ -107,6 +181,22 @@ h4,
     0 1px 2px rgb(15 23 42 / 0.06),
     0 12px 32px -16px rgb(15 23 42 / 0.25);
   background: var(--color-fd-card);
+}
+
+/* A step shown on more than one device (decision 40, M43b): components/device-shots.tsx shows
+ * one image at a time, keyed by `data-device`/`data-primary` (see also app/print.css). */
+.aida-device-shots {
+  margin-block: 1rem 0.5rem;
+}
+.aida-device-shots .aida-screenshot {
+  margin-block: 0;
+}
+/* A phone shot reads narrow and centred, with a more rounded, phone-like frame rather than the
+ * desktop screenshot's squarer "window" card. */
+.aida-device-shots .aida-phone-shot .aida-screenshot {
+  max-width: 320px;
+  margin-inline: auto;
+  border-radius: 1.5rem;
 }
 
 /* "Steps verified against the real app on …" footer. */

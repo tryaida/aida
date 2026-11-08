@@ -216,18 +216,18 @@ at all, so the upgrade's own changes are easy to review and undo (`--dry-run` st
 | `domain` | The app's domain model read from its schema (Drizzle, else Prisma, else SQL migrations; never a database connection): one line per entity with key columns, states and links; `--entity` for one in full, `--source` to pick a schema |
 | `brief` | The app brief, `app-brief.md` beside the config (config `brief` moves it): `sources` lists the app's own docs worth reading (paths and headings only), `init` writes the skeleton from the schema, `check` validates sections, glossary and personal data, `show [--section]` prints it. Once it passes `check` with no personal data or prompts left, `build` passes its opening sections to the help chat, an overview to the agent connector's `get_app_overview`, its first paragraph to the home page, and three pages to the help site: the glossary (**Words we use**), the rules as **Good to know** (**Troubleshooting and FAQ**) and **What <app> is for** at the top of **Getting started**. They're marked `brief: true, generated: true` and rewritten every build; remove `generated: true` to take one over by hand. "Open questions" is never published. Within a section, pages follow `outline.yaml`'s card order, then go from creating things to deleting them |
 | `outline` | Outline cards in `outline.yaml` (`add`, `import`, `list`, `note`, `check`, `status`); capture records where the screen differs from a card |
-| `inspect` | Open one page signed in and list its interactive elements, read-only (`--click` repeatable; `--as <role>` takes a walkthrough's persona, or a role the config's `roles`/`readers` name before any walkthrough uses it; 80 lines at a time, `--skip <n>` for the next window, `--lines 0` for all); `--walkthrough <id> --after <step>` replays the steps (writes, like capture) and maps the page they leave; `--after <pathId>/<stepId>` replays a path from its own start page through its opening steps (or on to a shared main step after it joins), with the same safety checks |
+| `inspect` | Open one page signed in and list its interactive elements, read-only (`--click` repeatable; `--as <role>` takes a walkthrough's persona, or a role the config's `roles`/`readers` name before any walkthrough uses it; 80 lines at a time, `--skip <n>` for the next window, `--lines 0` for all); `--walkthrough <id> --after <step>` replays the steps (writes, like capture) and maps the page they leave; `--after <pathId>/<stepId>` replays a path from its own start page through its opening steps (or on to a shared main step after it joins), with the same safety checks; `--device phone` opens it in the phone context |
 | `record` | "Show me": open the app in a browser window, signed in (`--as`), with `--needs` states set up, and turn one click-through into a draft walkthrough. A toolbar adds **Point at**, **Check shown**, **Note** (the step's narration), **New step**, **Undo** and **Finish**. Targets use on-screen names and are checked against the page as they're recorded; typed emails, phone numbers and card numbers become safe demo values; passwords are never kept. Same safety checks as capture; the draft is replayed once afterwards (`--no-replay` skips it, since a replay saves the same things again) |
-| `validate`, `import playwright` | Check walkthrough files, their states, caption and chapter line lengths, and every `{{placeholder}}` in reader-facing text (titles, `say`, `caption`, `page_text`, callout labels, cards, a path's `title`/`when`/`note`) has a value in `data`; convert existing Playwright tests into draft walkthroughs |
+| `validate`, `import playwright` | Both take several files, folders or globs. Check walkthrough files, their states, caption and chapter line lengths, and every `{{placeholder}}` in reader-facing text (titles, `say`, `caption`, `page_text`, callout labels, cards, a path's `title`/`when`/`note`) has a value in `data`; convert existing Playwright tests into draft walkthroughs |
 | `order` | Print the capture order the walkthroughs' `needs`/`leaves`/`clears` imply, and where the database is reset |
-| `capture` | Replay walkthroughs in a browser against the app, in that order (`--with-deps` pulls in the walkthroughs they need); screenshots, checks, a failure report saying whether it looks like the walkthrough, the app or the setup. A walkthrough's other `paths` are each captured after a database reset, before the main steps (`capture/paths/<id>/`; without an allowed reset they're marked not captured); a path that saves differently from the main steps or leaves different data (end checks) is warned about and recorded as `pathDiffs` |
+| `capture` | Replay walkthroughs in a browser against the app, in that order (`--with-deps` pulls in the walkthroughs they need); screenshots, checks, a failure report saying whether it looks like the walkthrough, the app or the setup. `--device <desktop\|phone>` captures one device only (default: every device the walkthrough resolves to — see [Phone screenshots and video](#phone-screenshots-and-video)). A walkthrough's other `paths` are each captured after a database reset, before the main steps (`capture/paths/<id>/`; without an allowed reset they're marked not captured); a path that saves differently from the main steps or leaves different data (end checks) is warned about and recorded as `pathDiffs` |
 | `paths` | Other screens a walkthrough's task can start from: pages whose code makes the same save as its captured main path (API route, tRPC call or server action), not yet covered by its `paths`. Follows everything a page renders: layouts and templates up the App Router tree, route groups, `@slot` pages on their parent route, intercepting routes over the page the reader came from, barrel re-exports by name and tsconfig/jsconfig path aliases; a hit found through a layout names it in `via` |
 | `voice`, `render` | Narrate, then render video per scene (only changed scenes re-render). Each passing path also gets a short narrated clip, `<id>.path-<pathId>.mp4` with `.srt`/`.vtt`, beside the main video: a title card, the path's opening steps (their own `say`), then "Then continue from step N: <title>"; same brand, style and blur (blurred screens are unioned across the main run and every path) |
 | `pages`, `pdf` | Help pages with numbered screenshots; PDFs and quick reference cards (a QR code to each guide when `publish.siteUrl` is set) |
 | `qa` | Loudness, black frames, caption timing, personal-data and secret scans |
 | `build` | All of the above in order, skipping unchanged work (`--with-deps` too); `report.json` names each failed check and its files |
 | `affected` | Map a git diff to the walkthroughs it touches (screens their paths visit too); unknown changes mean all |
-| `ci` | PR check: affected walkthroughs and the ones they need, capture, screenshot diff, one PR comment tiered cosmetic/broken/new plus possible app bugs (no model, no API keys); `--publish` republishes on merge |
+| `ci` | PR check: affected walkthroughs and the ones they need, capture (primary device only), screenshot diff, one PR comment tiered cosmetic/broken/new plus possible app bugs (no model, no API keys); `--publish` republishes on merge and recaptures every device |
 | `version freeze`, `version list`, `whats-new` | Freeze a docs version per release; write the What's new page from merged PRs |
 | `edit`, `undo`, `catch-up` | The same edits the Studio makes (steps, data, callouts, blur, paths), with history marked person or agent, and locks |
 | `publish` | Deploy to `vercel`, `netlify`, `amplify`, `cloudflare`, `node` or `static`; first production publish needs a person's OK |
@@ -264,6 +264,78 @@ in `{{data}}` placeholders from the walkthrough's `data`; `{{run.id}}` is never 
 
 One persona: `start.signed_in_as` and `start.persona.role` must agree. Config `roles` gives each
 role its reader-facing name (`roles: { admin: "an organiser" }`).
+
+## Phone screenshots and video
+
+A reader on a phone sees a different screen from a reader at a desktop. Say so and AIDA captures
+and shows both (decision 40):
+
+- **The brief decides by default.** When the app brief's readers (the builder interview,
+  `readers[].devices`) say a role uses `phone`, walkthroughs for that role are captured at a
+  phone size too. Readers who use *only* a phone (no desktop or tablet) make phone the walkthrough's
+  primary device — its screenshots keep the plain `step-NN.png` names the pages, PDF, agent
+  connector and search already use, and its video is the one that plays by default. A reader who
+  uses both devices keeps desktop primary and adds phone as a second capture.
+- **Set it yourself.** `devices: [desktop, phone]` on a walkthrough overrides the brief; config
+  `devices` overrides the brief but not the walkthrough. First device listed is the primary.
+  "Tablet" (a brief device) counts as desktop for now — there's no separate tablet capture yet.
+- **A step that only happens on one device** — opening a phone's menu before a desktop sidebar
+  link, already visible there, needs no equivalent click — says so: `devices: [phone]` on that
+  step (a path's steps take the same field). A step without `devices:` runs on every device.
+- **Phone capture settings** come from config `phone: { viewport, deviceScaleFactor, userAgent }`
+  — one profile for every walkthrough's phone capture (a walkthrough's own `start.viewport` is a
+  desktop-era field phone capture doesn't read). Unset: a Pixel 7 in Chromium (412×839, DPR 2.625,
+  touch, Chromium's own Android user agent) — Chromium only, there's no WebKit/Safari phone.
+- **A hover action fails on phone** — there's no mouse to hover with on a touch device — with a
+  message to either mark the step `devices: [desktop]` or replace it with a tap/click.
+- **A phone capture failing never fails the desktop page.** It's recorded per walkthrough in
+  `report.json`'s `deviceResults` (e.g. `{ phone: { ok: false, failure: "..." } }`) and warned
+  about, never a build failure — unless phone is that walkthrough's primary device, where it's
+  the walkthrough's own failure, same as desktop always has been. `aida capture` prints a
+  secondary device's failure as `WARN` and exits 0 when the primary passed.
+- **Phone is captured first, between resets.** In one walkthrough's turn the order is reset →
+  phone → reset → desktop (its other ways in, then its main steps), so the run dependants see is
+  always the primary's. Phone gets its own `{{run.id}}` there, as paths do. Where no reset is
+  allowed (no database adapter, `--no-reset`, or mid-chain, where a reset would erase data an
+  earlier walkthrough left), a walkthrough that changes data (a click, typing, `leaves`/`clears`,
+  setup) isn't captured on phone: its phone capture is marked "needs a database reset between
+  devices". A read-only one still is, without resets.
+- **Only a passing phone capture is shown.** Phone screenshots, the phone video and its poster
+  come from the phone capture only while its last run passed; after a failed or skipped run the
+  older phone files are removed rather than shown as verified. The phone video is checked by QA
+  on its own: a failure drops the phone video (recorded in `deviceResults.phone.qa`), never the
+  page.
+- **The page shows both.** A step captured on more than one device gets both screenshots,
+  `screenshots/<device>-step-NN.png` for every device after the primary (whose files keep the
+  plain `step-NN.png` names); the site shows one at a time behind a Computer/Phone switch (the
+  same choice the video's switch and every other page's follow) and prints only the primary's.
+  A step that only happens on one device says so in words ("*On a phone only.*" / "*On a computer
+  only.*") and, when the primary doesn't run it at all, shows the other device's shot as its only
+  image. Numbering always counts over the walkthrough's full step list, so a step skipped on the
+  primary doesn't shift the numbers after it.
+- **The PDF stays primary-only.** It prints the primary device's screenshots as it always has;
+  when the primary is phone, figures sit beside the step text at a fixed, legible width instead
+  of the desktop crop sizes (a phone screen stacked at the desktop width formula would print as an
+  unreadable sliver), and the focus crop keeps the full screen width and crops down to the target
+  with context instead of cropping sideways.
+- **`get_procedure` gains `phoneScreenshot`.** A step also captured on a phone carries its own
+  phone screenshot URL alongside the usual `screenshot`, when the page rendered one.
+- `aida capture --device phone` (or `--device desktop`) captures one device only; the default is
+  every device the walkthrough resolves to. `aida inspect --device phone` opens a page in the
+  phone context. `aida record` stays desktop-only for now. `aida ci`'s PR check captures the
+  primary device only (its screenshot diffs are what the comment shows); `aida ci --publish`
+  recaptures every device.
+- **A phone video is its own portrait file.** When phone is the primary device, `<id>.mp4` is
+  itself portrait (1080×1920) — same as desktop's 1920×1080 otherwise. When phone is a *secondary*
+  device, its video renders too, next to the primary's: `<id>.phone.mp4` plus `.phone.srt`/
+  `.phone.vtt`/`.phone.chapters.vtt`/`.phone.transcript.md`. The phone frame is a plain rounded
+  "phone" shape (the brand style's own radius/shadow, no fake hardware), with a soft tap circle
+  instead of a mouse cursor and the caption/step chip in a safe zone below the screen rather than
+  over it; a path's own short clip stays desktop-only (paths are captured once, on the primary
+  device). On the site, a guide with both videos shows a Computer/Phone switch beside the player
+  (the same one phone screenshots use) and plays whichever the reader last chose. A secondary
+  phone video that fails to render is recorded the same non-fatal way a secondary phone capture
+  is — the primary device's own video still ships.
 
 ## Safety defaults
 
@@ -332,6 +404,10 @@ meanwhile). Pack from a clean, committed tree.
 4. **Publish:** `cd packages/engine && npm publish --access public` (needs an npm login with
    rights to `aida-docs` and two-factor auth; with a security key, npm prints a link to approve
    the publish in a browser). Then tag the commit, e.g. `git tag aida-docs-v0.1.0 && git push --tags`.
+5. **GitHub release:** once the version is live on npm, `gh release create aida-docs-v<version>
+   --title "aida-docs <version>" --notes-file <notes>` on the tag: what changed for people using
+   it (new outputs, changed commands, anything to do when upgrading, e.g. `aida upgrade`), with a
+   link to the npm page.
 
 Later: publish from GitHub Actions with
 [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC, no npm token in the

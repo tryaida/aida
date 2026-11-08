@@ -4,9 +4,11 @@ import {
   deriveDarkColor,
   isGrayish,
   isPale,
+  mixColors,
   parseColor,
   readableForeground,
   sameColor,
+  textSafeVariant,
   toCssColor,
 } from "../../src/theme/color.js";
 
@@ -66,6 +68,67 @@ describe("contrast helpers", () => {
     expect(isGrayish("183 68% 30%")).toBe(false);
     expect(sameColor("#ffffff", "0 0% 100%")).toBe(true);
     expect(sameColor("235 55% 42%", "183 68% 30%")).toBe(false);
+  });
+});
+
+describe("mixColors", () => {
+  it("averages channels at t=0.5", () => {
+    expect(mixColors("#000000", "#ffffff", 0.5)).toBe("rgb(128 128 128)");
+  });
+
+  it("returns `a` at t=0 and `b` at t=1", () => {
+    expect(mixColors("#112233", "#ffffff", 0)).toBe("rgb(17 34 51)");
+    expect(mixColors("#112233", "#ffffff", 1)).toBe("rgb(255 255 255)");
+  });
+
+  it("clamps an out-of-range t", () => {
+    expect(mixColors("#000000", "#ffffff", 2)).toBe("rgb(255 255 255)");
+    expect(mixColors("#000000", "#ffffff", -1)).toBe("rgb(0 0 0)");
+  });
+
+  it("returns `a` unparsed when either colour can't be read", () => {
+    expect(mixColors("var(--x)", "#ffffff", 0.5)).toBe("var(--x)");
+  });
+});
+
+describe("textSafeVariant", () => {
+  it("leaves an already-readable colour alone, just normalised", () => {
+    expect(textSafeVariant("235 55% 42%", "#ffffff")).toBe("hsl(235 55% 42%)");
+    expect(contrastRatio("235 55% 42%", "#ffffff")!).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("darkens a pale brand colour (sky-300-ish) until it reaches 4.5:1 on white, keeping the hue", () => {
+    expect(contrastRatio("#7dd3fc", "#ffffff")!).toBeLessThan(4.5); // the untouched colour fails
+    const safe = textSafeVariant("#7dd3fc", "#ffffff");
+    expect(contrastRatio(safe, "#ffffff")!).toBeGreaterThanOrEqual(4.5);
+    expect(safe).toMatch(/^hsl\(19[0-9]/); // same cyan-blue hue family as #7dd3fc (~198deg)
+  });
+
+  it("lightens a dark brand colour until it reaches 4.5:1 on a near-black background", () => {
+    const dark = "#1e3a8a"; // a dark blue that already carries on white, but not on near-black
+    expect(contrastRatio(dark, "#0a0a0a")!).toBeLessThan(4.5);
+    const safe = textSafeVariant(dark, "#0a0a0a");
+    expect(contrastRatio(safe, "#0a0a0a")!).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("a mid colour where white text would fail 4.5 still reaches it by going darker", () => {
+    // A mid-lightness amber: white-on-this fails 4.5 (it's not dark enough), so the safe variant
+    // has to move toward black, not white, to pass.
+    const mid = "hsl(38 92% 55%)";
+    expect(contrastRatio("#ffffff", mid)!).toBeLessThan(4.5);
+    const safe = textSafeVariant(mid, "#ffffff");
+    expect(contrastRatio(safe, "#ffffff")!).toBeGreaterThanOrEqual(4.5);
+    expect(safe).toMatch(/^hsl\(38 /); // hue kept
+  });
+
+  it("satisfies every background at once when given more than one", () => {
+    const safe = textSafeVariant("#7dd3fc", ["#ffffff", "hsl(0 0% 94%)"]);
+    expect(contrastRatio(safe, "#ffffff")!).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(safe, "hsl(0 0% 94%)")!).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("passes unparseable colours through unchanged", () => {
+    expect(textSafeVariant("var(--x)", "#ffffff")).toBe("var(--x)");
   });
 });
 

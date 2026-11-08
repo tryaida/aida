@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 
 export default function Layout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={brand.lang} suppressHydrationWarning>
       <head>
         {/* The app's own font (lib/brand.json, from aida.config's brand). A plain stylesheet
          * link rather than next/font: the family is only known per app, and hosts then don't
@@ -25,6 +25,9 @@ export default function Layout({ children }: LayoutProps<"/">) {
         ) : null}
       </head>
       <body className="flex min-h-screen flex-col">
+        {/* No skip link here (review finding: this root layout also wraps /studio and
+         * not-found, which never render the `#nd-page` target) — it lives in the site layout
+         * instead (app/(site)/layout.tsx's `SkipToContent`, components/site/skip-link.tsx). */}
         {/* Search: Ctrl/⌘ K and Fumadocs' search buttons open aida's dialog over the
          * engine-built public/search-index.json (no server route, works on a static export). */}
         <Providers>{children}</Providers>

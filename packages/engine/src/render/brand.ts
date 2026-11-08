@@ -6,7 +6,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import type { BrandConfig } from "../config/types.js";
 import { DEFAULT_BRAND_PRIMARY, WORDMARK_ASPECT, brandFontUrl, imageAspect } from "../theme/write.js";
-import { isGrayish, isPale, isReadable, readableForeground, toCssColor } from "../theme/color.js";
+import { isGrayish, isPale, isReadable, mixColors, readableForeground, textSafeVariant, toCssColor } from "../theme/color.js";
 import type { TimelineBrand } from "./types.js";
 import { withAppBrand } from "../theme/app-brand.js";
 import { radiusPx, readBrandNotes, resolveBrandStyle, type BrandStyle } from "../theme/style.js";
@@ -18,7 +18,13 @@ export type BrandConfigLike = BrandConfig;
 export interface ArtifactColors {
   primary: string;
   primaryForeground: string;
+  /** `primary`, nudged for >= 4.5:1 against `background` — for when primary is drawn as *text*
+   * (a link, a heading, a marker) rather than a fill, which only needs `primaryForeground` to
+   * read against it (decision 39). Unmodified when `primary` already passes. */
+  primaryText: string;
   accent: string;
+  /** `accent`, same idea as `primaryText` but for `accent`. */
+  accentText: string;
   background: string;
   foreground: string;
   muted: string;
@@ -64,16 +70,23 @@ function safeSiteUrl(value: string | undefined): string | undefined {
 /** Fallback palette when nothing is configured: the help app's own default primary
  * (theme/write.ts `DEFAULT_BRAND_PRIMARY`, so an unbranded site and its artifacts still match)
  * with a sky accent — not any one product's palette. */
-export const NEUTRAL_COLORS: ArtifactColors = {
-  primary: DEFAULT_BRAND_PRIMARY,
-  primaryForeground: "#ffffff",
-  accent: "#0ea5e9",
-  background: "#ffffff",
-  foreground: "#0f172a",
-  muted: "#f1f5f9",
-  mutedForeground: "#64748b",
-  border: "#e2e8f0",
-};
+export const NEUTRAL_COLORS: ArtifactColors = (() => {
+  const base = {
+    primary: DEFAULT_BRAND_PRIMARY,
+    primaryForeground: "#ffffff",
+    accent: "#0ea5e9",
+    background: "#ffffff",
+    foreground: "#0f172a",
+    muted: "#f1f5f9",
+    mutedForeground: "#64748b",
+    border: "#e2e8f0",
+  };
+  return {
+    ...base,
+    primaryText: textSafeVariant(base.primary, base.background, 4.5),
+    accentText: textSafeVariant(base.accent, base.background, 4.5),
+  };
+})();
 
 // Anything that could break out of a CSS declaration or an HTML attribute is rejected outright.
 const SAFE_CSS_VALUE = /^[#a-zA-Z0-9(),.%\s/+-]+$/;
@@ -132,14 +145,20 @@ export function resolveArtifactBrand(configIn: { configDir: string; brand?: Bran
   const accentRaw = cssColor(b.accentColor) ?? cssColor(c.accent);
   const accent = accentRaw && !isPale(accentRaw) && !isGrayish(accentRaw) ? accentRaw : undefined;
   const primaryResolved = primary ?? NEUTRAL_COLORS.primary;
+  const accentResolved = accent ?? primary ?? NEUTRAL_COLORS.accent;
+  const backgroundResolved = cssColor(c.background) ?? NEUTRAL_COLORS.background;
   const fgConfigured = cssColor(c.primaryForeground);
   const colors: ArtifactColors = {
     primary: primaryResolved,
-    primaryForeground: fgConfigured && isReadable(fgConfigured, primaryResolved, 3) ? fgConfigured : readableForeground(primaryResolved),
+    // Small text (the step badge, captions) — needs full AA text contrast, not the 3:1 a large
+    // fill would get away with.
+    primaryForeground: fgConfigured && isReadable(fgConfigured, primaryResolved, 4.5) ? fgConfigured : readableForeground(primaryResolved),
+    primaryText: textSafeVariant(primaryResolved, backgroundResolved, 4.5),
     // A brand with only a primary colour stays monochrome rather than picking up the fallback's
     // sky accent.
-    accent: accent ?? primary ?? NEUTRAL_COLORS.accent,
-    background: cssColor(c.background) ?? NEUTRAL_COLORS.background,
+    accent: accentResolved,
+    accentText: textSafeVariant(accentResolved, backgroundResolved, 4.5),
+    background: backgroundResolved,
     foreground: cssColor(c.foreground) ?? NEUTRAL_COLORS.foreground,
     muted: cssColor(c.muted) ?? NEUTRAL_COLORS.muted,
     mutedForeground: cssColor(c.mutedForeground) ?? NEUTRAL_COLORS.mutedForeground,
@@ -159,6 +178,83 @@ export function resolveArtifactBrand(configIn: { configDir: string; brand?: Bran
     ...extras,
     ...(radiusPx(b.radius) !== undefined ? { radiusPx: radiusPx(b.radius) } : {}),
   };
+}
+
+// `night`/`night-2`: the dark (bold) preset's canvas tint — player.css's `#frame` background
+// used to mix the brand primary into these same bases with `color-mix()`; kept here so the
+// result is the one value both the CSS and a test agree on.
+const NIGHT_BASE = "hsl(228 40% 5%)";
+const NIGHT_BASE_2 = "hsl(228 40% 8%)";
+const NIGHT_PRIMARY_MIX = 0.2;
+const NIGHT_PRIMARY_MIX_2 = 0.34;
+
+// `paper`: the light (minimal/friendly) preset's canvas tint — same idea, player.css's
+// `.style-minimal`/`.style-friendly #frame`.
+const PAPER_BASE: Record<"minimal" | "friendly", { base: string; mix: number }> = {
+  minimal: { base: "#f5f6f8", mix: 0.04 },
+  friendly: { base: "#fbfbfd", mix: 0.11 },
+};
+
+export interface VideoTextColors {
+  /** Dark canvas behind bold's caption/chip/title text. */
+  night: string;
+  night2: string;
+  /** Light canvas behind minimal/friendly's text. Unset for bold. */
+  paper?: string;
+  /** Friendly's caption chip (player.css `.style-friendly #caption`'s background) — an
+   * ~86%-opaque white box over `paper`, computed here instead of left as a CSS alpha the player
+   * paints without knowing whether text on it still reads. Friendly only. */
+  chip?: string;
+  /** What caption/chip/title text actually renders in, decreasing emphasis: `ink` (titles, the
+   * step number), `ink2` (the spoken-line caption itself, and card subtitles — real body text,
+   * not decoration), `ink3` (small eyebrow labels). Each is independently checked to clear
+   * 4.5:1 against every surface it's drawn on for that style (friendly's caption chip
+   * included), rather than a flat opacity reduction of `ink` that could drop under it. */
+  ink: string;
+  ink2: string;
+  ink3: string;
+  /** `colors.primary` used as *video* text (minimal's `#chip .num`, sitting directly on `paper`;
+   * friendly's `#chip .eyebrow`, sitting on friendly's own near-white chip) — checked against
+   * those surfaces, not the artifact's generic `primaryText` (which is only checked against
+   * `colors.background`, a different surface than either). Unset for bold, which never draws
+   * `primary` as text on the dark canvas. */
+  primaryText?: string;
+}
+
+/**
+ * The video player's caption/chip/title colours for one house style (theme/style.ts's
+ * `BrandStyle`), computed in TS rather than with CSS `color-mix()` — decision 39 flagged that a
+ * color-mix() result can't be contrast-checked at build time. `timelineBrand` puts these on
+ * `TimelineBrand.colors` (`night`/`ink`/… -> player.js's generic `--brand-<key>` setter);
+ * player.css just paints them, no color-mix of its own left for text.
+ */
+export function videoTextColors(colors: ArtifactColors, style: BrandStyle): VideoTextColors {
+  if (style !== "minimal" && style !== "friendly") {
+    // bold: captions and title-card text sit directly on the dark gradient canvas.
+    const night = mixColors(NIGHT_BASE, colors.primary, NIGHT_PRIMARY_MIX);
+    const night2 = mixColors(NIGHT_BASE_2, colors.primary, NIGHT_PRIMARY_MIX_2);
+    const ink = textSafeVariant(readableForeground(night), night, 4.5);
+    const ink2 = textSafeVariant(mixColors(ink, night, 0.22), night, 4.5);
+    // `ink3` (the eyebrow label, the outro's small credit lines) also sits on `night2`
+    // (player.css's `#frame` background gradient runs `night2` -> `night`), not only the flat
+    // `night` canvas — checked against both.
+    const ink3 = textSafeVariant(mixColors(ink, night, 0.38), [night, night2], 4.5);
+    return { night, night2, ink, ink2, ink3 };
+  }
+  const { base, mix } = PAPER_BASE[style];
+  const paper = mixColors(base, colors.primary, mix);
+  // The friendly caption chip: an ~86%-opaque white box over the paper canvas — what the text
+  // actually sits on, not the chip's own (near-white) colour alone.
+  const chip = style === "friendly" ? mixColors("#ffffff", paper, 0.14) : undefined;
+  const surfaces = chip ? [paper, chip] : [paper];
+  const rawInk = mixColors(colors.foreground, colors.primary, 0.08);
+  const ink = textSafeVariant(rawInk, surfaces, 4.5);
+  const ink2 = textSafeVariant(mixColors(ink, paper, 0.28), surfaces, 4.5);
+  const ink3 = textSafeVariant(mixColors(ink, paper, 0.45), surfaces, 4.5);
+  // `primary` as text (minimal's chip number on `paper`, friendly's eyebrow on the chip) — the
+  // same surfaces `ink`/`ink2`/`ink3` were just checked against, not `colors.background`.
+  const primaryText = textSafeVariant(colors.primary, surfaces, 4.5);
+  return { night: NIGHT_BASE, night2: NIGHT_BASE_2, paper, ...(chip ? { chip } : {}), ink, ink2, ink3, primaryText };
 }
 
 /** Logos bigger than this aren't inlined (the player bundle and PDFs stay small). */
@@ -214,12 +310,25 @@ export function timelineBrand(brand: ArtifactBrand | undefined, productName?: st
   // the dark-background one took `logoSrc`.
   const light = dark ? imageDataUrl(brand.logoPath) : undefined;
   if (light) out.logoLightSrc = light;
+  const text = videoTextColors(brand.colors, brand.style);
   out.colors = {
     primary: brand.colors.primary,
     accent: brand.colors.accent,
     primaryForeground: brand.colors.primaryForeground,
+    // The generic `primaryText` (checked against `colors.background`) isn't the surface this is
+    // actually drawn on in the player (minimal's `#chip .num` on `paper`, friendly's `#chip
+    // .eyebrow` on the chip) — `text.primaryText` is checked against those instead (minimal/
+    // friendly only; bold falls back to the generic value, which it never uses as text anyway).
+    primaryText: text.primaryText ?? brand.colors.primaryText,
     background: brand.colors.background,
     foreground: brand.colors.foreground,
+    night: text.night,
+    night2: text.night2,
+    ink: text.ink,
+    ink2: text.ink2,
+    ink3: text.ink3,
+    ...(text.paper ? { paper: text.paper } : {}),
+    ...(text.chip ? { chip: text.chip } : {}),
   };
   if (brand.font) out.font = brand.font;
   if (brand.headingFont) out.headingFont = brand.headingFont;

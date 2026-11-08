@@ -9,6 +9,7 @@ export type {
   Camera,
   Start,
   Viewport,
+  Device,
   Persona,
   VerifiedAgainst,
   VoiceConfig,

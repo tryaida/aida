@@ -271,3 +271,103 @@ describe("runIndexStage", () => {
     expect(existsSync(path.join(destDir, "index.md"))).toBe(true);
   });
 });
+
+describe("runIndexStage: a secondary phone video's media (M43c, decision 40)", () => {
+  let dir: string;
+  let pagesDir: string;
+  let outDir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), "aida-index-phone-"));
+    outDir = path.join(dir, "out");
+    pagesDir = path.join(outDir, "pages");
+    await mkdir(pagesDir, { recursive: true });
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("stages <id>.phone.mp4 etc next to the primary device's, and writes phoneVideo/phoneVtt/phoneSrt/phoneChapters/phoneTranscript/phonePoster frontmatter", async () => {
+    const helpApp = path.join(dir, "help");
+    const id = "scan-receipt";
+    const page = await writeFakePage(pagesDir, id, "Scan a receipt");
+    const videoDir = path.join(outDir, "videos");
+    const videoStepDir = path.join(videoDir, id);
+    await mkdir(videoStepDir, { recursive: true });
+    for (const name of [`${id}.mp4`, `${id}.vtt`, `${id}.srt`, `${id}.chapters.vtt`, `${id}.transcript.md`, `${id}.phone.mp4`, `${id}.phone.vtt`, `${id}.phone.srt`, `${id}.phone.chapters.vtt`, `${id}.phone.transcript.md`]) {
+      await writeFile(path.join(videoStepDir, name), "x");
+    }
+    // The page's own annotated screenshots (blur burned in): the phone poster is picked from its
+    // `phone-step-NN.png` files, never a raw capture frame, and the desktop poster never from them.
+    const shots = path.join(page.outDir, "screenshots");
+    await mkdir(shots, { recursive: true });
+    await writeFile(path.join(shots, "step-01.png"), "desktop shot");
+    await writeFile(path.join(shots, "phone-step-01.png"), "small");
+    await writeFile(path.join(shots, "phone-step-02.png"), "a much bigger phone shot, more visual detail here");
+    // A raw-frame poster an older build copied, which must go.
+    const publicShots = path.join(helpApp, "public", "screenshots", id);
+    await mkdir(publicShots, { recursive: true });
+    await writeFile(path.join(publicShots, "phone-0002-step.png"), "raw frame");
+
+    runIndexStage({ pagesDir, outDir, helpApp, pages: [page], videoDir, phoneVideos: { [id]: true } });
+
+    const staged = await readFile(path.join(helpApp, "content", "docs", "how-do-i", id, "index.md"), "utf8");
+    expect(staged).toMatch(/phoneVideo:\s*"?\/videos\/scan-receipt\/scan-receipt\.phone\.mp4"?/);
+    expect(staged).toMatch(/phoneVtt:\s*"?\/videos\/scan-receipt\/scan-receipt\.phone\.vtt"?/);
+    expect(staged).toMatch(/phoneSrt:\s*"?\/videos\/scan-receipt\/scan-receipt\.phone\.srt"?/);
+    expect(staged).toMatch(/phoneChapters:\s*"?\/videos\/scan-receipt\/scan-receipt\.phone\.chapters\.vtt"?/);
+    expect(staged).toMatch(/phoneTranscript:\s*"?\/videos\/scan-receipt\/scan-receipt\.phone\.transcript\.md"?/);
+    // The bigger (more detailed) phone screenshot wins, same heuristic as the primary poster.
+    expect(staged).toMatch(/phonePoster:\s*"?\/screenshots\/scan-receipt\/phone-poster-step-02\.png"?/);
+    expect(staged).toMatch(/poster:\s*"?\/screenshots\/scan-receipt\/step-01\.png"?/);
+    expect(existsSync(path.join(helpApp, "public", "videos", id, `${id}.phone.mp4`))).toBe(true);
+    expect(await readFile(path.join(publicShots, "phone-poster-step-02.png"), "utf8")).toContain("bigger phone shot");
+    expect(existsSync(path.join(publicShots, "phone-0002-step.png"))).toBe(false);
+  });
+
+  it("drops a phone video that isn't current (phone no longer secondary, or its capture failed), poster included", async () => {
+    const helpApp = path.join(dir, "help");
+    const id = "scan-receipt";
+    const page = await writeFakePage(pagesDir, id, "Scan a receipt");
+    const videoDir = path.join(outDir, "videos");
+    await mkdir(path.join(videoDir, id), { recursive: true });
+    for (const name of [`${id}.mp4`, `${id}.phone.mp4`, `${id}.phone.vtt`]) await writeFile(path.join(videoDir, id, name), "x");
+    const shots = path.join(page.outDir, "screenshots");
+    await mkdir(shots, { recursive: true });
+    await writeFile(path.join(shots, "phone-step-01.png"), "phone shot");
+    // Published by an earlier build.
+    const publicVideos = path.join(helpApp, "public", "videos", id);
+    await mkdir(publicVideos, { recursive: true });
+    await writeFile(path.join(publicVideos, `${id}.phone.mp4`), "old");
+    const publicShots = path.join(helpApp, "public", "screenshots", id);
+    await mkdir(publicShots, { recursive: true });
+    await writeFile(path.join(publicShots, "phone-poster-step-01.png"), "old poster");
+
+    runIndexStage({ pagesDir, outDir, helpApp, pages: [page], videoDir, phoneVideos: { [id]: false } });
+
+    const staged = await readFile(path.join(helpApp, "content", "docs", "how-do-i", id, "index.md"), "utf8");
+    for (const key of ["phoneVideo", "phoneVtt", "phonePoster"]) expect(staged).not.toContain(`${key}:`);
+    expect(staged).toMatch(/video:\s*"?\/videos\/scan-receipt\/scan-receipt\.mp4"?/);
+    expect(existsSync(path.join(publicVideos, `${id}.phone.mp4`))).toBe(false);
+    expect(existsSync(path.join(publicShots, "phone-poster-step-01.png"))).toBe(false);
+  });
+
+  it("leaves phone* keys out of the frontmatter entirely when there's no phone video on disk", async () => {
+    const helpApp = path.join(dir, "help");
+    const id = "no-phone";
+    const page = await writeFakePage(pagesDir, id, "No phone");
+    const videoDir = path.join(outDir, "videos");
+    await mkdir(path.join(videoDir, id), { recursive: true });
+    await writeFile(path.join(videoDir, id, `${id}.mp4`), "x");
+
+    runIndexStage({ pagesDir, outDir, helpApp, pages: [page], videoDir });
+
+    // `setFrontmatterFields` removes a key entirely for a `null` value (pages/frontmatter.ts) —
+    // there's no phone video, so these keys never appear at all, same as a page with no `pdf:`.
+    const staged = await readFile(path.join(helpApp, "content", "docs", "how-do-i", id, "index.md"), "utf8");
+    for (const key of ["phoneVideo", "phoneVtt", "phoneSrt", "phoneChapters", "phoneTranscript", "phonePoster"]) {
+      expect(staged).not.toContain(`${key}:`);
+    }
+    expect(staged).toMatch(/video:\s*"?\/videos\/no-phone\/no-phone\.mp4"?/);
+  });
+});

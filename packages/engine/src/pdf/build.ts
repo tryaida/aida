@@ -11,10 +11,10 @@ import { checkPersonalData, checkSecrets } from "../qa/index.js";
 import { buildCardHtml, buildCoverHtml, buildPageHtml, buildTocHtml, cardLayout, figureView, pdfTheme, type TocEntry } from "./html.js";
 import { cacheFontFaces, defaultFontCacheDir, fontFaceCss } from "./fonts.js";
 import { guideUrl } from "./qr.js";
-import { PDF_SIDE_MARGIN_MM, cardOverflows, launchBrowser, renderHtmlToPdf, renderHtmlToPdfBytes, writePdfBytes, type PdfChromeBrand, type RenderPdfOptions } from "./render.js";
+import { PDF_SIDE_MARGIN_MM, cardOverflows, launchBrowser, renderHtmlToPdfBytes, writePdfBytes, type PdfChromeBrand, type RenderPdfOptions } from "./render.js";
 import { pdfInputHash, matchesCache, writeCacheSidecar, deletePdfOutput } from "./cache.js";
 import { makeThumbnails } from "./thumbnail.js";
-import { brandFingerprint, cssColor, imageDataUrl } from "../render/brand.js";
+import { brandFingerprint, imageDataUrl } from "../render/brand.js";
 import type { BuildPdfOptions, ManualBuildResult, PdfBrand, PdfBuildResult, PdfPageInput } from "./types.js";
 
 export { launchBrowser };
@@ -128,20 +128,37 @@ export function prepareBrand(browser: Browser, brand: PdfBrand | undefined, font
 }
 
 /** Header/footer brand for a page: product (walkthrough's `product`, else brand name), small
- * logo, primary colour, font. */
+ * logo, primary colour (the text-safe variant — review finding pdf/render.ts:86: the footer's
+ * page number is real text on the page's white background, not a fill, so it needs the same
+ * >= 4.5:1 nudge as html.ts's `--primary-text`, not the raw brand colour), font. */
 function chromeBrand(brand: PdfBrand | undefined, product?: string): PdfChromeBrand {
   // A wordmark logo already spells the name: show it on its own.
   const wordmark = Boolean(brand?.logoSrc) && pdfTheme(brand).logoWide;
   return {
     name: wordmark ? undefined : product?.trim() || brand?.name,
     logoSrc: brand?.logoSrc,
-    color: cssColor(brand?.colors?.primary) ?? cssColor(brand?.primaryColor),
+    color: pdfTheme(brand).colors.primaryText,
     font: brand?.font,
   };
 }
 
 function pageRenderOptions(input: PdfPageInput, paper: "A4" | "Letter", brand: PdfBrand | undefined, pageNumbers = true): RenderPdfOptions {
   return { paper, footer: { title: input.title, lastChecked: input.lastChecked, brand: chromeBrand(brand, input.product), pageNumbers } };
+}
+
+/** Sets a PDF's Title/Author/Subject/Lang/Creator metadata with pdf-lib, without touching
+ * anything else in the document (`updateMetadata: false` on load) — Chromium's own tagged
+ * structure tree and outline (render.ts's `tagged`/`outline`) are object-graph entries pdf-lib
+ * round-trips untouched when we only call the metadata setters (verified against a real tagged
+ * Chromium PDF; see the M42a receipt). */
+async function applyPdfMetadata(bytes: Buffer, meta: { title: string; author?: string; subject?: string; lang: string }): Promise<Buffer> {
+  const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+  doc.setTitle(meta.title);
+  doc.setLanguage(meta.lang);
+  doc.setCreator("AIDA");
+  if (meta.author?.trim()) doc.setAuthor(meta.author.trim());
+  if (meta.subject?.trim()) doc.setSubject(meta.subject.trim());
+  return Buffer.from(await doc.save());
 }
 
 /** Builds (or skips, if the cache matches) one walkthrough's `<id>.pdf` and `<id>.card.pdf`.
@@ -187,13 +204,25 @@ export async function buildWalkthroughPdf(
     throw new Error(`pdf qa scan found ${problems.length} problem(s) for "${input.id}": ${problems.slice(0, 3).join("; ")}`);
   }
 
-  const bytes = await renderHtmlToPdf(browser, pageHtml, file, pageRenderOptions(input, paper, brand));
-  const cardBytes = await renderHtmlToPdf(browser, cardHtml, card, { paper });
+  const lang = input.lang?.trim() || opts.lang?.trim() || "en";
+  const author = brand?.name?.trim() || input.product?.trim();
+  const pageBytes = await applyPdfMetadata(
+    await renderHtmlToPdfBytes(browser, pageHtml, pageRenderOptions(input, paper, brand)),
+    { title: input.title, author, subject: input.summary, lang },
+  );
+  const cardBytes = await applyPdfMetadata(await renderHtmlToPdfBytes(browser, cardHtml, { paper }), {
+    title: `${input.title} — quick reference`,
+    author,
+    subject: "Quick-reference card",
+    lang,
+  });
+  writePdfBytes(file, pageBytes);
+  writePdfBytes(card, cardBytes);
 
   writeCacheSidecar(file, hash);
   writeCacheSidecar(card, hash);
 
-  return { id: input.id, file, cardFile: card, skipped: false, excluded: false, bytes, cardBytes };
+  return { id: input.id, file, cardFile: card, skipped: false, excluded: false, bytes: pageBytes.length, cardBytes: cardBytes.length };
 }
 
 /** Card images, downscaled once each (thumbnail.ts): a step's focus crop (else its clean full
@@ -224,7 +253,7 @@ export function walkthroughHash(input: PdfPageInput, paper: string, brand: PdfBr
     paper,
     brand: brandFingerprint(brand),
     lastChecked: input.lastChecked,
-    extra: [input.product, input.figures ?? null, input.pathFigures ?? null, guideUrl(siteUrl, input.sitePath) ?? null, PRINT_LAYOUT_VERSION, fontState(prepared)],
+    extra: [input.product, input.figures ?? null, input.pathFigures ?? null, guideUrl(siteUrl, input.sitePath) ?? null, input.lang ?? null, PRINT_LAYOUT_VERSION, fontState(prepared)],
   });
 }
 
@@ -236,7 +265,7 @@ export function fontState(prepared: PdfBrand | undefined): string {
 }
 
 /** Bumped when the print layout changes, so cached PDFs from an older layout re-render. */
-const PRINT_LAYOUT_VERSION = "m36";
+const PRINT_LAYOUT_VERSION = "m42a-a11y";
 
 /** Finds a card rendering that fits: the image grid on the pages `cardLayout` plans for (one,
  * or two for a long guide) with every word showing (measured — `cardOverflows`), at smaller text
@@ -244,7 +273,7 @@ const PRINT_LAYOUT_VERSION = "m36";
  * full text, then progressively smaller font down to a floor, then truncated with "See full
  * guide" (docs/scope.md: "must fit one page (shrink text down to a floor, then truncate...)"). */
 async function fitCardHtml(browser: Browser, input: PdfPageInput, brand: PdfBrand | undefined, paper: "A4" | "Letter", url?: string): Promise<string> {
-  const base = { productName: input.product, paper, guideUrl: url };
+  const base = { productName: input.product, paper, guideUrl: url, lang: input.lang };
   if (input.cardSteps.some((s) => s.figure || s.thumbnailSrc)) {
     const pages = cardLayout(input.cardSteps.length).pages;
     for (const minFontPt of [10, 9]) {
@@ -294,6 +323,7 @@ export async function buildManualPdf(
     brand: brandFingerprint(opts.brand),
     extra: [
       included.map((i) => [i.lastChecked, i.product, i.section, i.summary, i.figures ?? null, i.pathFigures ?? null, guideUrl(opts.siteUrl, i.sitePath) ?? null]),
+      opts.lang ?? null,
       PRINT_LAYOUT_VERSION,
       fontState(brand),
     ],
@@ -302,8 +332,15 @@ export async function buildManualPdf(
     return { file, skipped: true, included: included.map((i) => i.id) };
   }
 
+  const lang = opts.lang?.trim() || "en";
+  const manualAuthor = brand?.name?.trim() || included.find((i) => i.product)?.product?.trim();
+
   if (included.length === 0) {
     const manual = await PDFDocument.create();
+    manual.setTitle("Help guide");
+    manual.setLanguage(lang);
+    manual.setCreator("AIDA");
+    if (manualAuthor) manual.setAuthor(manualAuthor);
     writeFileSync(file, Buffer.from(await manual.save()));
     writeCacheSidecar(file, hash);
     return { file, skipped: false, pageCount: 0, included: [] };
@@ -330,6 +367,7 @@ export async function buildManualPdf(
     guideCount: included.length,
     productName,
     heroImage,
+    lang: opts.lang,
   });
   const coverBytes = await renderHtmlToPdfBytes(browser, coverHtml, { paper, bleed: true });
   const coverPages = await pageCount(coverBytes);
@@ -344,7 +382,7 @@ export async function buildManualPdf(
   });
   // First pass: build TOC without page numbers to learn its own page count, then a second pass
   // with real numbers (cover + toc + cumulative walkthrough page counts).
-  const draftToc = buildTocHtml(included.map((i) => tocEntry(i)), brand);
+  const draftToc = buildTocHtml(included.map((i) => tocEntry(i)), brand, opts.lang);
   const draftTocBytes = await renderHtmlToPdfBytes(browser, draftToc, { paper });
   const tocPages = await pageCount(draftTocBytes);
 
@@ -354,7 +392,7 @@ export async function buildManualPdf(
     entries.push(tocEntry(included[i], cursor));
     cursor += await pageCount(perWalkthrough[i]);
   }
-  const tocHtml = buildTocHtml(entries, brand);
+  const tocHtml = buildTocHtml(entries, brand, opts.lang);
   const tocBytes = await renderHtmlToPdfBytes(browser, tocHtml, { paper });
 
   const manual = await PDFDocument.create();
@@ -364,6 +402,18 @@ export async function buildManualPdf(
     for (const p of pages) manual.addPage(p);
   }
   await stampPageNumbers(browser, manual, coverPages, paper, chromeBrand(brand).color);
+  // Metadata only — `copyPages` above already dropped each component page's own structure tree
+  // and outline (pdf-lib has no API to carry a StructTreeRoot across documents), so manual.pdf
+  // isn't a tagged PDF the way `<id>.pdf`/`<id>.card.pdf` are (render.ts's `tagged`/`outline`,
+  // preserved there because each is one Chromium print post-processed in place — see
+  // `applyPdfMetadata`). Rebuilding the manual from one combined HTML document in one Chromium
+  // print would keep it tagged too, but that's a bigger rewrite of the cover/TOC/page-numbering
+  // pipeline above than this change's scope; left for a follow-up (receipt).
+  manual.setTitle("Help guide");
+  manual.setLanguage(lang);
+  manual.setCreator("AIDA");
+  if (manualAuthor) manual.setAuthor(manualAuthor);
+  manual.setSubject(`${included.length} printable guide${included.length === 1 ? "" : "s"}`);
   const finalBytes = Buffer.from(await manual.save());
   writePdfBytes(file, finalBytes);
   writeCacheSidecar(file, hash);

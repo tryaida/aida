@@ -1,6 +1,7 @@
 // Types for `aida build`'s per-walkthrough, per-stage pipeline and its run report.
 // See docs/scope.md "Pipeline" and "Only rebuild what changed", and docs/build-plan.md M6.
 import type { FailureCategory } from "../capture/types.js";
+import type { Device } from "../walkthrough/types.js";
 
 export type BuildStageName = "capture" | "voice" | "render" | "pages" | "pdf" | "index" | "qa";
 
@@ -14,15 +15,46 @@ export interface StageResult {
   detail?: string;
 }
 
+/**
+ * One non-primary device's capture outcome (decision 40, M43a) — e.g. `devices: { phone: {...} }`
+ * when a walkthrough's primary device is desktop. Never makes `WalkthroughBuildResult.ok` false:
+ * a phone capture failure is reported here, not as a build failure, unless phone is the primary
+ * device (then its outcome is `stages.capture`/`ok` instead, same as desktop always was).
+ */
+export interface DeviceBuildResult {
+  ok: boolean;
+  /** First line of the failure, when `!ok`. */
+  failure?: string;
+  /** Suspected owner of the failure (decision 30), when it failed. */
+  category?: FailureCategory;
+  /** The *render* outcome for this device's own video (M43c), separate from `ok`/`failure` above
+   * (this device's *capture* outcome): a phone capture can pass while its render still fails
+   * (missing narration, a crash) — also non-fatal, recorded here rather than failing the build. */
+  render?: { ok: boolean; failure?: string };
+  /** QA of this device's own video and captions, run apart from the walkthrough's own QA: a
+   * failure here drops this device's media (never the page) and never fails `stages.qa`. */
+  qa?: { ok: boolean; problems: number };
+}
+
 export interface WalkthroughBuildResult {
   walkthrough: string;
   ok: boolean;
   stages: Partial<Record<BuildStageName, StageResult>>;
   voice?: { charsBilled: number; cached: number; synthesized: number; costUsd: number };
   render?: { durationSec: number; wallTimeMs: number };
+  /** A secondary phone device's own video (M43c, decision 40) — `<id>.phone.mp4` next to the
+   * primary device's. Absent when there's no secondary phone, or nothing rendered this run. */
+  phoneRender?: { durationSec: number; wallTimeMs: number };
   qa?: { ok: boolean; problems: number };
   /** The walkthrough's YAML file. */
   file?: string;
+  /** Devices this walkthrough was captured on, primary first (decision 40); absent for a
+   * desktop-only walkthrough (today's default). */
+  devices?: Device[];
+  /** Outcome of every device captured this run *other than* the primary (whose outcome is
+   * `stages.capture`) — e.g. `{ phone: { ok: false, failure: "..." } }`. Absent when there were
+   * none, or none were selected this run. */
+  deviceResults?: Partial<Record<Device, DeviceBuildResult>>;
   /** Every failed check, by name, with its first problems and where to look. Absent when none failed. */
   failures?: BuildFailure[];
 }

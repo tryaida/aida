@@ -35,7 +35,7 @@ export function BrandMark() {
         </>
       )}
       {brand.name === "Help" ? null : (
-        <span className="rounded-full border border-fd-primary/25 bg-fd-primary/10 px-2 py-0.5 text-[0.7rem] font-medium uppercase tracking-wider text-fd-primary">
+        <span className="rounded-full border border-fd-primary/25 bg-fd-primary/10 px-2 py-0.5 text-[0.7rem] font-medium uppercase tracking-wider text-fd-primary-text">
           Help
         </span>
       )}

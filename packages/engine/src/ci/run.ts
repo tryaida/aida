@@ -113,7 +113,7 @@ export async function runCi(opts: RunCiOptions): Promise<CiResult> {
     baselineMode === "git" ? gitBaselineSource(resolveBaselineLookup(publicDir), opts.base) : diskBaselineSource(publicDir);
   const captureSettings = resolveCaptureSettings(config.capture);
 
-  const walkthroughEntries = listWalkthroughs(config.walkthroughsDir, config.buildDir);
+  const walkthroughEntries = listWalkthroughs(config.walkthroughsDir, config.buildDir, config);
   const idsToCheck = affected.all ? walkthroughEntries.map((w) => w.id) : affected.walkthroughs.filter((w) => w.affected).map((w) => w.id);
 
   // Capture safety gate (decisions #27): once, before the first capture. A refusal throws and

@@ -9,7 +9,7 @@ import { sessionKey } from "../capture/session-key.js";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Browser, BrowserContext, BrowserContextOptions, Page } from "playwright";
-import type { Action, Persona, Walkthrough } from "../walkthrough/index.js";
+import type { Action, Device, Persona, Walkthrough } from "../walkthrough/index.js";
 import { personaRole, resolveTemplatesDeep, withRunValues } from "../walkthrough/index.js";
 import type { ResolvedConfig, ResolvedStateConfig, StateHookContext } from "../config/types.js";
 import { locate } from "../capture/locate.js";
@@ -55,6 +55,8 @@ export interface PrepareOptions {
   sessionDir?: string;
   /** For contexts opened for other roles (viewport, locale, ...); `baseURL` is always set. */
   contextOptions?: BrowserContextOptions;
+  /** The device being captured: `setup.steps` with a `devices:` list that leaves it out are skipped. Default desktop. */
+  device?: Device;
   env?: Record<string, string | undefined>;
   log?: (...args: unknown[]) => void;
 }
@@ -103,7 +105,8 @@ export async function prepareWalkthrough(opts: PrepareOptions): Promise<PrepareR
     const setup = opts.walkthrough.setup;
     if (setup?.steps.length) {
       const data = withRunValues(opts.walkthrough.data, { id: opts.runId });
-      const steps = resolveTemplatesDeep(setup.steps, data);
+      const device = opts.device ?? "desktop";
+      const steps = resolveTemplatesDeep(setup.steps, data).filter((s) => !s.devices || s.devices.includes(device));
       log(`setup: ${steps.length} step(s)${setup.as ? ` as ${setup.as}` : ""}`);
       const { page } = await sessions.open(setup.as);
       const baseOrigin = new URL(opts.baseUrl).origin;

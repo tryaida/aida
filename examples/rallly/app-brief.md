@@ -8,6 +8,7 @@ readers:
   - role: participant
     name: a participant
     job: Say which suggested dates work for them, from an invite link, without an account
+    devices: [phone, desktop]
 ---
 
 # Rallly brief

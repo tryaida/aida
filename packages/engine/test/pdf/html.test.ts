@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildCardHtml, buildCoverHtml, buildPageHtml, buildTocHtml, cardStepsFor } from "../../src/pdf/html.js";
+import { buildCardHtml, buildCoverHtml, buildPageHtml, buildTocHtml, cardStepsFor, pdfTheme } from "../../src/pdf/html.js";
+import { contrastRatio } from "../../src/theme/color.js";
 import type { CardStepInput, PdfPageInput } from "../../src/pdf/types.js";
 
 function pageInput(overrides: Partial<PdfPageInput> = {}): PdfPageInput {
@@ -141,6 +142,47 @@ describe("brand in the print HTML", () => {
     expect(html).toContain("<h2><span>Payments › Fees</span>");
     expect(html).toContain("<h2><span>Office staff</span>");
     expect(html).toContain('<p class="toc-sum">Take a fee.</p>');
+  });
+});
+
+// Regression (review finding 7, decision 39): print text drawn straight in `--primary`/`--accent`
+// can fail 4.5:1 (the default `--accent` of #0ea5e9 is 2.77:1 on white) — real brand text must use
+// the text-safe `--primary-text`/`--accent-text` variants `pdfTheme` derives with
+// `theme/color.ts`'s `textSafeVariant`, not the raw fill colours (which stay as-is for non-text
+// uses like the number-badge background or the brand gradient).
+describe("text-safe brand colours in print text (review finding pdf/html.ts: accessibility)", () => {
+  // Pale brand colours that read fine as a fill but fail 4.5:1 as text on white.
+  const paleBrand = { colors: { primary: "#7dd3fc", accent: "#fde047" } };
+
+  it("pdfTheme nudges primaryText/accentText to >= 4.5:1 on the page background, unlike the raw fills", () => {
+    const theme = pdfTheme(paleBrand);
+    expect(contrastRatio(theme.colors.primary, theme.colors.background)!).toBeLessThan(4.5);
+    expect(contrastRatio(theme.colors.accent, theme.colors.background)!).toBeLessThan(4.5);
+    expect(contrastRatio(theme.colors.primaryText, theme.colors.background)!).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(theme.colors.accentText, theme.colors.background)!).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("the guide eyebrow uses --accent-text, not the raw --accent fill", () => {
+    const html = buildPageHtml(pageInput());
+    expect(html).toMatch(/\.gh-eyebrow\s*\{[^}]*color: var\(--accent-text\)/);
+    expect(html).not.toMatch(/\.gh-eyebrow\s*\{[^}]*color: var\(--accent\);/);
+  });
+
+  it("the light/minimal and friendly cover's eyebrow uses --primary-text", () => {
+    const html = buildCoverHtml("Help guide", "2026-10-26", { ...paleBrand, style: "minimal" });
+    expect(html).toMatch(/\.eyebrow\s*\{[^}]*color: var\(--primary-text\)/);
+  });
+
+  it("the contents page's numbered badge and page numbers use --primary-text", () => {
+    const html = buildTocHtml([{ title: "Record a payment", reader: "Office staff", page: 3 }]);
+    expect(html).toMatch(/\.toc-i\s*\{[^}]*color: var\(--primary-text\)/);
+    expect(html).toMatch(/\.toc-n\s*\{[^}]*color: var\(--primary-text\)/);
+  });
+
+  it("the quick-reference card's footer URL uses --primary-text", () => {
+    const steps: CardStepInput[] = [{ number: 1, title: "Open", text: "Open it.", thumbnailSrc: "data:image/png;base64,AAAA" }];
+    const html = buildCardHtml("Record a payment", steps, undefined, { guideUrl: "https://help.example.com/record-a-payment" });
+    expect(html).toMatch(/\.card-foot \.url \{ color: var\(--primary-text\)/);
   });
 });
 

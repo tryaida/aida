@@ -84,13 +84,14 @@ function baseNameNoExt(file: string): string {
 }
 
 export async function runImportPlaywright(
-  pattern: string,
+  pattern: string | string[],
   outDir: string | undefined,
   json: boolean,
   force = false,
 ): Promise<number> {
   try {
-    const files = resolveTestFiles(pattern);
+    // Several files or globs (an unquoted glob arrives already expanded by the shell), each file once.
+    const files = [...new Set((Array.isArray(pattern) ? pattern : [pattern]).flatMap((p) => resolveTestFiles(p)))];
     if (outDir) mkdirSync(outDir, { recursive: true });
 
     const results: ImportPlaywrightFileResult[] = [];

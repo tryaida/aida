@@ -11,7 +11,7 @@ export default function NotFound() {
         <p className="text-fd-muted-foreground">It may have moved when the guides were reorganised. Try searching instead.</p>
       </div>
       <SearchTrigger />
-      <Link href="/" className="text-sm font-medium text-fd-primary hover:underline">
+      <Link href="/" className="text-sm font-medium text-fd-primary-text hover:underline">
         Go to the help centre home
       </Link>
     </main>

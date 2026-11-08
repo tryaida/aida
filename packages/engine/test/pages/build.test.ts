@@ -7,6 +7,8 @@ import type { Walkthrough } from "../../src/walkthrough/index.js";
 import type { CaptureManifest, ValidationResult } from "../../src/capture/index.js";
 import { buildPage } from "../../src/pages/build.js";
 import { setPdfFrontmatter } from "../../src/pdf/frontmatter.js";
+import { pathClipFiles } from "../../src/render/clips.js";
+import { buildPathTranscript, buildTranscript } from "../../src/render/transcript.js";
 
 // A tiny, valid 1x1 PNG — annotateFrame scales to manifest.viewport regardless of the source
 // image's real pixel size, so this stands in for a real captured frame in these unit tests.
@@ -286,6 +288,89 @@ describe(
     }, 60_000);
   },
 );
+
+// Regression (review finding 8, decision 39): `a11y:transcript` QA fails any build that selects
+// `pages` without `render` over an older mp4 that predates M42a's transcripts, or over a video
+// render.ts already wrote while pages/build.ts wasn't rebuilding `.transcript.md`. buildPage must
+// backfill it itself — cheaply, straight from the walkthrough, no capture/timeline needed.
+describe("buildPage backfills a missing transcript (review finding build/pipeline.ts: a11y:transcript)", () => {
+  it("writes <id>.transcript.md when the main video exists on disk but its transcript doesn't", async () => {
+    const captureDir = tmpDir("aida-pages-capture-");
+    const outDir = tmpDir("aida-pages-out-");
+    const videoDir = tmpDir("aida-pages-video-");
+    writeCapture(captureDir);
+    const wf = walkthrough();
+    const videoStepDir = join(videoDir, wf.walkthrough);
+    mkdirSync(videoStepDir, { recursive: true });
+    writeFileSync(join(videoStepDir, `${wf.walkthrough}.mp4`), "fake mp4 bytes");
+    const transcriptFile = join(videoStepDir, `${wf.walkthrough}.transcript.md`);
+    expect(existsSync(transcriptFile)).toBe(false);
+
+    await buildPage(wf, captureDir, outDir, { videoDir });
+
+    expect(existsSync(transcriptFile)).toBe(true);
+    expect(readFileSync(transcriptFile, "utf8")).toBe(buildTranscript(wf));
+  }, 60_000);
+
+  it("never overwrites a transcript already on disk", async () => {
+    const captureDir = tmpDir("aida-pages-capture-");
+    const outDir = tmpDir("aida-pages-out-");
+    const videoDir = tmpDir("aida-pages-video-");
+    writeCapture(captureDir);
+    const wf = walkthrough();
+    const videoStepDir = join(videoDir, wf.walkthrough);
+    mkdirSync(videoStepDir, { recursive: true });
+    writeFileSync(join(videoStepDir, `${wf.walkthrough}.mp4`), "fake mp4 bytes");
+    const transcriptFile = join(videoStepDir, `${wf.walkthrough}.transcript.md`);
+    writeFileSync(transcriptFile, "# A human edit\n");
+
+    await buildPage(wf, captureDir, outDir, { videoDir });
+
+    expect(readFileSync(transcriptFile, "utf8")).toBe("# A human edit\n");
+  }, 60_000);
+
+  it("does nothing when there's no video on disk at all", async () => {
+    const captureDir = tmpDir("aida-pages-capture-");
+    const outDir = tmpDir("aida-pages-out-");
+    const videoDir = tmpDir("aida-pages-video-");
+    writeCapture(captureDir);
+    const wf = walkthrough();
+
+    await buildPage(wf, captureDir, outDir, { videoDir });
+
+    expect(existsSync(join(videoDir, wf.walkthrough, `${wf.walkthrough}.transcript.md`))).toBe(false);
+  }, 60_000);
+
+  it("also backfills a path clip's own transcript when its mp4 exists but its transcript doesn't", async () => {
+    const captureDir = tmpDir("aida-pages-capture-");
+    const outDir = tmpDir("aida-pages-out-");
+    const videoDir = tmpDir("aida-pages-video-");
+    writeCapture(captureDir);
+    const wf = walkthrough();
+    wf.paths = [
+      {
+        id: "from-list",
+        title: "From the list",
+        when: "Starting from the list page.",
+        start: { page: "Things" },
+        steps: [{ id: "open-page", title: "Open the page", page_text: "Click **Things**.", actions: [] }],
+        joins: "fill-form",
+      },
+    ];
+    const videoStepDir = join(videoDir, wf.walkthrough);
+    mkdirSync(videoStepDir, { recursive: true });
+    writeFileSync(join(videoStepDir, `${wf.walkthrough}.mp4`), "fake mp4 bytes");
+    writeFileSync(join(videoStepDir, `${wf.walkthrough}.transcript.md`), buildTranscript(wf));
+    const files = pathClipFiles(videoStepDir, wf.walkthrough, "from-list");
+    writeFileSync(files.mp4, "fake clip mp4 bytes");
+    expect(existsSync(files.transcript)).toBe(false);
+
+    await buildPage(wf, captureDir, outDir, { videoDir });
+
+    expect(existsSync(files.transcript)).toBe(true);
+    expect(readFileSync(files.transcript, "utf8")).toBe(buildPathTranscript(wf, wf.paths[0]));
+  }, 60_000);
+});
 
 // Security review: a step error (which can carry what the page showed) is redacted and capped
 // before it lands in the build's problems (report.json, the PR comment) or the page itself.

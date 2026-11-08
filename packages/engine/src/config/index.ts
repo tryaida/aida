@@ -13,6 +13,8 @@ export type {
   BudgetConfig,
   VoiceSettings,
   CaptureSettings,
+  PhoneConfig,
+  ResolvedPhoneSettings,
   ChatConfig,
   ImpactConfig,
   AppDatabaseConfig,
@@ -25,4 +27,4 @@ export type {
   StateCheckHook,
   StateHookRef,
 } from "./types.js";
-export { DEFAULT_MODEL_TIERS, DEFAULT_CAPTURE_SETTINGS, resolveCaptureSettings } from "./types.js";
+export { DEFAULT_MODEL_TIERS, DEFAULT_CAPTURE_SETTINGS, DEFAULT_PHONE_SETTINGS, DEFAULT_LANG, resolveCaptureSettings, resolvePhoneSettings } from "./types.js";

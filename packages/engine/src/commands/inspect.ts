@@ -27,7 +27,8 @@ import { loadConfig } from "../config/index.js";
 import type { ResolvedConfig } from "../config/index.js";
 import { DEFAULT_CAPTURE_LOCALE, DEFAULT_CAPTURE_TIMEZONE } from "../config/types.js";
 import { loadWalkthroughFile, newRunId } from "../walkthrough/index.js";
-import type { Persona, Walkthrough } from "../walkthrough/index.js";
+import type { Device, Persona, Walkthrough } from "../walkthrough/index.js";
+import { deviceSettings } from "../devices/index.js";
 import { formatFailureLines, isLocalBaseUrl, isSignInPath, runCapture, runLevelFailure } from "../capture/index.js";
 import type { FailureReport } from "../capture/index.js";
 import { captureSafetyRefusal } from "../safety/index.js";
@@ -58,6 +59,9 @@ export interface RunInspectOptions {
   lines?: number;
   /** `--skip <n>`: lines to skip from the top, to read a long page a window at a time. */
   skip?: number;
+  /** `--device <desktop|phone>` (decision 40): inspect as this device — a touch, mobile context
+   * for `"phone"` (config `phone`), using `--after`'s capture runner the same way. Default `"desktop"`. */
+  device?: Device;
 }
 
 /**
@@ -156,21 +160,25 @@ async function openSignedIn(
   path: string,
   persona: Persona | undefined,
   gate: WriteGate,
+  device: Device = "desktop",
 ): Promise<{ browser: Browser; context: BrowserContext; page: Page }> {
   const baseUrl = config.app.baseUrl;
   const storageStatePath = join(config.buildDir, ".aida-session", `storageState-${storageStateKey(baseUrl, persona, config)}.json`);
   const reuseState = existsSync(storageStatePath) ? storageStatePath : undefined;
+  const settings = deviceSettings(device, {}, config);
 
   const browser = await chromium.launch();
   const context = await browser.newContext({
-    viewport: config.viewport ?? { width: 1440, height: 810 },
-    deviceScaleFactor: config.deviceScaleFactor ?? 2,
+    viewport: settings.viewport,
+    deviceScaleFactor: settings.deviceScaleFactor,
     locale: config.locale ?? DEFAULT_CAPTURE_LOCALE,
     timezoneId: config.timezone ?? DEFAULT_CAPTURE_TIMEZONE,
     colorScheme: "light",
     reducedMotion: config.reducedMotion ?? "reduce",
     // A service worker's requests bypass the context's route (the write block): none here.
     serviceWorkers: "block",
+    ...(settings.isMobile ? { isMobile: true, hasTouch: true } : {}),
+    ...(settings.userAgent ? { userAgent: settings.userAgent } : {}),
     ...(reuseState ? { storageState: reuseState } : {}),
   });
 
@@ -336,6 +344,7 @@ async function runInspectAfter(config: ResolvedConfig, opts: RunInspectOptions, 
       stopAfterStep: target.stopAfterStep,
       record: false,
       maxWaitMs: opts.maxWaitMs,
+      device: opts.device,
       blockServiceWorkers: true,
       onContext: (context) => installWriteGate(context, gate),
       log: json ? undefined : (...a: unknown[]) => console.error("[inspect --after]", ...a),
@@ -421,7 +430,7 @@ export async function runInspectCommand(opts: RunInspectOptions, json: boolean):
   let browser: Browser | undefined;
   try {
     const gate: WriteGate = { passThrough: false };
-    const opened = await openSignedIn(config, opts.path!, persona, gate);
+    const opened = await openSignedIn(config, opts.path!, persona, gate, opts.device);
     browser = opened.browser;
     const result = await applyAndScan(opened.page, opts, gate);
 

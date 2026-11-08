@@ -54,7 +54,7 @@ export function VersionSwitcher() {
           const slug = currentSlugFrom(window.location.pathname);
           window.location.href = target === "latest" ? slug || "/" : `/v/${target}${slug}`;
         }}
-        className="min-w-0 flex-1 truncate bg-transparent text-end text-fd-foreground outline-none"
+        className="min-w-0 flex-1 truncate bg-transparent text-end text-fd-foreground"
       >
         <option value="latest">Latest ({manifest.latest})</option>
         {manifest.versions.map((v) => (

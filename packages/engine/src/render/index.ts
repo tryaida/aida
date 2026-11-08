@@ -3,7 +3,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { Walkthrough } from "../walkthrough/types.js";
+import type { Device, Walkthrough } from "../walkthrough/types.js";
 import { resolveFfmpegTools } from "../qa/ffmpeg.js";
 import { buildNarrationTrack } from "./audio.js";
 import { playerAssetFiles, writePlayerBundle } from "./bundle.js";
@@ -24,6 +24,8 @@ import type { RenderOptions, RenderResult } from "./types.js";
 import { muxVideo, qualityFor, renderStills } from "./video.js";
 import { displayWalkthrough } from "../walkthrough/display.js";
 import { pathsDeclareBlur, renderPathClips, taskRouteBlur } from "./clips.js";
+import { buildTranscript } from "./transcript.js";
+import { DEFAULT_LANG } from "../config/types.js";
 import type { Timeline } from "./types.js";
 
 export * from "./types.js";
@@ -46,7 +48,8 @@ export {
 export { loadNarrationBeats } from "./voice-input.js";
 export { pathClipFiles, pathClipLinks, renderPathClips, type PathClipFiles, type PathClipLink } from "./clips.js";
 export { pathBeatId, pathClipLines, pathClipText, type PathClipText } from "./clip-lines.js";
-export { qualityFor, renderFrames, renderStills, muxVideo } from "./video.js";
+export { buildTranscript, buildPathTranscript } from "./transcript.js";
+export { qualityFor, renderFrames, renderStills, muxVideo, iso6392 } from "./video.js";
 export { buildNarrationTrack } from "./audio.js";
 export {
   computeSceneHash,
@@ -66,6 +69,14 @@ function readJson<T>(file: string): T {
  * across draft/full renders of the same capture — content hashes don't depend on quality. */
 function hashCachePath(captureDir: string): string {
   return path.join(captureDir, ".aida-hash-cache.json");
+}
+
+/** The output frame for `device` (M43c, decision 40): desktop/tablet keep `buildTimeline`'s own
+ * default (1920x1080 landscape, undefined here so an unrelated caller's custom `frame` — tests,
+ * `aida render`'s own flags, should they ever exist — isn't silently overridden); phone is
+ * `Timeline.frame`'s portrait `{ w: 1080, h: 1920 }`. */
+function frameForDevice(device: Device | undefined): { w: number; h: number } | undefined {
+  return device === "phone" ? { w: 1080, h: 1920 } : undefined;
 }
 
 /**
@@ -114,23 +125,32 @@ export async function render(written: Walkthrough, optionsIn: RenderOptions): Pr
     sharedBlur,
     blurDeclaredElsewhere: pathsDeclareBlur(wf),
     frameChange: frameChangeReader(options.captureDir, manifest.deviceScaleFactor),
+    frame: frameForDevice(options.device),
+    stepNumbering: options.stepNumbering,
   });
 
+  // `fileSuffix` (M43c): "" for a walkthrough's primary device (today's plain `<id>.mp4`), or
+  // ".phone" for a secondary phone video next to it — never both devices writing the same files.
+  const suffix = options.fileSuffix ?? "";
   const stepOutDir = path.join(options.outDir, id);
   await mkdir(stepOutDir, { recursive: true });
   const files = {
-    mp4: path.join(stepOutDir, `${id}.mp4`),
-    srt: path.join(stepOutDir, `${id}.srt`),
-    vtt: path.join(stepOutDir, `${id}.vtt`),
-    chaptersVtt: path.join(stepOutDir, `${id}.chapters.vtt`),
-    timelineJson: path.join(stepOutDir, "timeline.json"),
+    mp4: path.join(stepOutDir, `${id}${suffix}.mp4`),
+    srt: path.join(stepOutDir, `${id}${suffix}.srt`),
+    vtt: path.join(stepOutDir, `${id}${suffix}.vtt`),
+    chaptersVtt: path.join(stepOutDir, `${id}${suffix}.chapters.vtt`),
+    timelineJson: path.join(stepOutDir, suffix ? `timeline${suffix}.json` : "timeline.json"),
+    transcript: path.join(stepOutDir, `${id}${suffix}.transcript.md`),
   };
+  // Cheap (no ffmpeg), so written unconditionally — including when the mux below is skipped
+  // because the mp4's hash still matches (M42a: a transcript must exist even then).
+  await writeFile(files.transcript, buildTranscript(written, options.stepNumbering));
   const encoded = await encodeTimeline(timeline, files, {
     options,
     quality,
     draft,
-    bundleDir: path.join(stepOutDir, ".compose"),
-    segmentsDir: path.join(stepOutDir, "segments", draft ? "draft" : "full"),
+    bundleDir: path.join(stepOutDir, suffix ? `.compose${suffix}` : ".compose"),
+    segmentsDir: path.join(stepOutDir, "segments", `${draft ? "draft" : "full"}${suffix}`),
     title: wf.title,
   });
 
@@ -141,20 +161,27 @@ export async function render(written: Walkthrough, optionsIn: RenderOptions): Pr
     vtt: files.vtt,
     chaptersVtt: files.chaptersVtt,
     timelineJson: files.timelineJson,
+    transcript: files.transcript,
     durationSec: timeline.duration,
   };
   if (encoded.stills) return { ...base, stills: encoded.stills, skipped: false, frames: 0, wallTimeMs: 0 };
 
-  // One short clip per path whose capture passed (M35), next to the main video.
-  const clips = await renderPathClips(wf, timeline, {
-    options,
-    quality,
-    draft,
-    outDir: stepOutDir,
-    sharedBlur,
-    encode: encodeTimeline,
-    frameChange: frameChangeReader,
-  });
+  // One short clip per path whose capture passed (M35), next to the main video — primary device
+  // only (decision 34's paths are captured once, on the primary device: pipeline.ts): a secondary
+  // device's render passes `pathClips: false`, so this never tries to clip a capture that isn't
+  // there.
+  const clips =
+    options.pathClips === false
+      ? []
+      : await renderPathClips(wf, timeline, {
+          options,
+          quality,
+          draft,
+          outDir: stepOutDir,
+          sharedBlur,
+          encode: encodeTimeline,
+          frameChange: frameChangeReader,
+        });
 
   return {
     ...base,
@@ -223,7 +250,7 @@ export async function encodeTimeline(timeline: Timeline, files: EncodeFiles, ctx
       ...(await playerAssetFiles()),
     ]),
   ];
-  const hash = computeContentHash(timeline, referencedFiles, settings, fileHashCache);
+  const hash = computeContentHash(timeline, referencedFiles, { ...settings, lang: options.lang ?? DEFAULT_LANG }, fileHashCache);
   saveFileHashCache(hashCachePath(options.captureDir), fileHashCache);
 
   if (stillsRequested.length === 0 && !options.noCache && matchesCachedHash(files.mp4, hash)) {
@@ -232,7 +259,8 @@ export async function encodeTimeline(timeline: Timeline, files: EncodeFiles, ctx
 
   await writePlayerBundle(ctx.bundleDir, timeline);
   if (stillsRequested.length > 0) {
-    return { skipped: false, wallTimeMs: 0, stills: await renderStills(ctx.bundleDir, stillsRequested) };
+    const frameSize = timeline.frame ? { width: timeline.frame.w, height: timeline.frame.h } : undefined;
+    return { skipped: false, wallTimeMs: 0, stills: await renderStills(ctx.bundleDir, stillsRequested, frameSize) };
   }
 
   const tools = await resolveFfmpegTools({ ffmpegPath: options.ffmpegPath, ffprobePath: options.ffprobePath });
@@ -255,7 +283,7 @@ export async function encodeTimeline(timeline: Timeline, files: EncodeFiles, ctx
   // audio changes rather than caching it separately.
   const narrationTrack = await buildNarrationTrack(timeline, ctx.bundleDir, tools.ffmpeg);
   await copyFile(narrationTrack, path.join(ctx.bundleDir, "narration.m4a"));
-  await muxVideo(silentVideo, narrationTrack, files.mp4, ctx.title, tools.ffmpeg);
+  await muxVideo(silentVideo, narrationTrack, files.mp4, ctx.title, tools.ffmpeg, { lang: options.lang, captionsFile: files.vtt });
   writeHashSidecar(files.mp4, hash);
   return {
     skipped: false,

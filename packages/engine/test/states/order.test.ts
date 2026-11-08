@@ -199,6 +199,17 @@ describe("planCaptureRun resets", () => {
     const all = [w("a", { validate: dbCheck })];
     expect(planCaptureRun(all, all, {}, { reset: "none" }).walkthroughs[0].resetBefore).toBe(false);
   });
+
+  it("resetAllowed: a reset may go where the policy doesn't ask for one, but never inside a chain or with resets off", () => {
+    const all = [w("a"), w("p", { leaves: ["x"] }), w("c", { needs: ["x"] })];
+    const plan = planCaptureRun(all, all, {}, { reset: "database-checks" });
+    expect(plan.walkthroughs.map((p) => [p.id, p.resetBefore, p.resetAllowed])).toEqual([
+      ["a", false, true],
+      ["p", false, true],
+      ["c", false, false],
+    ]);
+    expect(planCaptureRun(all, all, {}, { reset: "none" }).walkthroughs.every((p) => p.resetAllowed === false)).toBe(true);
+  });
 });
 
 describe("CaptureRunTracker", () => {

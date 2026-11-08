@@ -31,7 +31,17 @@ leaves: [alex-on-waitlist]     # optional: states true once this walkthrough suc
 clears: [alex-in-morning]      # optional: states no longer true after it
 setup: { as: admin, steps: [ ... ] }   # optional: unrecorded steps run before capture
 paths: [ ... ]                 # optional: other ways to start this task (see below)
+devices: [desktop, phone]      # optional: overrides the config/brief; first is the primary
 ```
+
+### Phone and computer: `devices:`
+
+Walkthroughs whose readers use a phone (the brief's `readers[].devices`, or config/walkthrough
+`devices`) are also captured at a phone size, with taps instead of clicks. Where the phone layout
+differs, split the step: the original gets `devices: [desktop]`, a phone version beside it gets
+`devices: [phone]` (same `chapter`; numbering covers both, and each page shows "On a phone only.").
+`setup:` steps take `devices:` too. `hover` fails on a phone: mark that step `devices: [desktop]`. Check with `aida inspect <path>
+--device phone`.
 
 ### Data this walkthrough needs and changes
 
@@ -168,6 +178,7 @@ area (the menu item a reader clicks), and reuse the same value across walkthroug
   camera: full   # or { focus: <target>, zoom: 1.25, align: top|left|right }
   hold: 1.5       # optional seconds to hold the frame
   mask: ["{{competitor.email}}"]   # optional values to blur in screenshots/video
+  devices: [phone]   # optional: this step only happens on these devices (see "Phone and computer")
   actions: [ ... ]
 ```
 

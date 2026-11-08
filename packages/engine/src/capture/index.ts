@@ -10,6 +10,8 @@ export { classifyFailure, classifyErrorMessage, isSignInPath, StepWatch } from "
 export type { ClassifyInput, Classification } from "./diagnose.js";
 export { ImpactTracker, graphqlOperation, isGraphqlRequest, serverActionSaved } from "./impact.js";
 export { stableHash } from "./stable-hash.js";
+export { alignManifestToSteps } from "./align.js";
+export type { AlignedStep } from "./align.js";
 export { capturePaths, comparePathRuns, diffPaths, markPathsNotCaptured, pathClipSources, pathsPassed, prunePathDirs, recordPathDiffs } from "./paths.js";
 export type { CapturePathsOptions, CapturePathsResult, PathCaptureSummary, PathClipSource } from "./paths.js";
 export { actionIds, comparePathWrites, countFrames, endChecks, pathCaptureDir, readPathCaptures, routePattern, writeKey, writeKeys } from "./path-files.js";

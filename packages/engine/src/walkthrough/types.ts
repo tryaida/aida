@@ -9,6 +9,14 @@ export interface Viewport {
   height: number;
 }
 
+/**
+ * Capture + output device a walkthrough (or one of its steps) targets (decision 40). Resolved by
+ * `devices/index.ts` `devicesFor()` from the walkthrough, config and brief — see that module for
+ * the precedence and the brief's `BriefDevice` ("tablet" maps to "desktop" here; there's no
+ * separate tablet capture yet).
+ */
+export type Device = "desktop" | "phone";
+
 export interface Persona {
   role?: string;
   name?: string;
@@ -116,6 +124,12 @@ export interface Step {
   callouts?: Callout[];
   /** Boxes blurred (burned in) on this step's screenshot/video — see `BlurBox`. */
   blur?: BlurBox[];
+  /**
+   * This step only happens on these devices (decision 40), e.g. a phone-only "Open the menu"
+   * step. Unset: runs on every device the walkthrough captures. Each entry must be one of the
+   * walkthrough's own `devices` (schema.ts validates it); a path's steps use the same field.
+   */
+  devices?: Device[];
   /** The fully resolved action list — from `do:`, `check:` and/or `actions:`. */
   actions: Action[];
 }
@@ -175,6 +189,12 @@ export interface Walkthrough {
   /** Where the page sits in the help library, e.g. "Payments", "Getting started" or
    * "Entries / Late entries" — see placement.ts `libraryPlacement`. Default: "How do I…". */
   section?: string;
+  /**
+   * Devices this walkthrough is captured and shown on (decision 40), first = primary. Wins over
+   * config `devices` and the brief's readers — see `devices/index.ts` `devicesFor()`. Unset:
+   * resolved from config, then the brief, then `["desktop"]`.
+   */
+  devices?: Device[];
   verifiedAgainst?: VerifiedAgainst;
   start?: Start;
   /** Values steps reference as {{path}}. `run` is reserved for run-unique values (`{{run.id}}`). */

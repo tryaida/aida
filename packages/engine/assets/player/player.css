@@ -4,42 +4,51 @@
   --brand-primary: hsl(235 55% 42%);
   --brand-accent: #0ea5e9;
   --brand-primary-foreground: #ffffff;
+  /* `primary`, nudged for >= 4.5:1 so it's safe to use as *text* (chip number, eyebrow) rather
+     than a fill — player.js sets this from TIMELINE.brand.colors.primaryText (render/brand.ts);
+     this default already passes on a light canvas. */
+  --brand-primary-text: var(--brand-primary);
   --brand-background: #ffffff;
   --brand-foreground: #0f172a;
   --radius: 10px;
   --font: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   --heading-font: var(--font);
 
-  /* Derived: the dark "night" canvas is a very dark tint of the brand primary, so the video
-     still reads as the app's brand; --hi/--hi-2 are light tints for text/marks on that canvas. */
-  --night: color-mix(in oklab, var(--brand-primary) 20%, hsl(228 40% 5%));
-  --night-2: color-mix(in oklab, var(--brand-primary) 34%, hsl(228 40% 8%));
+  /* `night`/`ink`/… are computed in TS (render/brand.ts's `videoTextColors`), not with CSS
+     color-mix() — a color-mix() result can't be contrast-checked at build time, so decision 39
+     moved the maths there and asserts ratios on it in tests; player.js sets `--brand-night` etc
+     from TIMELINE.brand.colors. The color-mix() here is only a fallback for the (untested)
+     case a render's player.js never ran, kept visually close to the old always-derived look. */
+  --night: var(--brand-night, color-mix(in oklab, var(--brand-primary) 20%, hsl(228 40% 5%)));
+  --night-2: var(--brand-night2, color-mix(in oklab, var(--brand-primary) 34%, hsl(228 40% 8%)));
   --hi: oklch(from var(--brand-accent) 0.84 min(calc(c * 1.15), 0.16) h);
   --hi-2: oklch(from var(--brand-primary) 0.76 min(calc(c * 1.1), 0.17) h);
   /* Highlight ring + step badge: the brand primary, as in print (decision 36). */
   --mark: var(--brand-primary);
   --mark-fg: var(--brand-primary-foreground);
-  /* Text on the canvas (overridden for the light presets). */
-  --ink: #fff;
-  --ink-2: hsl(0 0% 100% / .78);
-  --ink-3: hsl(0 0% 100% / .62);
+  /* Text on the canvas (overridden for the light presets below). */
+  --ink: var(--brand-ink, #fff);
+  --ink-2: var(--brand-ink2, hsl(0 0% 100% / .78));
+  --ink-3: var(--brand-ink3, hsl(0 0% 100% / .62));
 }
 
 /* Light presets: the canvas is the app's own light surface, lightly tinted with its colour. */
 .style-minimal {
-  --paper: color-mix(in oklab, var(--brand-primary) 4%, #f5f6f8);
-  --ink: color-mix(in oklab, var(--brand-foreground) 92%, var(--brand-primary));
-  --ink-2: color-mix(in srgb, var(--ink) 72%, transparent);
-  --ink-3: color-mix(in srgb, var(--ink) 55%, transparent);
+  --paper: var(--brand-paper, color-mix(in oklab, var(--brand-primary) 4%, #f5f6f8));
+  --ink: var(--brand-ink, color-mix(in oklab, var(--brand-foreground) 92%, var(--brand-primary)));
+  --ink-2: var(--brand-ink2, color-mix(in srgb, var(--ink) 72%, transparent));
+  --ink-3: var(--brand-ink3, color-mix(in srgb, var(--ink) 55%, transparent));
 }
 .style-friendly {
-  --paper: color-mix(in oklab, var(--brand-primary) 11%, #fbfbfd);
-  --ink: color-mix(in oklab, var(--brand-foreground) 92%, var(--brand-primary));
-  --ink-2: color-mix(in srgb, var(--ink) 72%, transparent);
-  --ink-3: color-mix(in srgb, var(--ink) 55%, transparent);
+  --paper: var(--brand-paper, color-mix(in oklab, var(--brand-primary) 11%, #fbfbfd));
+  --ink: var(--brand-ink, color-mix(in oklab, var(--brand-foreground) 92%, var(--brand-primary)));
+  --ink-2: var(--brand-ink2, color-mix(in srgb, var(--ink) 72%, transparent));
+  --ink-3: var(--brand-ink3, color-mix(in srgb, var(--ink) 55%, transparent));
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+/* Fallback (desktop) size — player.js sets these from TIMELINE.frame on load, so a phone render's
+   portrait 1080x1920 canvas never inherits this. */
 html, body { width: 1920px; height: 1080px; overflow: hidden; background: #000; }
 body { font-family: var(--font); font-feature-settings: 'cv11', 'ss01'; color: var(--ink);
   -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
@@ -88,8 +97,11 @@ body { font-family: var(--font); font-feature-settings: 'cv11', 'ss01'; color: v
   box-shadow: 0 0 0 6px hsl(0 0% 100% / .7), 0 34px 80px -30px color-mix(in srgb, var(--brand-primary) 45%, transparent), 0 12px 30px -16px rgb(15 23 42 / .18); }
 .style-friendly #stage { border-radius: 26px; }
 
+/* Desktop (landscape frame): the fixed 1440x810 camera every desktop render has always used. A
+   portrait (phone) frame's camera is sized from TIMELINE.viewport by player.js (412x839 by
+   default) instead. The image and blur/callout layers fill whichever size the camera is. */
 #cam { position: absolute; left: 0; top: 0; width: 1440px; height: 810px; transform-origin: 0 0; will-change: transform; }
-#cam img { position: absolute; left: 0; top: 0; width: 1440px; height: 810px; transform-origin: 50% 50%; }
+#cam img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-origin: 50% 50%; }
 
 /* ---------------- highlight: ring + step badge in the brand colour (matches print) */
 #spot { position: absolute; pointer-events: none; border-radius: 10px;
@@ -121,12 +133,16 @@ body { font-family: var(--font); font-feature-settings: 'cv11', 'ss01'; color: v
   filter: drop-shadow(0 2px 3px rgb(0 0 0 / .35)); }
 #cursor path { fill: #fff; stroke: #111827; }
 #cursor .halo { display: none; }
+/* Touch's tap indicator (M43c, `.pointer-touch` above): a soft filled circle centred on the
+   cursor's own (x, y) — the same press-scale transform as the arrow cursor "presses" it a touch
+   smaller at the instant of each tap. */
+#cursor .tap { display: none; fill: color-mix(in srgb, var(--mark) 55%, #fff 25%); stroke: #fff; stroke-width: 1.5; }
 .style-minimal #cursor path { fill: #111827; stroke: #fff; }
 .style-friendly #cursor .halo { display: block; fill: color-mix(in srgb, var(--mark) 26%, transparent); stroke: none; }
 .style-friendly #cursor path { fill: #fff; stroke: var(--mark); stroke-width: 2.2; }
 
 /* ---------------- callouts + blur (M22) */
-#blurLayer, #calloutLayer { position: absolute; left: 0; top: 0; width: 1440px; height: 810px; pointer-events: none; }
+#blurLayer, #calloutLayer { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
 /* A mosaic'd (irreversible — see player.js's BLUR_MOSAIC_* / pages/annotate.ts's MOSAIC_*)
    canvas per blur box; the blur() here only softens the box's own edges against the
    surrounding frame, same as annotate.ts's canvas. */
@@ -140,7 +156,12 @@ body { font-family: var(--font); font-feature-settings: 'cv11', 'ss01'; color: v
 #calloutLegend b { color: #f87171; margin-right: 4px; }
 
 /* ---------------- band: lower-third step title + caption */
-#band { position: absolute; top: 970px; height: 100px; display: flex; align-items: center; gap: 28px; }
+/* Position set from TIMELINE.band by player.js (desktop: top:970px/height:100px, same numbers as
+   this rule used to hardcode — a portrait frame's band sits below the phone frame instead). */
+#band { position: absolute; display: flex; align-items: center; gap: 28px; }
+.frame-portrait #band { flex-direction: column; align-items: flex-start; justify-content: center; gap: 14px; }
+.frame-portrait #chip { width: 100%; }
+.frame-portrait #caption { flex: none; width: 100%; }
 #chip { flex: none; width: 380px; display: flex; align-items: center; gap: 16px; }
 #chip .text { min-width: 0; }
 #chip .num { flex: none; width: 48px; height: 48px; border-radius: 13px; display: grid; place-items: center;
@@ -153,15 +174,18 @@ body { font-family: var(--font); font-feature-settings: 'cv11', 'ss01'; color: v
   border-left: 3px solid color-mix(in srgb, var(--hi) 70%, transparent); padding-left: 24px; }
 #caption:empty { border-color: transparent; }
 
-.style-minimal #chip .num { background: transparent; color: var(--brand-primary); box-shadow: inset 0 0 0 2px var(--brand-primary); border-radius: 50%; }
+.style-minimal #chip .num { background: transparent; color: var(--brand-primary-text); box-shadow: inset 0 0 0 2px var(--brand-primary); border-radius: 50%; }
 .style-minimal #chip .eyebrow { color: var(--ink-3); }
 .style-minimal #caption { border-left: 0; padding-left: 0; color: var(--ink); font-weight: 450; }
 
 .style-friendly #chip { width: auto; max-width: 440px; padding: 8px 22px 8px 8px; border-radius: 999px; background: #fff;
   box-shadow: 0 10px 26px -14px color-mix(in srgb, var(--brand-primary) 60%, transparent), 0 0 0 1px rgb(15 23 42 / .05); }
 .style-friendly #chip .num { border-radius: 50%; background: var(--brand-primary); color: var(--brand-primary-foreground); }
-.style-friendly #chip .eyebrow { color: var(--brand-primary); }
-.style-friendly #caption { flex: 0 1 auto; border-left: 0; padding: 14px 26px; border-radius: 22px; background: hsl(0 0% 100% / .86);
+.style-friendly #chip .eyebrow { color: var(--brand-primary-text); }
+.style-friendly #caption { flex: 0 1 auto; border-left: 0; padding: 14px 26px; border-radius: 22px;
+  /* `--brand-chip` (render/brand.ts's `videoTextColors`): the same ~86%-white-over-paper colour
+     `ink` was actually checked against, rather than a flat CSS alpha the player paints blind. */
+  background: var(--brand-chip, hsl(0 0% 100% / .86));
   color: var(--ink); box-shadow: 0 8px 22px -14px rgb(15 23 42 / .3); }
 .style-friendly #caption:empty { background: transparent; box-shadow: none; }
 
@@ -248,3 +272,27 @@ body { font-family: var(--font); font-feature-settings: 'cv11', 'ss01'; color: v
 .style-bold .hero::before { content: ''; position: absolute; left: 18px; top: 11px; width: 12px; height: 12px; border-radius: 50%;
   background: #f87171; box-shadow: 20px 0 #fbbf24, 40px 0 #34d399; }
 .style-minimal .hero { border-radius: 14px; box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 10%, transparent), 0 30px 70px -34px color-mix(in srgb, var(--ink) 40%, transparent); }
+
+/* ---------------- portrait (M43c): a phone walkthrough's own video (TIMELINE.frame taller than
+   wide) — a plain rounded "phone" frame rather than a desktop browser window, cards laid out for
+   a narrower canvas, no hero (the landscape-only absolute layout above). */
+.frame-portrait #window { border-radius: 40px; }
+.frame-portrait #stage { border-radius: 32px; }
+.frame-portrait .card { padding: 0 64px; }
+.frame-portrait .card h1 { font-size: 56px; }
+.frame-portrait .card h1.long { font-size: 46px; }
+.frame-portrait .card h1.xlong { font-size: 38px; }
+.frame-portrait #outro h1 { font-size: 60px; }
+.frame-portrait #outro h1.long { font-size: 50px; }
+.frame-portrait #outro h1.xlong { font-size: 42px; }
+.frame-portrait .card p.sub { font-size: 24px; }
+.frame-portrait .facts, .frame-portrait .recap { max-width: 100%; }
+.frame-portrait .hero { display: none !important; }
+.frame-portrait.style-friendly .panel { padding: 48px 40px 56px; max-width: 100%; }
+
+/* ---------------- touch pointer (M43c): a soft tap circle instead of an arrow cursor — the
+   capture's click frames still carry the point; `.ripple` (above) already draws the press ring
+   on every click regardless of pointer kind. */
+.pointer-touch #cursor path, .pointer-touch #cursor .halo { display: none; }
+.pointer-touch #cursor .tap { display: block; }
+.pointer-mouse #cursor .tap { display: none; }

@@ -11,6 +11,7 @@ data:
     name: Jordan Lee
 steps:
   - id: mark-dates
+    devices: [desktop]
     chapter: Mark your dates
     title: Mark the dates that work
     say: Open the invite link you were sent. Your row is at the top. Click a date once for yes. Click again for if need be, and a third time for no.
@@ -21,6 +22,19 @@ steps:
         target: { role: button, name: Pending, nth: 0 }
       - do: click
         target: { role: button, name: Pending, nth: 0 }
+        highlight: true
+  - id: mark-dates-phone
+    devices: [phone]
+    chapter: Mark your dates
+    title: Mark the dates that work
+    say: Open the invite link you were sent. Under each date, tap yes, if need be, or no.
+    caption: Tap yes, if need be or no.
+    page_text: Open the invite link you were sent. Under each date, tap **Yes**, **If need be** or **No**.
+    actions:
+      - do: click
+        target: { role: radio, name: "Yes", nth: 0 }
+      - do: click
+        target: { role: radio, name: If need be, nth: 1 }
         highlight: true
   - id: continue
     title: Continue
@@ -53,6 +67,7 @@ steps:
       - do: expect
         target: { text: Your response has been saved }
   - id: see-your-row
+    devices: [desktop]
     title: See your answers in the poll
     say: Go back to the poll. Your answers now sit alongside everyone else's.
     caption: Your answers are in the poll.
@@ -62,6 +77,18 @@ steps:
         target: { role: button, name: Back to poll }
       - do: expect
         target: { role: row, hasText: "{{voter.name}}" }
+        highlight: true
+  - id: see-your-answers-phone
+    devices: [phone]
+    title: See your answers in the poll
+    say: Go back to the poll. Your name is picked at the top, with your answer beside each date.
+    caption: Your answers are in the poll.
+    page_text: Select **Back to poll**. Your name shows at the top of the poll, with your answer beside each date. To change them later, open the same link again.
+    actions:
+      - do: click
+        target: { role: button, name: Back to poll }
+      - do: expect
+        target: { role: combobox, hasText: "{{voter.name}}" }
         highlight: true
 validate:
   database:

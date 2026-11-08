@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Touch detect fixture</title>
+  </head>
+  <body>
+    <h1>Touch detect</h1>
+    <p id="touch-info">checking…</p>
+    <script>
+      var touch = navigator.maxTouchPoints > 0;
+      var coarse = window.matchMedia("(pointer: coarse)").matches;
+      document.getElementById("touch-info").textContent = "touch=" + touch + " coarse=" + coarse;
+    </script>
+  </body>
+</html>

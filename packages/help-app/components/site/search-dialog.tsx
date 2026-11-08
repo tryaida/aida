@@ -107,7 +107,7 @@ function Row({ entry, query }: { entry: SearchIndexEntry; query: string }) {
   const Icon = entry.heading ? Hash : FileText;
   return (
     <div className="flex items-start gap-3 px-2.5 py-2">
-      <Icon className="mt-0.5 size-4 shrink-0 text-fd-muted-foreground" />
+      <Icon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-fd-muted-foreground" />
       <div className="min-w-0">
         {entry.section ? <div className="truncate text-xs text-fd-muted-foreground">{entry.section}</div> : null}
         <div className="truncate font-medium">

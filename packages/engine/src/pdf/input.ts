@@ -4,6 +4,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { displayWalkthrough, libraryPlacement, type Walkthrough } from "../walkthrough/index.js";
 import type { BuildPageResult } from "../pages/index.js";
+import { stripDeviceShots } from "../pages/device-shots.js";
 import type { ResolvedConfig } from "../config/index.js";
 import { cardStepsFor, PATH_CLIP_MARK } from "./html.js";
 import { resolveArtifactBrand } from "../render/brand.js";
@@ -47,7 +48,9 @@ export function stripPathClips(markdown: string): { markdown: string; pathClips:
 
 export function pdfInputFromPage(written: Walkthrough, page: BuildPageResult): PdfPageInput {
   const wf = displayWalkthrough(written);
-  const { markdown, pathClips } = stripPathClips(stripFrontmatter(readFileSync(page.plainFile, "utf8")));
+  // `index.plain.md` already drops `<DeviceShots>` down to its primary image (pages/build.ts) —
+  // stripped again here, defensively, the same way `stripPathClips` re-strips the clip embed.
+  const { markdown, pathClips } = stripPathClips(stripDeviceShots(stripFrontmatter(readFileSync(page.plainFile, "utf8"))));
   const screenshotByStep = new Map<number, string>();
   for (const file of page.screenshots) {
     const m = /step-(\d+)\.png$/.exec(file);

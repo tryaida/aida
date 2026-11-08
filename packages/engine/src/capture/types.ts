@@ -1,4 +1,4 @@
-import type { Camera, Viewport } from "../walkthrough/index.js";
+import type { Camera, Device, Viewport } from "../walkthrough/index.js";
 import type { PathCaptureSummary } from "./paths.js";
 
 export interface Box {
@@ -71,6 +71,14 @@ export interface ResolvedBox {
 
 export interface ManifestStep {
   id: string | undefined;
+  /**
+   * This step's position in the walkthrough's own `steps` list (0-based), stable across devices
+   * even when a device-only step (M43a `devices:`) is skipped and so absent from one device's
+   * `steps` array — a later stage aligning two devices' manifests should match on this (or `id`,
+   * when both have one), never on the array index. Always set by the capture runner; optional
+   * only so manifests built by hand (several tests) still type-check without it.
+   */
+  stepIndex?: number;
   camera: Camera;
   cameraBox: Box | null;
   events: CaptureEvent[];
@@ -108,6 +116,9 @@ export interface CaptureManifest {
   baseUrl: string;
   viewport: Viewport;
   deviceScaleFactor: number;
+  /** Which device this capture ran as (M43a, decision 40). Absent from a manifest written before
+   * M43a — callers that care should treat a missing `device` as `"desktop"`. */
+  device?: Device;
   steps: ManifestStep[];
   finalUrl?: string;
 }
@@ -302,6 +313,11 @@ export interface FrameDiffSummary {
 
 export interface CaptureSummary {
   walkthrough: string;
+  /** Which device this summary is for (decision 40, M43a) — set whenever more than one device
+   * was captured, or the one captured isn't the default `"desktop"`. */
+  device?: Device;
+  /** A secondary device's capture (decision 40): its failure is a warning, never the command's. */
+  secondary?: boolean;
   ok: boolean;
   steps: { total: number; passed: number };
   frames: number;

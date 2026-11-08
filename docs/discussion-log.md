@@ -302,3 +302,19 @@ every topic, and stopping whenever the person wants. Readers are described by th
 gender or health. Answers land in the brief as a reader profile and two optional sections,
 Workflows and Where people get stuck, which planning, writing, the agent connector and a new
 Common problems page (so the help chat finds them too) use.
+
+## 2026-11-08 · Output review: phone readers and accessibility
+
+A review of the sample outputs (help page, guide PDF, card, video frames) found the outputs
+polished but desktop-only and thin on accessibility: the interview already promised phone-first
+readers phone-sized screenshots and videos, yet nothing read `readers.devices`; scope promised a
+transcript no code wrote; alt text repeated the step title (or was empty in PDFs); PDFs weren't
+tagged; brand colours were only held to 3:1. Agreed: do both now. Accessibility (decision 39,
+M42) holds every output to WCAG 2.2 AA where the format allows and adds `a11y:*` QA checks. Phone
+output (decision 40, M43) follows the brief, overridable per config and walkthrough; the first
+device is the primary one, so PDFs, search and the agent connector keep working unchanged, and a
+phone failure never costs the desktop page. Steps that only happen on one device carry `devices:`
+(the first real run showed why: the trial app's phone layout votes with a Yes / If need be / No
+radio group per date instead of the desktop grid). The same pass upgraded every dependency and
+cleared `npm audit`: Kokoro is vendored onto transformers 4, since kokoro-js pins transformers 3
+and with it a vulnerable `sharp`.

@@ -6,12 +6,12 @@
 // on any error (instead of leaking the process and leaving an unhandled `ffDone` rejection).
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { isPartialSegmentFile, renderFrameRange } from "../../src/render/video.js";
+import { isPartialSegmentFile, iso6392, muxVideo, renderFrameRange } from "../../src/render/video.js";
 import type { RenderQuality } from "../../src/render/types.js";
 
 const execFileAsync = promisify(execFile);
@@ -110,4 +110,75 @@ describe("isPartialSegmentFile", () => {
     expect(isPartialSegmentFile("step-one-abc123.tmp-12345-x7y2z9.mp4")).toBe(true);
     expect(isPartialSegmentFile("step-one-abc123.mp4")).toBe(false);
   });
+});
+
+describe("iso6392", () => {
+  it("maps a BCP-47 primary subtag to its ISO 639-2 code", () => {
+    expect(iso6392("en")).toBe("eng");
+    expect(iso6392("fr")).toBe("fra");
+    expect(iso6392("en-GB")).toBe("eng");
+    expect(iso6392("pt-BR")).toBe("por");
+  });
+
+  it("defaults to English when unset, and 'und' for an unrecognised subtag", () => {
+    expect(iso6392(undefined)).toBe("eng");
+    expect(iso6392("xx")).toBe("und");
+  });
+});
+
+// M42a: the mux tags the audio stream's language and, given a captions file, embeds it as a
+// non-default `mov_text` subtitle track (separate ffmpeg pass — see muxVideo's doc comment for
+// why it must not share `-shortest` with the main mux).
+describe("muxVideo", () => {
+  async function probeStreams(file: string): Promise<any[]> {
+    const { stdout } = await execFileAsync("ffprobe", ["-v", "error", "-print_format", "json", "-show_streams", file]);
+    return JSON.parse(stdout).streams;
+  }
+
+  it("tags the audio stream's language and embeds captions as a soft, non-default subtitle track", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "aida-mux-test-"));
+    try {
+      const silentVideo = path.join(dir, "silent.mp4");
+      const narration = path.join(dir, "narration.m4a");
+      const vtt = path.join(dir, "captions.vtt");
+      const outFile = path.join(dir, "out.mp4");
+      await execFileAsync("ffmpeg", ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=64x48:rate=2:duration=1", "-pix_fmt", "yuv420p", silentVideo]);
+      await execFileAsync("ffmpeg", ["-y", "-v", "error", "-f", "lavfi", "-i", "anullsrc=r=22050", "-t", "1", "-c:a", "aac", narration]);
+      await writeFile(vtt, "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello.\n");
+
+      await muxVideo(silentVideo, narration, outFile, "Test video", "ffmpeg", { lang: "es", captionsFile: vtt });
+
+      const streams = await probeStreams(outFile);
+      const audio = streams.find((s) => s.codec_type === "audio");
+      const subtitle = streams.find((s) => s.codec_type === "subtitle");
+      expect(audio.tags?.language).toBe("spa");
+      expect(subtitle).toBeDefined();
+      expect(subtitle.codec_name).toBe("mov_text");
+      expect(subtitle.tags?.language).toBe("spa");
+      // Not forced — mp4's "track enabled" disposition bit is set on every track regardless
+      // (video/audio included), so it's not a meaningful "shown by default" signal to assert on.
+      expect(subtitle.disposition?.forced).toBe(0);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("mux without a captions file carries no subtitle stream, still tags the audio language", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "aida-mux-test-"));
+    try {
+      const silentVideo = path.join(dir, "silent.mp4");
+      const narration = path.join(dir, "narration.m4a");
+      const outFile = path.join(dir, "out.mp4");
+      await execFileAsync("ffmpeg", ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=64x48:rate=2:duration=1", "-pix_fmt", "yuv420p", silentVideo]);
+      await execFileAsync("ffmpeg", ["-y", "-v", "error", "-f", "lavfi", "-i", "anullsrc=r=22050", "-t", "1", "-c:a", "aac", narration]);
+
+      await muxVideo(silentVideo, narration, outFile, "Test video", "ffmpeg");
+
+      const streams = await probeStreams(outFile);
+      expect(streams.find((s) => s.codec_type === "subtitle")).toBeUndefined();
+      expect(streams.find((s) => s.codec_type === "audio").tags?.language).toBe("eng");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

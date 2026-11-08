@@ -73,6 +73,11 @@ export interface PlannedWalkthrough<W extends PlanInput = PlanInput> {
   resetBefore: boolean;
   /** Why the reset is or isn't where the policy alone would put it. */
   resetNote?: string;
+  /** A reset before this walkthrough wouldn't erase data another one relies on (it starts its
+   * chain and sits between no provider and its consumer) and resets aren't off — even when the
+   * policy doesn't ask for one here. A secondary device's capture (decision 40) needs a reset
+   * between devices when the walkthrough changes data; this says whether it may have one. */
+  resetAllowed?: boolean;
   /** Set when no order works for it (a need nothing provides, a cycle): the problem's message.
    * A blocked walkthrough never runs; anything relying on its data is skipped in turn. */
   blocked?: string;
@@ -293,6 +298,7 @@ export function planCaptureRun<W extends PlanInput>(
       needs: needsById.get(id) ?? [],
       resetBefore,
       ...(resetNote ? { resetNote } : {}),
+      resetAllowed: policy !== "none" && isFirst && !guard,
     };
   });
 

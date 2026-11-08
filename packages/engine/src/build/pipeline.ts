@@ -4,11 +4,13 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { ResolvedConfig } from "../config/index.js";
-import { loadWalkthroughFile } from "../walkthrough/index.js";
-import type { Walkthrough } from "../walkthrough/index.js";
+import { loadWalkthroughFile, newRunId } from "../walkthrough/index.js";
+import type { Device, Walkthrough } from "../walkthrough/index.js";
+import { captureDirFor, devicesFor, stepsFor } from "../devices/index.js";
 import * as captureModule from "../capture/index.js";
 import { capturePaths, comparePathRuns, readPathCaptures, markPathsNotCaptured, prunePathDirs, recordPathDiffs, runCapture, runLevelFailure, withFrameStabilization } from "../capture/index.js";
 import { markNotCaptured, notCapturedReason } from "../capture/not-captured.js";
+import { planSecondaryCapture, usableDeviceCapture } from "../capture/secondary.js";
 import { AppDatabaseRefusedError, runCaptureSafetyChecks } from "../safety/index.js";
 import { planRunFromFiles } from "../states/index.js";
 import type { PlannedRun, PlannedWalkthrough } from "../states/index.js";
@@ -25,6 +27,7 @@ import { runQa } from "../qa/index.js";
 import {
   buildManualPdf,
   buildWalkthroughPdf,
+  deletePdfOutput,
   launchBrowser,
   pdfInputFromPage,
   pdfPublicLinks,
@@ -34,7 +37,7 @@ import {
 import type { PdfBuildResult } from "../pdf/index.js";
 import type { Browser } from "playwright";
 import { resolveChatConfig } from "../chat/index.js";
-import { briefForBuild, briefPath } from "../brief/consumers.js";
+import { briefForBuild, briefPath, loadBrief } from "../brief/consumers.js";
 import { outlinePath, readOutline } from "../outline/file.js";
 import { cpSync, rmSync } from "node:fs";
 import { runIndexStage } from "./index-stage.js";
@@ -46,7 +49,7 @@ import { collectFailures, textCheckFailures } from "./failures.js";
 import { checkWalkthroughText, type WalkthroughTextProblem } from "../qa/walkthrough-text.js";
 import type { QaReport } from "../qa/index.js";
 import { mapLimit } from "./pool.js";
-import type { BuildOptions, BuildStageName, StageResult, WalkthroughBuildResult } from "./types.js";
+import type { BuildOptions, BuildStageName, DeviceBuildResult, StageResult, WalkthroughBuildResult } from "./types.js";
 import { ALL_STAGES } from "./types.js";
 import { voiceCostUsd } from "../usage/prices.js";
 import { resetDatabase } from "../capture/reset.js";
@@ -104,7 +107,16 @@ interface WalkthroughPipelineState {
   /** The walkthrough's YAML file, named in report.json. */
   file: string;
   wf: Walkthrough;
+  /** The *primary* device's capture dir (decision 40) — unchanged `<buildDir>/<id>/capture` for
+   * a desktop-primary walkthrough, so every stage that reads `state.captureDir` (pages, render,
+   * pdf) keeps working exactly as before without knowing devices exist. */
   captureDir: string;
+  /** Devices this walkthrough captures on this run, primary first (`devicesFor()`); `["desktop"]`
+   * for a walkthrough that doesn't opt into phone capture. */
+  devices: Device[];
+  /** Capture outcome of every device *other than* the primary (whose outcome is `stages.capture`/
+   * `manifest`/`validation`), keyed by device. Never affects `ok` — see `runCaptureStage`. */
+  deviceResults: Partial<Record<Device, DeviceBuildResult>>;
   voiceDir: string;
   videoDir: string;
   pagesDir: string;
@@ -114,6 +126,9 @@ interface WalkthroughPipelineState {
   frameDiff?: FrameDiffSummary;
   voiceReport?: { charsBilled: number; cached: number; synthesized: number; costUsd: number };
   renderResult?: RenderResult;
+  /** A secondary phone device's own render (M43c) — set only when `devices` names phone as
+   * something other than the primary and its capture passed. */
+  phoneRenderResult?: RenderResult;
   pageResult?: BuildPageResult;
   pdfResult?: PdfBuildResult;
   qaProblems?: number;
@@ -161,6 +176,185 @@ function finalPublishable(state: WalkthroughPipelineState): boolean {
   return true;
 }
 
+/** One device's capture outcome, returned rather than written straight onto `state` — so the
+ * caller (`runCaptureStage`) can decide whether a device's outcome is this walkthrough's own
+ * (the primary device: `stages.capture`) or a non-fatal side note (every other device). */
+interface DeviceCaptureOutcome {
+  stage: StageResult;
+  manifest?: CaptureManifest;
+  validation?: ValidationResult;
+  frameDiff?: FrameDiffSummary;
+  failureFile?: string;
+  blocked?: { appBugIn: string[] };
+  category?: import("../capture/types.js").FailureCategory;
+}
+
+/** True when the plan (decision 28) resets before this walkthrough's primary run — it moves a
+ * chain member's reset to the start of its chain — and resets aren't off. */
+function slotResetsBefore(
+  wf: Walkthrough,
+  config: ResolvedConfig,
+  opts: BuildOptions,
+  planned: { run: PlannedRun; item: PlannedWalkthrough<Walkthrough> } | undefined,
+): boolean {
+  if (opts.noReset) return false;
+  return planned ? planned.item.resetBefore : Boolean(config.database && (wf.validate?.database?.length || wf.paths?.length));
+}
+
+/**
+ * Captures one device into `captureDir` (decision 40, M43a). `includePaths` is true only for the
+ * primary device: other walkthroughs' paths (decision 34) aren't captured a second time per
+ * device — a later milestone can extend that; for now every device replays the same main steps.
+ * `main` says whether to reset the database right before this device's main capture and which
+ * run id it uses (`runCaptureStage` decides both: capture/secondary.ts). Records the capture-run
+ * tracker (dependants/outline-drift) only for the primary, which is what the rest of this run
+ * actually depends on.
+ */
+async function runCaptureForDevice(
+  wf: Walkthrough,
+  config: ResolvedConfig,
+  captureDir: string,
+  device: Device,
+  opts: BuildOptions,
+  planned: { run: PlannedRun; item: PlannedWalkthrough<Walkthrough> } | undefined,
+  includePaths: boolean,
+  main: { reset: boolean; runId: string | undefined },
+): Promise<DeviceCaptureOutcome> {
+  const started = Date.now();
+  const manifestFile = join(captureDir, "manifest.json");
+  const validationFile = join(captureDir, "validation.json");
+  const failureFile = join(captureDir, "failure.json");
+
+  if (opts.skipCapture) {
+    const manifest = readJsonIfExists<CaptureManifest>(manifestFile);
+    const validation = readJsonIfExists<ValidationResult>(validationFile);
+    const priorFailureFile = existsSync(failureFile) ? failureFile : undefined;
+    if (!manifest) {
+      return { stage: failed(`--skip-capture given but no prior capture at ${manifestFile}`, Date.now() - started) };
+    }
+    if (validation && !validation.ok) {
+      // The last capture didn't pass (or never happened: blocked, or it threw): nothing is rebuilt
+      // from it.
+      const reason = notCapturedReason(validation) ?? "it didn't pass";
+      return {
+        stage: failed(`--skip-capture: the last capture can't be reused (${reason}); capture it again`, Date.now() - started),
+        manifest,
+        validation,
+        failureFile: priorFailureFile,
+      };
+    }
+    return { stage: skipped("--skip-capture", Date.now() - started), manifest, validation, failureFile: priorFailureFile };
+  }
+
+  // A provider earlier in the run failed, or no order works for it: don't capture a screen built
+  // on missing data, and don't leave an older capture looking current.
+  const blocked = planned?.run.tracker.blocked(planned.item);
+  if (blocked) {
+    if (includePaths) planned!.run.tracker.record(wf.walkthrough, false, { appBugIn: blocked.appBugIn });
+    markNotCaptured(captureDir, { walkthrough: wf.walkthrough, reason: blocked.reason });
+    if (includePaths) markPathsNotCaptured(captureDir, wf, blocked.reason);
+    return { stage: failed(blocked.reason, Date.now() - started), blocked: { appBugIn: blocked.appBugIn } };
+  }
+
+  mkdirSync(captureDir, { recursive: true });
+  const baseUrl = wf.start?.baseUrl ?? config.app.baseUrl;
+  const storageStatePath = join(config.buildDir, ".aida-session", `storageState-${storageStateKey(baseUrl, wf)}.json`);
+
+  try {
+    const needsDbReset = slotResetsBefore(wf, config, opts, planned);
+
+    // Other ways in first (decision 34; capture/paths.ts), as `aida capture` runs them: reset →
+    // path → … → reset → main, so dependants see the main run's data. Paths run once, for the
+    // primary device only.
+    let pathRun: Awaited<ReturnType<typeof capturePaths>> | undefined;
+    if (includePaths) {
+      if ((wf.paths ?? []).length === 0) prunePathDirs(captureDir, wf);
+      else {
+        pathRun = await capturePaths({
+          walkthrough: wf,
+          config,
+          captureDir,
+          storageStatePath,
+          personaFor: planned?.run.personaFor,
+          canReset: needsDbReset,
+          cannotResetReason: opts.noReset ? "--no-reset was given" : (planned?.item.resetNote ?? "the capture plan doesn't reset before this walkthrough"),
+          device,
+        });
+      }
+    }
+
+    if (main.reset && config.database) {
+      await resetDatabase(config);
+    }
+
+    const captureSettings = resolveCaptureSettings(config.capture);
+    const stabilizeOpts = { threshold: captureSettings.frameDiffThreshold, tolerance: captureSettings.frameDiffTolerance };
+    const { result, frameDiff } = await withFrameStabilization(captureDir, stabilizeOpts, () =>
+      runCapture({
+        walkthrough: wf,
+        config,
+        outDir: captureDir,
+        storageStatePath,
+        runId: main.runId,
+        personaFor: planned?.run.personaFor,
+        device,
+      }),
+    );
+    // Dependants wait on the main run only, which ran last — and only the primary device's run is
+    // "the main run" other walkthroughs/outline drift care about.
+    if (includePaths) planned?.run.tracker.record(wf.walkthrough, result.validation.ok, { category: result.failure?.category });
+    // The runner rewrites or removes failure.json on every run, so whatever is there is this run's.
+    const outFailureFile = existsSync(failureFile) ? failureFile : undefined;
+    writeFileSync(manifestFile, `${JSON.stringify(result.manifest, null, 2)}\n`);
+    writeFileSync(join(captureDir, "run.json"), `${JSON.stringify(result.run, null, 2)}\n`);
+    writeFileSync(validationFile, `${JSON.stringify(result.validation, null, 2)}\n`);
+    let pathNote = "";
+    let pathManifests: CaptureManifest[] = [];
+    if (pathRun) {
+      const { pathDiffs, pathChecks } = comparePathRuns(result, pathRun);
+      recordPathDiffs(captureDir, pathDiffs, pathChecks);
+      pathManifests = Object.values(pathRun.manifests);
+      const ran = pathRun.paths.filter((p) => p.skipped === undefined);
+      const failedPaths = ran.filter((p) => !p.ok).map((p) => p.path);
+      const skippedNote = pathRun.paths.find((p) => p.skipped !== undefined)?.skipped;
+      pathNote = skippedNote
+        ? `; paths not captured: ${skippedNote}`
+        : `; paths ${ran.length - failedPaths.length}/${ran.length} passed${failedPaths.length > 0 ? ` (failed: ${failedPaths.join(", ")})` : ""}${pathDiffs.map((d) => `; warning: ${d.message}`).join("")}`;
+    }
+    // Outline drift (M29): quiet without an outline file; never fails the capture. Recorded from
+    // the primary device's capture only — the card tracks one screen, not one per device.
+    if (includePaths) {
+      const outlineLine = recordCaptureDrift({ config, walkthrough: wf, manifest: result.manifest, validation: result.validation, pathManifests });
+      if (outlineLine) console.warn(`aida build: ${outlineLine}`);
+    }
+    const passed = result.validation.steps.filter((s) => s.ok).length;
+    const frameDiffDetail = `, ${frameDiff.kept} kept / ${frameDiff.changed} changed frames${(result.warnings ?? []).map((w) => `; warning: ${w}`).join("")}${pathNote}`;
+    const stage = result.validation.ok
+      ? ok(`${passed}/${result.validation.steps.length} steps passed${frameDiffDetail}`)
+      : failed(`${passed}/${result.validation.steps.length} steps passed${frameDiffDetail}`);
+    stage.ms = Date.now() - started;
+    return { stage, manifest: result.manifest, validation: result.validation, frameDiff, failureFile: outFailureFile, category: result.failure?.category };
+  } catch (err) {
+    // Classified like `aida capture` does (decision 30), written as this run's failure.json, and
+    // validation.json says it wasn't captured: `--skip-capture` never reuses the older capture.
+    const failure = runLevelFailure(err);
+    if (includePaths) planned?.run.tracker.record(wf.walkthrough, false, { category: failure.category });
+    markNotCaptured(captureDir, { walkthrough: wf.walkthrough, reason: failure.error, failure, baseUrl });
+    return { stage: failed(failure.error, Date.now() - started), failureFile, category: failure.category };
+  }
+}
+
+/**
+ * Captures every device this walkthrough is captured on (decision 40, M43a): every secondary
+ * device first, then the primary — `state.devices[0]`, into `state.captureDir` — so the primary's
+ * main run, which dependants and outline drift read, is the last to touch the data. Resets
+ * bracket the secondaries the way they bracket paths (decision 34): reset → phone → reset →
+ * primary; a walkthrough that changes data with no reset allowed here doesn't capture its
+ * secondaries (capture/secondary.ts `planSecondaryCapture`). A secondary's outcome is never this
+ * walkthrough's own: it's recorded in `state.deviceResults` and logged as a warning, never written
+ * to `state.stages.capture`/`ok`. No device is captured once the walkthrough is blocked (no data
+ * in this run to capture any device from).
+ */
 async function runCaptureStage(
   wf: Walkthrough,
   config: ResolvedConfig,
@@ -168,127 +362,55 @@ async function runCaptureStage(
   opts: BuildOptions,
   planned?: { run: PlannedRun; item: PlannedWalkthrough<Walkthrough> },
 ): Promise<void> {
-  const started = Date.now();
-  const manifestFile = join(state.captureDir, "manifest.json");
-  const validationFile = join(state.captureDir, "validation.json");
-
-  const failureFile = join(state.captureDir, "failure.json");
-  if (opts.skipCapture) {
-    const manifest = readJsonIfExists<CaptureManifest>(manifestFile);
-    const validation = readJsonIfExists<ValidationResult>(validationFile);
-    if (!manifest) {
-      state.stages.capture = failed(`--skip-capture given but no prior capture at ${manifestFile}`, Date.now() - started);
-      return;
-    }
-    state.manifest = manifest;
-    state.validation = validation;
-    if (existsSync(failureFile)) state.failureFile = failureFile;
-    if (validation && !validation.ok) {
-      // The last capture didn't pass (or never happened: blocked, or it threw): nothing is rebuilt
-      // from it.
-      const reason = notCapturedReason(validation) ?? "it didn't pass";
-      state.stages.capture = failed(`--skip-capture: the last capture can't be reused (${reason}); capture it again`, Date.now() - started);
-      return;
-    }
-    state.stages.capture = skipped("--skip-capture", Date.now() - started);
-    return;
-  }
-
-  // A provider earlier in the run failed, or no order works for it: don't capture a screen built
-  // on missing data, and don't leave an older capture looking current.
-  const blocked = planned?.run.tracker.blocked(planned.item);
-  if (blocked) {
-    planned!.run.tracker.record(wf.walkthrough, false, { appBugIn: blocked.appBugIn });
-    markNotCaptured(state.captureDir, { walkthrough: wf.walkthrough, reason: blocked.reason });
-    markPathsNotCaptured(state.captureDir, wf, blocked.reason);
-    state.blocked = { appBugIn: blocked.appBugIn };
-    state.stages.capture = failed(blocked.reason, Date.now() - started);
-    return;
-  }
-
-  mkdirSync(state.captureDir, { recursive: true });
-  const baseUrl = wf.start?.baseUrl ?? config.app.baseUrl;
-  const storageStatePath = join(config.buildDir, ".aida-session", `storageState-${storageStateKey(baseUrl, wf)}.json`);
-
-  try {
-    // The plan (decision 28) moves a chain member's reset to the start of its chain.
-    const needsDbReset = planned
-      ? planned.item.resetBefore
-      : Boolean(config.database && (wf.validate?.database?.length || wf.paths?.length));
-
-    // Other ways in first (decision 34; capture/paths.ts), as `aida capture` runs them: reset →
-    // path → … → reset → main, so dependants see the main run's data.
-    let pathRun: Awaited<ReturnType<typeof capturePaths>> | undefined;
-    if ((wf.paths ?? []).length === 0) prunePathDirs(state.captureDir, wf);
-    else {
-      pathRun = await capturePaths({
-        walkthrough: wf,
-        config,
-        captureDir: state.captureDir,
-        storageStatePath,
-        personaFor: planned?.run.personaFor,
-        canReset: !opts.noReset && needsDbReset,
-        cannotResetReason: opts.noReset ? "--no-reset was given" : (planned?.item.resetNote ?? "the capture plan doesn't reset before this walkthrough"),
+  const [primary, ...secondary] = state.devices;
+  const resetBefore = slotResetsBefore(wf, config, opts, planned);
+  const blocked = opts.skipCapture ? undefined : planned?.run.tracker.blocked(planned.item);
+  let secondaryReset = false;
+  for (const device of secondary) {
+    const dir = captureDirFor(config.buildDir, wf.walkthrough, device);
+    let outcome: DeviceCaptureOutcome;
+    if (blocked) {
+      markNotCaptured(dir, { walkthrough: wf.walkthrough, reason: blocked.reason });
+      outcome = { stage: failed(blocked.reason) };
+    } else if (opts.skipCapture) {
+      outcome = await runCaptureForDevice(wf, config, dir, device, opts, planned, false, { reset: false, runId: undefined });
+    } else {
+      const plan = planSecondaryCapture(wf, config, {
+        resetBefore,
+        resetAllowed: !opts.noReset && Boolean(planned?.item.resetAllowed),
+        cannotResetReason: opts.noReset ? "--no-reset was given" : planned?.item.resetNote,
       });
+      if (!plan.capture) {
+        markNotCaptured(dir, { walkthrough: wf.walkthrough, reason: plan.reason });
+        outcome = { stage: failed(plan.reason) };
+      } else {
+        // Bracketed by resets, it starts from reset data and gets its own run id (as paths do), so
+        // nothing it makes collides with the primary's; unbracketed (read-only), it shares the
+        // run's id to find what providers made with it.
+        secondaryReset = secondaryReset || plan.reset;
+        outcome = await runCaptureForDevice(wf, config, dir, device, opts, planned, false, {
+          reset: plan.reset,
+          runId: plan.reset ? newRunId() : planned?.run.runId,
+        });
+      }
     }
-
-    if (!opts.noReset && needsDbReset && config.database) {
-      await resetDatabase(config);
+    const isFailed = outcome.stage.status === "failed";
+    state.deviceResults[device] = { ok: !isFailed, ...(isFailed ? { failure: outcome.stage.detail, category: outcome.category } : {}) };
+    if (isFailed && !blocked) {
+      console.warn(`aida build: ${wf.walkthrough}: ${device} capture failed (non-fatal — the ${primary} page still builds): ${outcome.stage.detail}`);
     }
-
-    const captureSettings = resolveCaptureSettings(config.capture);
-    const stabilizeOpts = { threshold: captureSettings.frameDiffThreshold, tolerance: captureSettings.frameDiffTolerance };
-    const { result, frameDiff } = await withFrameStabilization(state.captureDir, stabilizeOpts, () =>
-      runCapture({
-        walkthrough: wf,
-        config,
-        outDir: state.captureDir,
-        storageStatePath,
-        runId: planned?.run.runId,
-        personaFor: planned?.run.personaFor,
-      }),
-    );
-    // Dependants wait on the main run only, which ran last.
-    planned?.run.tracker.record(wf.walkthrough, result.validation.ok, { category: result.failure?.category });
-    // The runner rewrites or removes failure.json on every run, so whatever is there is this run's.
-    if (existsSync(failureFile)) state.failureFile = failureFile;
-    writeFileSync(manifestFile, `${JSON.stringify(result.manifest, null, 2)}\n`);
-    writeFileSync(join(state.captureDir, "run.json"), `${JSON.stringify(result.run, null, 2)}\n`);
-    writeFileSync(validationFile, `${JSON.stringify(result.validation, null, 2)}\n`);
-    let pathNote = "";
-    let pathManifests: CaptureManifest[] = [];
-    if (pathRun) {
-      const { pathDiffs, pathChecks } = comparePathRuns(result, pathRun);
-      recordPathDiffs(state.captureDir, pathDiffs, pathChecks);
-      pathManifests = Object.values(pathRun.manifests);
-      const ran = pathRun.paths.filter((p) => p.skipped === undefined);
-      const failedPaths = ran.filter((p) => !p.ok).map((p) => p.path);
-      const skipped = pathRun.paths.find((p) => p.skipped !== undefined)?.skipped;
-      pathNote = skipped
-        ? `; paths not captured: ${skipped}`
-        : `; paths ${ran.length - failedPaths.length}/${ran.length} passed${failedPaths.length > 0 ? ` (failed: ${failedPaths.join(", ")})` : ""}${pathDiffs.map((d) => `; warning: ${d.message}`).join("")}`;
-    }
-    // Outline drift (M29): quiet without an outline file; never fails the capture.
-    const outlineLine = recordCaptureDrift({ config, walkthrough: wf, manifest: result.manifest, validation: result.validation, pathManifests });
-    if (outlineLine) console.warn(`aida build: ${outlineLine}`);
-    state.manifest = result.manifest;
-    state.validation = result.validation;
-    state.frameDiff = frameDiff;
-    const passed = result.validation.steps.filter((s) => s.ok).length;
-    const frameDiffDetail = `, ${frameDiff.kept} kept / ${frameDiff.changed} changed frames${(result.warnings ?? []).map((w) => `; warning: ${w}`).join("")}${pathNote}`;
-    state.stages.capture = result.validation.ok
-      ? ok(`${passed}/${result.validation.steps.length} steps passed${frameDiffDetail}`)
-      : failed(`${passed}/${result.validation.steps.length} steps passed${frameDiffDetail}`);
-    state.stages.capture.ms = Date.now() - started;
-  } catch (err) {
-    // Classified like `aida capture` does (decision 30), written as this run's failure.json, and
-    // validation.json says it wasn't captured: `--skip-capture` never reuses the older capture.
-    const failure = runLevelFailure(err);
-    planned?.run.tracker.record(wf.walkthrough, false, { category: failure.category });
-    markNotCaptured(state.captureDir, { walkthrough: wf.walkthrough, reason: failure.error, failure, baseUrl });
-    state.failureFile = failureFile;
-    state.stages.capture = failed(failure.error, Date.now() - started);
   }
+
+  const primaryOutcome = await runCaptureForDevice(wf, config, state.captureDir, primary, opts, planned, true, {
+    reset: resetBefore || secondaryReset,
+    runId: planned?.run.runId,
+  });
+  state.stages.capture = primaryOutcome.stage;
+  if (primaryOutcome.manifest) state.manifest = primaryOutcome.manifest;
+  if (primaryOutcome.validation) state.validation = primaryOutcome.validation;
+  if (primaryOutcome.frameDiff) state.frameDiff = primaryOutcome.frameDiff;
+  if (primaryOutcome.failureFile) state.failureFile = primaryOutcome.failureFile;
+  if (primaryOutcome.blocked) state.blocked = primaryOutcome.blocked;
 }
 
 /** `wf.voice?.provider`, falling back to `config.voice?.provider`, falling back to kokoro —
@@ -313,6 +435,91 @@ async function runVoiceStage(wf: Walkthrough, config: ResolvedConfig, state: Wal
   }
 }
 
+/** `wf`'s steps restricted to the ones `device` actually captured (`stepsFor`, decision 40) — a
+ * step named only on another device isn't in this device's own capture manifest, so rendering
+ * its video from the unfiltered walkthrough would throw "capture is missing step". A no-op for
+ * every walkthrough that doesn't use per-step `devices:` (today's default: every step keeps). */
+function walkthroughForDevice(wf: Walkthrough, device: Device): Walkthrough {
+  return { ...wf, steps: stepsFor(wf, device) };
+}
+
+/** Each of `device`'s steps' whole-walkthrough number, and the whole walkthrough's step count —
+ * so the video's chips and transcript number steps as the page, PDF and procedures do, even when
+ * a device-only step is left out of this device's video. */
+function stepNumberingFor(wf: Walkthrough, device: Device): { numbers: number[]; total: number } {
+  return { numbers: stepsFor(wf, device).map((s) => wf.steps.indexOf(s) + 1), total: wf.steps.length };
+}
+
+/** True once the phone capture at `phoneCaptureDir` passed (`usableDeviceCapture`) — read
+ * straight off disk (not `state.deviceResults`) so a render-only run (`--only render`, after an
+ * earlier run's `--only capture`) still finds it, the same way `captureOrVoiceFailed`'s
+ * primary-device check reads `state.validation` regardless of which stages this run selected. */
+function phoneCaptureOk(phoneCaptureDir: string): boolean {
+  return usableDeviceCapture(phoneCaptureDir) !== undefined;
+}
+
+/** Removes a walkthrough's phone render (`<id>.phone.*`, `timeline.phone.json`, `.compose.phone/`,
+ * `segments/{draft,full}.phone/`) from `<videoDir>/<id>/` — when phone is no longer a secondary
+ * device, its capture didn't pass or its render failed — so no stale phone video is staged. */
+export function removePhoneRender(videoDir: string, id: string): void {
+  const dir = join(videoDir, id);
+  if (!existsSync(dir)) return;
+  for (const name of readdirSync(dir)) {
+    if (name.startsWith(`${id}.phone.`) || name === "timeline.phone.json" || name === ".compose.phone") {
+      rmSync(join(dir, name), { recursive: true, force: true });
+    }
+  }
+  for (const quality of ["draft", "full"]) rmSync(join(dir, "segments", `${quality}.phone`), { recursive: true, force: true });
+}
+
+/**
+ * Renders a secondary phone device's own video (M43c, decision 40) next to the primary device's:
+ * `<id>.phone.mp4` + `.phone.srt`/`.phone.vtt`/`.phone.chapters.vtt`/`.phone.transcript.md`.
+ * Never fatal — a phone capture that didn't pass, or a render failure, is recorded on
+ * `state.deviceResults.phone` (same non-fatal pattern as M43a's capture outcome) and logged, but
+ * the primary device's page/video still ship. Path clips are primary-device only (decision 34's
+ * paths are captured on it alone — `runCaptureForDevice`'s `includePaths`), so this never asks
+ * for them.
+ */
+async function runPhoneRenderStage(
+  wf: Walkthrough,
+  config: ResolvedConfig,
+  state: WalkthroughPipelineState,
+  draft: boolean,
+  concurrency: number | undefined,
+  narration: Awaited<ReturnType<typeof loadNarrationBeats>>,
+): Promise<void> {
+  const phoneCaptureDir = captureDirFor(config.buildDir, wf.walkthrough, "phone");
+  if (!phoneCaptureOk(phoneCaptureDir)) {
+    if (!state.deviceResults.phone) {
+      state.deviceResults.phone = { ok: false, failure: "phone capture hasn't passed — not rendering a video from it" };
+    }
+    removePhoneRender(state.videoDir, wf.walkthrough);
+    return;
+  }
+  try {
+    const result = await render(walkthroughForDevice(wf, "phone"), {
+      outDir: state.videoDir,
+      captureDir: phoneCaptureDir,
+      narration,
+      draft,
+      brand: resolveArtifactBrand(config),
+      concurrency,
+      lang: config.lang,
+      device: "phone",
+      fileSuffix: ".phone",
+      pathClips: false,
+      stepNumbering: stepNumberingFor(wf, "phone"),
+    });
+    state.phoneRenderResult = result;
+  } catch (err) {
+    const message = firstLine((err as Error).message ?? String(err));
+    removePhoneRender(state.videoDir, wf.walkthrough);
+    state.deviceResults.phone = { ...(state.deviceResults.phone ?? { ok: true }), render: { ok: false, failure: message } };
+    console.warn(`aida build: ${wf.walkthrough}: phone render failed (non-fatal — the ${state.devices[0]} video still builds): ${message}`);
+  }
+}
+
 async function runRenderStage(
   wf: Walkthrough,
   config: ResolvedConfig,
@@ -323,21 +530,34 @@ async function runRenderStage(
   const started = Date.now();
   try {
     const narration = loadNarrationBeats(state.voiceDir);
-    const result = await render(wf, {
+    const primary = state.devices[0];
+    const result = await render(walkthroughForDevice(wf, primary), {
       outDir: state.videoDir,
       captureDir: state.captureDir,
       narration,
       draft,
       brand: resolveArtifactBrand(config),
       concurrency,
+      lang: config.lang,
+      device: primary,
+      stepNumbering: stepNumberingFor(wf, primary),
     });
     state.renderResult = result;
     const clips = result.clips?.filter((c) => c.mp4) ?? [];
     const clipNote = clips.length > 0 ? ` + ${clips.length} path clip${clips.length === 1 ? "" : "s"}` : "";
+    // A secondary phone device's own video (decision 40, M43c) — never for a phone-primary
+    // walkthrough (there `devices[0]` is already phone, handled above) and never fatal to this
+    // walkthrough's own render stage. Otherwise any older phone render goes.
+    if (state.devices.slice(1).includes("phone")) {
+      await runPhoneRenderStage(wf, config, state, draft, concurrency, narration);
+    } else {
+      removePhoneRender(state.videoDir, wf.walkthrough);
+    }
+    const phoneNote = state.phoneRenderResult ? ` + phone ${state.phoneRenderResult.durationSec.toFixed(1)}s` : "";
     state.stages.render =
-      result.skipped && clips.every((c) => c.skipped)
-        ? skipped(`unchanged (${result.durationSec.toFixed(1)}s${clipNote})`, Date.now() - started)
-        : ok(`${result.durationSec.toFixed(1)}s, ${result.frames} frames${clipNote}`);
+      result.skipped && clips.every((c) => c.skipped) && (!state.phoneRenderResult || state.phoneRenderResult.skipped)
+        ? skipped(`unchanged (${result.durationSec.toFixed(1)}s${clipNote}${phoneNote})`, Date.now() - started)
+        : ok(`${result.durationSec.toFixed(1)}s, ${result.frames} frames${clipNote}${phoneNote}`);
     state.stages.render.ms = Date.now() - started;
   } catch (err) {
     state.stages.render = failed(firstLine((err as Error).message ?? String(err)), Date.now() - started);
@@ -355,8 +575,10 @@ function stripImpact(manifest: CaptureManifest): CaptureManifest {
 }
 
 /** Bumped when what `buildPage()` writes changes shape, so pages cached by an older engine
- * rebuild (M32: print figures in `BuildPageResult.printFigures`, no recap "Good to know"). */
-export const PAGES_LAYOUT_VERSION = "m36-print-figures";
+ * rebuild (M32: print figures in `BuildPageResult.printFigures`, no recap "Good to know";
+ * M43b: `<DeviceShots>`-wrapped steps and secondary-device screenshots, decision 40; then only a
+ * passing secondary capture's shots, frontmatter `devices` from what was produced). */
+export const PAGES_LAYOUT_VERSION = "m43b-device-shots-2";
 
 /** Stable summary of a capture's validation result — ok + per-step ok only, so volatile fields
  * (`ranAt`, per-step `ms`, error text) never affect the hash, but a pass->fail (or fail->pass)
@@ -368,6 +590,25 @@ function stableValidationSummary(validation: ValidationResult | undefined): unkn
     steps: validation.steps.map((s) => ({ id: s.id, ok: s.ok })),
     ...(validation.pathDiffs ? { pathDiffs: validation.pathDiffs.map((d) => d.path) } : {}),
   };
+}
+
+/** Each secondary device's latest capture (decision 40, M43b), hashed the way the primary's is —
+ * a phone capture's own manifest/validation changing (a recapture, a pass<->fail flip) must
+ * invalidate the pages cache exactly as the primary's does, since `buildPage` reads them to
+ * render that device's screenshots and the step's device-only note. */
+function secondaryDevicesHash(devices: Device[], buildDir: string, id: string): unknown {
+  const secondary = devices.slice(1);
+  if (secondary.length === 0) return undefined;
+  return secondary.map((device) => {
+    const dir = captureDirFor(buildDir, id, device);
+    const manifest = readJsonIfExists<CaptureManifest>(join(dir, "manifest.json"));
+    const validation = readJsonIfExists<ValidationResult>(join(dir, "validation.json"));
+    return {
+      device,
+      capture: manifest ? manifestHash(stripImpact(manifest), captureModule as unknown as Record<string, unknown>) : null,
+      validation: stableValidationSummary(validation),
+    };
+  });
 }
 
 /** Each path's latest capture (decision 34), hashed the way the main capture is, for the pages
@@ -392,6 +633,8 @@ export function pagesInputHash(
   pathCaptures?: unknown,
   /** Each path's clip on disk and its "continue at" time (M35): the page embeds them. */
   clipLinks?: unknown,
+  /** Every secondary device's manifest/validation (decision 40, M43b): `secondaryDevicesHash`. */
+  secondaryDevices?: unknown,
 ): string {
   const captureHash = manifestHash(stripImpact(manifest), captureModule as unknown as Record<string, unknown>);
   const textFields = {
@@ -406,7 +649,9 @@ export function pagesInputHash(
     data: wf.data,
     // `blur`/`callouts` decide which frame a print figure may show (pages/focus.ts) and the
     // callout labels drawn, not just the resolved boxes the manifest already carries.
-    steps: wf.steps.map((s) => ({ id: s.id, title: s.title, say: s.say, caption: s.caption, page_text: s.page_text, chapter: s.chapter, blur: s.blur, callouts: s.callouts })),
+    // `devices` (M43b, decision 40): which device(s) a step runs on decides its device-only note
+    // and whether it gets a `<DeviceShots>` wrapper.
+    steps: wf.steps.map((s) => ({ id: s.id, title: s.title, say: s.say, caption: s.caption, page_text: s.page_text, chapter: s.chapter, blur: s.blur, callouts: s.callouts, devices: s.devices })),
     ...(wf.paths ? { paths: wf.paths } : {}),
   };
   const validationSummary = stableValidationSummary(validation);
@@ -421,6 +666,7 @@ export function pagesInputHash(
       ...(roles ? { roles } : {}),
       ...(pathCaptures !== undefined ? { pathCaptures } : {}),
       ...(clipLinks !== undefined && !(Array.isArray(clipLinks) && clipLinks.length === 0) ? { clipLinks } : {}),
+      ...(secondaryDevices !== undefined ? { secondaryDevices } : {}),
     }),
   );
 }
@@ -442,6 +688,7 @@ async function runPagesStage(wf: Walkthrough, config: ResolvedConfig, state: Wal
     config.roles,
     pathCapturesHash(wf, state.captureDir),
     pathClipLinks(state.videoDir, wf),
+    secondaryDevicesHash(state.devices, config.buildDir, wf.walkthrough),
   );
   const cache = readJsonIfExists<{ hash: string; result: BuildPageResult }>(cacheFile);
 
@@ -452,7 +699,14 @@ async function runPagesStage(wf: Walkthrough, config: ResolvedConfig, state: Wal
   }
 
   try {
-    const result = await buildPage(wf, state.captureDir, state.pagesDir, { videoDir: state.videoDir, readers: config.readers, roles: config.roles });
+    const secondaryCaptures = state.devices.slice(1).map((device) => ({ device, captureDir: captureDirFor(config.buildDir, wf.walkthrough, device) }));
+    const result = await buildPage(wf, state.captureDir, state.pagesDir, {
+      videoDir: state.videoDir,
+      readers: config.readers,
+      roles: config.roles,
+      devices: state.devices,
+      secondaryCaptures,
+    });
     state.pageResult = result;
     mkdirSync(join(config.buildDir, wf.walkthrough), { recursive: true });
     writeFileSync(cacheFile, `${JSON.stringify({ hash: inputHash, result }, null, 2)}\n`);
@@ -504,14 +758,15 @@ async function runPdfStage(
     return;
   }
   try {
-    const input = { ...pdfInputFromPage(wf, state.pageResult), publishable };
-    const result = await buildWalkthroughPdf(input, { pdfDir, paper: config.pdf?.paper ?? "A4", brand: resolvePdfBrand(config), siteUrl: config.publish?.siteUrl }, browser);
+    const input = { ...pdfInputFromPage(wf, state.pageResult), publishable, lang: config.lang };
+    const result = await buildWalkthroughPdf(input, { pdfDir, paper: config.pdf?.paper ?? "A4", brand: resolvePdfBrand(config), siteUrl: config.publish?.siteUrl, lang: config.lang }, browser);
     state.pdfResult = result;
     if (result.excluded) {
       state.stages.pdf = skipped("page not publishable — not rendering a PDF from it", Date.now() - started);
       return;
     }
     setPdfFrontmatter(state.pageResult.indexFile, pdfPublicLinks(wf.walkthrough));
+    await runPdfA11yCheck(state, result);
     state.stages.pdf = result.skipped
       ? skipped("unchanged since last build", Date.now() - started)
       : ok(`${result.file}, ${result.cardFile}`);
@@ -519,6 +774,37 @@ async function runPdfStage(
   } catch (err) {
     state.stages.pdf = failed(firstLine((err as Error).message ?? String(err)), Date.now() - started);
   }
+}
+
+/**
+ * The QA stage runs *before* the pdf stage (see `runPdfStage`'s doc comment), so `a11y:pdf`
+ * (qa/a11y.ts, via `runQa`'s `pdf` check) can only run here, once `<id>.pdf`/`<id>.card.pdf`
+ * actually exist. Appended to `state.qaReports`/`qa.json` and, on a problem, flips
+ * `state.stages.qa` to failed too — the general QA stage already finished and reported "ok"
+ * before this PDF even existed, so without this a failed check here would never reach
+ * report.json's `failures` (build/failures.ts's `qaFailures` only reads a "failed" qa stage).
+ *
+ * On a failure, also deletes `<id>.pdf`/`<id>.card.pdf` themselves (review finding
+ * build/pipeline.ts:717): `finalPublishable(state)` only reflects this failure from here on, but
+ * `buildWalkthroughPdf` already wrote both files before this check ran (`runPdfStage`'s doc
+ * comment), and `stagePdfsToHelpApp` copies whatever is on disk in `pdfDir` regardless of
+ * publishable state — without this, an inaccessible PDF would still ship to `public/pdf` this
+ * run even though its page is unpublished. */
+async function runPdfA11yCheck(state: WalkthroughPipelineState, result: PdfBuildResult): Promise<void> {
+  const files = [result.file, result.cardFile].filter((f) => existsSync(f));
+  if (files.length === 0) return;
+  const reports = await Promise.all(
+    files.map((file) => runQa(file, { video: false, captions: false, personalData: false, secrets: false, placeholders: false, altText: false, transcript: false })),
+  );
+  const failedChecks = reports.flatMap((r) => r.checks.filter((c) => !c.ok));
+  if (failedChecks.length === 0) return;
+  deletePdfOutput(result.file);
+  deletePdfOutput(result.cardFile);
+  state.qaReports = [...(state.qaReports ?? []), ...reports];
+  if (state.qaFile) writeFileSync(state.qaFile, `${JSON.stringify({ ok: false, reports: state.qaReports }, null, 2)}\n`);
+  const prior = state.qaProblems ?? 0;
+  state.qaProblems = prior + failedChecks.length;
+  state.stages.qa = failed(`${prior + failedChecks.length} check(s) failed`, state.stages.qa?.ms ?? 0);
 }
 
 /** Copies every file under `pdfDir` into `<helpApp>/public/pdf/` (AGENTS.md principle 12: hosts
@@ -543,6 +829,8 @@ function qaTargets(state: WalkthroughPipelineState): string[] {
   if (existsSync(pageDir)) targets.push(pageDir);
   if (existsSync(videoStepDir)) {
     const id = state.wf.walkthrough;
+    // The secondary phone video is checked on its own (`phoneQaTargets`): its failure drops the
+    // phone media, never this page.
     for (const name of [`${id}.mp4`, `${id}.srt`, `${id}.vtt`, `${id}.chapters.vtt`]) {
       const file = join(videoStepDir, name);
       if (existsSync(file)) targets.push(file);
@@ -556,8 +844,41 @@ function qaTargets(state: WalkthroughPipelineState): string[] {
   return targets;
 }
 
-async function runQaStage(state: WalkthroughPipelineState): Promise<void> {
+/** A secondary phone video and its captions (M43c), when rendered. Same gates as the primary's,
+ * portrait or not — qa/video.ts's checks never assume a fixed resolution/aspect unless a caller
+ * passes `expectedWidth`/`expectedHeight` (this one doesn't). */
+function phoneQaTargets(state: WalkthroughPipelineState): string[] {
+  const id = state.wf.walkthrough;
+  const dir = join(state.videoDir, id);
+  return [`${id}.phone.mp4`, `${id}.phone.srt`, `${id}.phone.vtt`, `${id}.phone.chapters.vtt`].map((n) => join(dir, n)).filter((f) => existsSync(f));
+}
+
+/** QA of the secondary phone video, apart from the walkthrough's own (decision 40: a phone
+ * failure never fails the desktop page). Recorded in `deviceResults.phone.qa`; on a failure the
+ * phone render is removed, so the index stage stages none and the page keeps its desktop video. */
+async function runPhoneQa(state: WalkthroughPipelineState): Promise<void> {
+  const targets = phoneQaTargets(state);
+  if (targets.length === 0) return;
+  const id = state.wf.walkthrough;
+  try {
+    const reports: QaReport[] = [];
+    for (const target of targets) reports.push(await runQa(target));
+    const failedChecks = reports.flatMap((r) => r.checks.filter((c) => !c.ok));
+    state.deviceResults.phone = { ...(state.deviceResults.phone ?? { ok: true }), qa: { ok: failedChecks.length === 0, problems: failedChecks.length } };
+    if (failedChecks.length === 0) return;
+    removePhoneRender(state.videoDir, id);
+    const names = [...new Set(failedChecks.map((c) => c.check))].join(", ");
+    console.warn(`aida build: ${id}: phone video failed QA (${names}) — not published; the ${state.devices[0]} page still builds`);
+  } catch (err) {
+    removePhoneRender(state.videoDir, id);
+    state.deviceResults.phone = { ...(state.deviceResults.phone ?? { ok: true }), qa: { ok: false, problems: 1 } };
+    console.warn(`aida build: ${id}: phone video QA failed to run — not published: ${firstLine((err as Error).message ?? String(err))}`);
+  }
+}
+
+async function runQaStage(state: WalkthroughPipelineState, buildDir: string): Promise<void> {
   const started = Date.now();
+  if (state.devices.slice(1).includes("phone")) await runPhoneQa(state);
   const targets = qaTargets(state);
   if (targets.length === 0) {
     state.stages.qa = failed("nothing to check — pages/render stages did not produce output", Date.now() - started);
@@ -576,8 +897,9 @@ async function runQaStage(state: WalkthroughPipelineState): Promise<void> {
     state.qaProblems = problems;
     // Every check, by name, for report.json's `failures` to point at (`<buildDir>/<id>/qa.json`).
     state.qaReports = reports;
-    state.qaFile = join(state.captureDir, "..", "qa.json");
-    mkdirSync(join(state.captureDir, ".."), { recursive: true });
+    // `<buildDir>/<id>/qa.json` whichever device is primary: `loadBuiltPage` and failures.ts read it there.
+    state.qaFile = join(buildDir, state.wf.walkthrough, "qa.json");
+    mkdirSync(join(buildDir, state.wf.walkthrough), { recursive: true });
     writeFileSync(state.qaFile, `${JSON.stringify({ ok: allOk, reports }, null, 2)}\n`);
     state.stages.qa = allOk ? ok(`${targets.length} output(s) checked`) : failed(`${problems} check(s) failed`);
     state.stages.qa.ms = Date.now() - started;
@@ -680,12 +1002,21 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
   const runFiles = run ? run.plan.walkthroughs.map((p) => run.fileOf(p.id)) : files;
   for (const file of runFiles) checkText(file);
 
+  // Which devices each walkthrough captures on (decision 40): its own `devices` wins, else
+  // config's, else the brief's readers — loaded once, read-only, for every walkthrough this run.
+  const readersBrief = loadBrief(briefPath(config));
   const states: WalkthroughPipelineState[] = runFiles.map((file) => {
     const wf = loadWalkthroughFile(file);
+    const devices = devicesFor(wf, config, readersBrief);
     return {
       file,
       wf,
-      captureDir: join(config.buildDir, wf.walkthrough, "capture"),
+      // The *primary* device's dir — unchanged `<buildDir>/<id>/capture` when desktop is primary
+      // (every desktop-only walkthrough, today's default), so pages/render/pdf keep reading "the"
+      // capture exactly as before, even when the primary is phone (a phone-only walkthrough).
+      captureDir: captureDirFor(config.buildDir, wf.walkthrough, devices[0]),
+      devices,
+      deviceResults: {},
       voiceDir: join(config.buildDir, wf.walkthrough, "voice"),
       videoDir: join(config.outDir, "videos"),
       pagesDir: join(config.outDir, "pages"),
@@ -785,7 +1116,7 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
   for (const state of states) {
     // Text problems are QA problems found early: the qa stage fails with them whatever ran.
     if (textFailed(state)) state.stages.qa = failed(`${state.textProblems.length} text problem(s) (captions, chapter titles, unresolved {{placeholders}}) (aida validate shows them too)`);
-    else if (stages.has("qa")) await runQaStage(state);
+    else if (stages.has("qa")) await runQaStage(state, config.buildDir);
     else state.stages.qa = notSelected();
   }
 
@@ -822,19 +1153,19 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
           .map((id) => {
             const selected = states.find((s) => s.wf.walkthrough === id);
             if (selected?.pageResult) {
-              return { ...pdfInputFromPage(selected.wf, selected.pageResult), publishable: finalPublishable(selected) };
+              return { ...pdfInputFromPage(selected.wf, selected.pageResult), publishable: finalPublishable(selected), lang: config.lang };
             }
             try {
               const cached = loadBuiltPage(config, id);
               if (!cached) return undefined;
               const file = findWalkthroughFiles(config.walkthroughsDir, [id])[0];
-              return pdfInputFromPage(loadWalkthroughFile(file), cached);
+              return { ...pdfInputFromPage(loadWalkthroughFile(file), cached), lang: config.lang };
             } catch {
               return undefined;
             }
           })
           .filter((i): i is NonNullable<typeof i> => Boolean(i));
-        await buildManualPdf(allInputs, { pdfDir, paper: config.pdf?.paper ?? "A4", brand: resolvePdfBrand(config), siteUrl: config.publish?.siteUrl }, browser);
+        await buildManualPdf(allInputs, { pdfDir, paper: config.pdf?.paper ?? "A4", brand: resolvePdfBrand(config), siteUrl: config.publish?.siteUrl, lang: config.lang }, browser);
       } finally {
         await browser.close();
       }
@@ -919,6 +1250,15 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
         productName: config.brand?.name,
         appBrief: brief.artifacts,
         outlineOrder: outlineOrder(config),
+        // Whether each walkthrough's phone video (M43c) is current: phone is a secondary device
+        // and its capture passed. A failed phone render or QA already removed the files.
+        phoneVideos: Object.fromEntries(
+          allWalkthroughs.map((wf) => {
+            const devices = states.find((s) => s.wf.walkthrough === wf.walkthrough)?.devices ?? devicesFor(wf, config, readersBrief);
+            const current = devices.slice(1).includes("phone") && phoneCaptureOk(captureDirFor(config.buildDir, wf.walkthrough, "phone"));
+            return [wf.walkthrough, current];
+          }),
+        ),
       });
       indexResult = { ...result, ms: Date.now() - started };
       indexStage = ok(`${result.pageCount} page(s) indexed -> ${result.searchIndexFile}`);
@@ -943,8 +1283,15 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
       stages: state.stages,
       voice: state.voiceReport,
       render: state.renderResult ? { durationSec: state.renderResult.durationSec, wallTimeMs: state.renderResult.wallTimeMs } : undefined,
+      ...(state.phoneRenderResult
+        ? { phoneRender: { durationSec: state.phoneRenderResult.durationSec, wallTimeMs: state.phoneRenderResult.wallTimeMs } }
+        : {}),
       qa: state.stages.qa ? { ok: state.stages.qa.status !== "failed", problems: text ? state.textProblems.length : (state.qaProblems ?? 0) } : undefined,
       file: state.file,
+      // Devices (decision 40): quiet for a desktop-only walkthrough (today's default), so
+      // report.json gains nothing new for anyone who hasn't opted into phone capture.
+      ...(state.devices.length > 1 || state.devices[0] !== "desktop" ? { devices: state.devices } : {}),
+      ...(Object.keys(state.deviceResults).length > 0 ? { deviceResults: state.deviceResults } : {}),
       ...(failures.length > 0 ? { failures } : {}),
     };
   });

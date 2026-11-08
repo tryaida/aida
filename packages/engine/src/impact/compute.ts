@@ -67,7 +67,7 @@ export async function computeAffected(opts: ComputeAffectedOptions): Promise<Aff
   const allThreshold = impactConfig?.allThreshold ?? DEFAULT_ALL_THRESHOLD;
 
   const changedFiles = getChangedFiles(opts.appRepo, opts.base, head, { includeWorkingTree: opts.includeWorkingTree });
-  const walkthroughs = listWalkthroughs(opts.config.walkthroughsDir, opts.config.buildDir);
+  const walkthroughs = listWalkthroughs(opts.config.walkthroughsDir, opts.config.buildDir, opts.config);
 
   const reasons = new Map<string, string[]>();
 

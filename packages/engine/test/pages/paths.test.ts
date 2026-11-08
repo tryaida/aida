@@ -102,7 +102,7 @@ describe("pages: other ways to do this", { timeout: 60_000 }, () => {
     expect(section).toContain("### From the attendee's page");
     expect(section).toContain("Use this when the attendee pays for several bookings at once.");
     expect(section).toContain("#### 1. Open the attendee's payments");
-    expect(section).toContain("![Open the attendee's payments](screenshots/paths/from-attendee-step-01.png)");
+    expect(section).toContain("![Screenshot of Open the attendee's payments: select Pay for attendee.](screenshots/paths/from-attendee-step-01.png)");
     expect(section).toContain("Then continue from [step 2 (Save the payment)](#2-save-the-payment).");
     // Main screenshots stay the main steps only; the path's sit apart.
     expect(result.screenshots).toHaveLength(2);

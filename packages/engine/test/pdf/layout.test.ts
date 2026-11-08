@@ -10,6 +10,7 @@ import {
   printMode,
   stepLayout,
   SPLIT_TEXT_MAX_CHARS,
+  PORTRAIT_SHOT_MM,
 } from "../../src/pdf/html.js";
 import { guideUrl, qrSvg } from "../../src/pdf/qr.js";
 import { fontFaceCss, parseFontFaces } from "../../src/pdf/fonts.js";
@@ -65,6 +66,16 @@ describe("stepLayout", () => {
     expect(stepLayout(figure(), SPLIT_TEXT_MAX_CHARS + 1)).toBe("stack");
     expect(stepLayout(figure({ newScreen: true }), 80)).toBe("stack");
     expect(stepLayout(undefined, 80)).toBe("stack");
+  });
+
+  // M43b (decision 40): a portrait (phone) figure always sits beside the text, even full-screen
+  // (newScreen) or long text — stacked, the desktop width formula (maxH * aspect) would print it
+  // as a narrow, near-unreadable sliver.
+  it("always puts a portrait (phone) figure beside the text, never stacked", () => {
+    const phone = figure({ viewport: { width: 412, height: 839 }, crop: undefined, cropBox: undefined });
+    expect(stepLayout(phone, 80)).toBe("split");
+    expect(stepLayout(phone, SPLIT_TEXT_MAX_CHARS + 1)).toBe("split");
+    expect(stepLayout({ ...phone, newScreen: true }, 80)).toBe("split");
   });
 });
 
@@ -156,6 +167,32 @@ describe("buildPageHtml layout", () => {
     expect(html).not.toContain("screenshots/step-02.png");
     expect(html).toContain('class="ring"');
     expect(html).toMatch(/class="pin"[^>]*>2</);
+  });
+
+  // M42a: the figure carries the site image's own alt text (pages/alt-text.ts), not `alt=""`.
+  it("carries the markdown image's alt text into the print figure's <img>", () => {
+    const md = MARKDOWN_ONE_PART.replace(
+      "Click **New order**.",
+      "Click **New order**.\n\n![Screenshot of the orders screen: click New order.](screenshots/step-02.png)",
+    );
+    const html = buildPageHtml(pageInput({ markdown: md, figures: [figure()] }));
+    expect(html).toContain('alt="Screenshot of the orders screen: click New order."');
+    expect(html).not.toContain('alt=""');
+  });
+
+  // M43b (decision 40): a phone-primary walkthrough's figures are portrait — split layout at a
+  // fixed, legible width, a narrowed split column, never the desktop stack-width sliver.
+  it("prints a portrait (phone) figure split, at the fixed portrait width, in a narrowed column", () => {
+    const md = MARKDOWN_ONE_PART.replace("Click **New order**.", "Click **New order**.\n\n![New order](screenshots/step-02.png)");
+    const phoneFigure = figure({ viewport: { width: 412, height: 839 }, crop: "/tmp/acme/print/step-02.crop.png", cropBox: { x: 6, y: 300, w: 400, h: 461 } });
+    const html = buildPageHtml(pageInput({ markdown: md, figures: [phoneFigure] }));
+    expect(html).toContain('<div class="step split portrait">');
+    expect(html).toContain(`width:${PORTRAIT_SHOT_MM}mm`);
+  });
+
+  it("`<html lang>` defaults to en and follows PdfPageInput.lang", () => {
+    expect(buildPageHtml(pageInput())).toMatch(/<html lang="en">/);
+    expect(buildPageHtml(pageInput({ lang: "fr" }))).toMatch(/<html lang="fr">/);
   });
 });
 

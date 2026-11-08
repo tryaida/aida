@@ -3,9 +3,23 @@ import { TargetSchema, BoxSchema } from "./target.js";
 import { ActionSchema, type Action } from "./action.js";
 import { parseDoString } from "./parse-do.js";
 import { sectionProblems } from "./placement.js";
-import type { Step, Walkthrough, WalkthroughPath } from "./types.js";
+import type { Device, Step, Walkthrough, WalkthroughPath } from "./types.js";
 
 const ViewportSchema = z.object({ width: z.number(), height: z.number() }).strict();
+
+const DeviceSchema = z.enum(["desktop", "phone"]);
+
+/** A `devices:` list (walkthrough or step): at least one, no duplicates, no unknown device. */
+const DevicesListSchema = z
+  .array(DeviceSchema)
+  .min(1, "devices needs at least one device (desktop, phone), or leave it out")
+  .superRefine((devices, ctx) => {
+    const seen = new Set<string>();
+    for (const [i, d] of devices.entries()) {
+      if (seen.has(d)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [i], message: `"${d}" is listed twice` });
+      seen.add(d);
+    }
+  });
 
 const PersonaSchema = z
   .object({
@@ -130,6 +144,7 @@ const RawStepSchema = z
     hold: z.number().min(0, "hold must be 0 or more seconds").optional(),
     callouts: z.array(CalloutSchema).optional(),
     blur: z.array(BlurBoxSchema).optional(),
+    devices: DevicesListSchema.optional(),
     actions: z.array(ActionSchema).optional(),
   })
   .strict()
@@ -156,6 +171,8 @@ const RawSetupStepSchema = z
     do: z.union([z.string(), z.array(z.string())]).optional(),
     check: z.union([z.string(), z.array(z.string())]).optional(),
     actions: z.array(ActionSchema).optional(),
+    // Only on these devices (decision 40): a phone layout can need its own setup clicks.
+    devices: DevicesListSchema.optional(),
     // Accepted only so the refinement below can explain why they're not allowed.
     chapter: z.unknown().optional(),
     say: z.unknown().optional(),
@@ -296,6 +313,9 @@ export const WalkthroughDocSchema = z
         for (const message of sectionProblems(value)) ctx.addIssue({ code: z.ZodIssueCode.custom, message });
       })
       .optional(),
+    // Devices this walkthrough is captured and shown on (decision 40); first = primary. Unset:
+    // resolved from config, then the brief (devices/index.ts `devicesFor()`).
+    devices: DevicesListSchema.optional(),
     verifiedAgainst: VerifiedAgainstSchema.optional(),
     start: StartSchema.optional(),
     data: z
@@ -328,6 +348,7 @@ export const WalkthroughDocSchema = z
   .strict()
   .superRefine((doc, ctx) => {
     checkPaths(doc, ctx);
+    checkDevices(doc, ctx);
     // `intro` and `outro` name the title cards' narration beats (main video and each path clip).
     const reserved = (id: string | undefined, path: (string | number)[]) => {
       if (id !== undefined && RESERVED_STEP_IDS.has(id)) {
@@ -428,6 +449,43 @@ function checkPaths(
 }
 
 
+/**
+ * Cross-checks `devices` against the steps (decision 40): a step's `devices` must be a subset of
+ * the walkthrough's own (when the walkthrough declares one — a step can't restrict itself to a
+ * device the walkthrough never captures), and every device the walkthrough declares needs at
+ * least one step that actually runs on it (a device with no step would capture nothing for it).
+ * Only checked when the walkthrough declares `devices` itself: with none set here, the actual
+ * device list comes from config/brief at build time, which this schema can't see.
+ */
+function checkDevices(
+  doc: { devices?: Device[]; steps: { devices?: Device[] }[] },
+  ctx: z.RefinementCtx,
+): void {
+  const declared = doc.devices;
+  if (!declared) return;
+  doc.steps.forEach((step, i) => {
+    for (const d of step.devices ?? []) {
+      if (!declared.includes(d)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["steps", i, "devices"],
+          message: `step devices includes "${d}", which isn't in the walkthrough's devices (${declared.join(", ")})`,
+        });
+      }
+    }
+  });
+  for (const d of declared) {
+    const hasStep = doc.steps.some((s) => !s.devices || s.devices.includes(d));
+    if (!hasStep) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["devices"],
+        message: `devices lists "${d}", but no step runs on it (every step's \`devices:\` excludes it) — it would capture nothing`,
+      });
+    }
+  }
+}
+
 /** Actions that prove something is on screen: what a path without `joins` must end with. */
 export const CHECK_ACTIONS: ReadonlySet<string> = new Set(["expect", "waitFor", "waitForUrl"]);
 
@@ -468,6 +526,7 @@ export function rawStepToStep(raw: RawStep): Step {
     hold: raw.hold,
     callouts: raw.callouts,
     blur: raw.blur,
+    devices: raw.devices,
     actions,
   };
 }
@@ -496,6 +555,7 @@ export function docToWalkthrough(doc: WalkthroughDoc): Walkthrough {
     product: doc.product,
     for: doc.for,
     ...(doc.section !== undefined ? { section: doc.section } : {}),
+    ...(doc.devices !== undefined ? { devices: doc.devices } : {}),
     verifiedAgainst: doc.verifiedAgainst,
     start: doc.start,
     data: doc.data,
@@ -506,7 +566,7 @@ export function docToWalkthrough(doc: WalkthroughDoc): Walkthrough {
       ? {
           setup: {
             ...(doc.setup.as !== undefined ? { as: doc.setup.as } : {}),
-            steps: doc.setup.steps.map((raw) => rawStepToStep({ id: raw.id, title: raw.title, do: raw.do, check: raw.check, actions: raw.actions })),
+            steps: doc.setup.steps.map((raw) => rawStepToStep({ id: raw.id, title: raw.title, do: raw.do, check: raw.check, actions: raw.actions, devices: raw.devices })),
           },
         }
       : {}),

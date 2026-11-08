@@ -25,16 +25,20 @@ build outputs and aren't committed; rebuild them with `aida build`.
 | `change-your-email` | Organizers | 4 | New address, confirmed with the emailed code |
 | `email-notifications` | Organizers | 2 | Shows a "new response" email (mocked), turns it off |
 | `change-your-name` | Organizers | 2 | The name shown on your polls |
-| `vote-on-a-poll` | Participants (signed out) | 5 | Marks dates on an invite link, adds a name, saves |
-| `change-your-answers` | Participants (signed out) | 4 | Edits an earlier answer (set up unrecorded first) |
-| `add-a-note` | Participants (signed out) | 4 | A note only the organizer sees |
-| `delete-your-answer` | Participants (signed out) | 3 | Removes an earlier answer |
+| `vote-on-a-poll` | Participants (signed out) | 7 | Marks dates on an invite link, adds a name, saves; also captured on a phone (two steps differ there) |
+| `change-your-answers` | Participants (signed out) | 7 | Edits an earlier answer (set up unrecorded first) |
+| `add-a-note` | Participants (signed out) | 5 | A note only the organizer sees |
+| `delete-your-answer` | Participants (signed out) | 4 | Removes an earlier answer |
 | `add-a-comment` | Participants (signed out) | 3 | Leaves a comment on a poll |
 
-All 23 pass capture against a production build with the seeded demo data, and each one that
-saves data checks the database afterwards (`validate.database`). `app-brief.md` is the brief the
-help chat answers from, written from Rallly's own `apps/docs`. `proof.png` is the brand proof
-sheet.
+All 23 pass capture against a production build with the seeded demo data, and each one that saves
+data checks the database afterwards (`validate.database`). `app-brief.md` is the brief the help chat
+answers from, written from Rallly's own `apps/docs`. Its participants use phones as well as
+computers (`devices`), so their walkthroughs are also captured at a phone size: `vote-on-a-poll` and
+the other participant walkthroughs show how a step (or a `setup:` step) that works differently on a
+phone is split with `devices: [desktop]` / `devices: [phone]`: the phone layout votes with a Yes /
+If need be / No radio group under each date instead of the desktop grid. `proof.png` is the brand
+proof sheet.
 
 ## Run it yourself
 

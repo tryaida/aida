@@ -28,4 +28,5 @@ export * from "./theme/index.js";
 export * from "./safety/index.js";
 export * from "./states/index.js";
 export * from "./outline/index.js";
+export * from "./devices/index.js";
 export { convertPlaywrightFile, type PlaywrightDraft } from "./walkthrough/convert-playwright.js";

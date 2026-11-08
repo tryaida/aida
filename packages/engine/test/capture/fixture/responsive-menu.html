@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- A real responsive app declares this; without it, a mobile browser's default layout
+         viewport (~980px) never matches a max-width media query at all. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Responsive menu fixture</title>
+    <style>
+      body { margin: 0; font-family: sans-serif; }
+      #menu-button { display: none; }
+      #sidebar { display: block; }
+      #mobile-nav { display: none; }
+      /* Phone-sized viewport (config.phone's default is 412px wide): the sidebar link moves
+         behind a menu button, matching a real app's responsive nav. */
+      @media (max-width: 600px) {
+        #menu-button { display: inline-block; }
+        #sidebar { display: none; }
+        #mobile-nav.open { display: block; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <button type="button" id="menu-button">Open menu</button>
+      <h1>App</h1>
+    </header>
+    <nav id="sidebar">
+      <a href="/success.html" id="reports-link">Reports</a>
+    </nav>
+    <nav id="mobile-nav" aria-label="Mobile navigation">
+      <a href="/success.html" id="reports-link-mobile">Reports</a>
+    </nav>
+    <main>
+      <h2>Dashboard</h2>
+      <p>Welcome</p>
+    </main>
+    <script>
+      document.getElementById("menu-button").addEventListener("click", function () {
+        document.getElementById("mobile-nav").classList.toggle("open");
+      });
+    </script>
+  </body>
+</html>

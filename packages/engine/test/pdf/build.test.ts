@@ -1,11 +1,14 @@
 import { mkdtemp, rm } from "node:fs/promises";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { PDFDocument, PDFName, PDFString } from "pdf-lib";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Browser } from "playwright";
 import { buildManualPdf, buildWalkthroughPdf, fontState, walkthroughHash } from "../../src/pdf/build.js";
 import { pdfInputHash, writeCacheSidecar } from "../../src/pdf/cache.js";
+import { launchBrowser } from "../../src/pdf/render.js";
+import { checkPdfAccessibility } from "../../src/qa/a11y.js";
 import type { PdfPageInput } from "../../src/pdf/types.js";
 
 const dirs: string[] = [];
@@ -147,5 +150,44 @@ describe("fontState / walkthroughHash", () => {
     const cached = walkthroughHash(input(), "A4", brand, undefined, { ...brand, fontFaceCss: "@font-face { x }" });
     expect(offline).not.toBe(cached);
   });
+});
+
+// M42a (decision 39): a real Chromium render, so the actual bytes `applyPdfMetadata` writes are
+// checked, not just the HTML string going in.
+describe("accessibility (M42a)", () => {
+  it("writes a tagged <id>.pdf and <id>.card.pdf with /Lang and a Title", async () => {
+    const pdfDir = await tmpDir("aida-pdf-a11y-");
+    const browser = await launchBrowser();
+    try {
+      const result = await buildWalkthroughPdf(input({ lang: "es" }), { pdfDir, paper: "A4" }, browser);
+      expect(result.excluded).toBe(false);
+      expect(result.skipped).toBe(false);
+      const pageCheck = await checkPdfAccessibility(result.file);
+      expect(pageCheck.ok, pageCheck.problems.join("; ")).toBe(true);
+      const cardCheck = await checkPdfAccessibility(result.cardFile);
+      expect(cardCheck.ok, cardCheck.problems.join("; ")).toBe(true);
+
+      const doc = await PDFDocument.load(readFileSync(result.file));
+      expect(doc.getTitle()).toBe(input().title);
+    } finally {
+      await browser.close();
+    }
+  }, 30_000);
+
+  it("sets manual.pdf's Title/Lang/Author metadata, even though the page merge drops tags", async () => {
+    const pdfDir = await tmpDir("aida-pdf-a11y-manual-");
+    const browser = await launchBrowser();
+    try {
+      const result = await buildManualPdf([input()], { pdfDir, paper: "A4", lang: "fr", brand: { name: "Acme" } }, browser);
+      expect(result.skipped).toBe(false);
+      const doc = await PDFDocument.load(readFileSync(result.file));
+      expect(doc.getTitle()).toBe("Help guide");
+      expect(doc.getAuthor()).toBe("Acme");
+      const lang = doc.catalog.lookup(PDFName.of("Lang"));
+      expect(lang instanceof PDFString && lang.decodeText()).toBe("fr");
+    } finally {
+      await browser.close();
+    }
+  }, 30_000);
 });
 

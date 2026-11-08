@@ -326,7 +326,7 @@ describe("pages and PDFs", { timeout: 60_000 }, () => {
     const mdx = readFileSync(result.indexFile, "utf8");
     const section = mdx.slice(mdx.indexOf("### From the attendee's page"));
     expect(section).toContain(
-      '<VideoEmbed src={"/videos/record-payment/record-payment.path-from-attendee.mp4"} vtt={"/videos/record-payment/record-payment.path-from-attendee.vtt"} title={"From the attendee\'s page"} />',
+      '<VideoEmbed src={"/videos/record-payment/record-payment.path-from-attendee.mp4"} vtt={"/videos/record-payment/record-payment.path-from-attendee.vtt"} transcript={"/videos/record-payment/record-payment.path-from-attendee.transcript.md"} title={"From the attendee\'s page"} />',
     );
     expect(section).toContain("Watch the rest from [step 2 in the main video (0:42)](/videos/record-payment/record-payment.mp4#t=42.31).");
     expect(section.indexOf("<VideoEmbed")).toBeLessThan(section.indexOf("#### 1."));

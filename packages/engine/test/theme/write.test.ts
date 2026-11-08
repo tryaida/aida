@@ -77,12 +77,84 @@ describe("brandThemeVars / renderBrandCss", () => {
     expect(d["--color-fd-background"]).toBeDefined();
     expect(d["--color-fd-background"]).not.toBe(l["--color-fd-background"]);
     expect(contrastRatio(d["--color-fd-background"], "#000")!).toBeLessThan(1.5);
-    expect(d["--color-fd-foreground"]).toBeUndefined(); // fumadocs' light-on-dark default stays
+    // Set explicitly: the light `:root` value would otherwise win over fumadocs' own `.dark` one.
+    expect(contrastRatio(d["--color-fd-foreground"], d["--color-fd-background"])!).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("never lets a light-only text colour leak into dark mode (the same element carries both)", () => {
+    // A brand read from a light-only app: foreground, muted and border set, nothing for dark.
+    const d = vars(brandThemeVars({ primaryColor: "#4f46e5", colors: { foreground: "#27272a", muted: "#f4f4f5", border: "#e4e4e7" } }).dark);
+    expect(d["--color-fd-foreground"]).toBeDefined();
+    expect(contrastRatio(d["--color-fd-foreground"], "hsl(0 0% 7.04%)")).toBeGreaterThanOrEqual(4.5);
+    expect(d["--color-fd-muted"]).toBeDefined();
+    expect(d["--color-fd-border"]).toBeDefined();
+  });
+
+  it("holds default muted text to 4.5:1 on fumadocs' muted and secondary fills, light and dark", () => {
+    const { light, dark } = brandThemeVars({ primaryColor: "#4f46e5" });
+    const l = vars(light)["--color-fd-muted-foreground"];
+    const k = vars(dark)["--color-fd-muted-foreground"];
+    for (const fill of ["hsl(0 0% 96%)", "hsl(0 0% 94.7%)", "hsl(0 0% 96.1%)", "hsl(0 0% 93.1%)"]) expect(contrastRatio(l, fill)).toBeGreaterThanOrEqual(4.5);
+    for (const fill of ["hsl(0 0% 7.04%)", "hsl(0 0% 9.8%)", "hsl(0 0% 12.9%)", "hsl(0 0% 18%)"]) expect(contrastRatio(k, fill)).toBeGreaterThanOrEqual(4.5);
   });
 
   it("replaces an unreadable configured primary foreground", () => {
     const l = vars(brandThemeVars({ primaryColor: "#fde047", colors: { primaryForeground: "#ffffff" } }).light);
     expect(contrastRatio(l["--brand-primary-foreground"], "#fde047")!).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("nudges an unreadable configured muted-foreground to 4.5:1 against background and card, and notes it", () => {
+    const { light, notes } = brandThemeVars({ colors: { background: "#ffffff", card: "#fafafa", mutedForeground: "#e5e5e5" } });
+    const l = vars(light);
+    expect(contrastRatio(l["--color-fd-muted-foreground"], "#ffffff")!).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(l["--color-fd-muted-foreground"], "#fafafa")!).toBeGreaterThanOrEqual(4.5);
+    expect(notes.some((n) => n.includes("muted-foreground"))).toBe(true);
+  });
+
+  it("nudges an unreadable configured dark muted-foreground against the dark canvas and card", () => {
+    const { dark, notes } = brandThemeVars({
+      primaryColor: "#1e3a8a",
+      colors: { background: "#ffffff" },
+      dark: { background: "#0a0a0a", card: "#171717", mutedForeground: "#3a3a3a" },
+    });
+    const d = vars(dark);
+    expect(contrastRatio(d["--color-fd-muted-foreground"], "#0a0a0a")!).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(d["--color-fd-muted-foreground"], "#171717")!).toBeGreaterThanOrEqual(4.5);
+    expect(notes.some((n) => n.includes("muted-foreground (dark)"))).toBe(true);
+  });
+
+  it("leaves an already-readable configured muted-foreground alone (no note)", () => {
+    const { light, notes } = brandThemeVars({ colors: { background: "#ffffff", mutedForeground: "#595959" } });
+    const l = vars(light);
+    expect(l["--color-fd-muted-foreground"]).toBe("#595959");
+    expect(notes.some((n) => n.includes("muted-foreground"))).toBe(false);
+  });
+
+  it("always emits a muted-foreground, adjusted for AA, even when none is configured (fumadocs' own default fails 4.5:1)", () => {
+    const { light, dark } = brandThemeVars({ primaryColor: "#1e3a8a" });
+    const l = vars(light);
+    const d = vars(dark);
+    expect(l["--color-fd-muted-foreground"]).toBeDefined();
+    expect(d["--color-fd-muted-foreground"]).toBeDefined();
+    // fumadocs' own default (hsl(0 0% 45.1%)) is 4.34:1 on the page and 4.22:1 on a card —
+    // under WCAG AA — so the emitted value has to differ from it.
+    expect(l["--color-fd-muted-foreground"]).not.toBe("hsl(0 0% 45.1%)");
+    const lightBg = "hsl(0 0% 96%)";
+    const lightCard = "hsl(0 0% 94.7%)";
+    expect(contrastRatio(l["--color-fd-muted-foreground"]!, lightBg)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(l["--color-fd-muted-foreground"]!, lightCard)).toBeGreaterThanOrEqual(4.5);
+    const darkBg = "hsl(0 0% 7.04%)";
+    const darkCard = "hsl(0 0% 9.8%)";
+    expect(contrastRatio(d["--color-fd-muted-foreground"]!, darkBg)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(d["--color-fd-muted-foreground"]!, darkCard)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("the real fumadocs card default (not the page background) is the contrast surface when no card is configured", () => {
+    // A primary that's readable as text on the 96%-light page background but not on fumadocs'
+    // slightly darker 94.7% default card would, before the fix, pass here unadjusted.
+    const { light } = brandThemeVars({ primaryColor: "hsl(0 0% 93%)" });
+    const l = vars(light);
+    expect(contrastRatio(l["--brand-primary-text"]!, "hsl(0 0% 94.7%)")).toBeGreaterThanOrEqual(4.5);
   });
 
   it("renders deterministic CSS with no @import and the template's variable names", () => {
@@ -129,11 +201,13 @@ describe("writeHelpAppTheme", () => {
       icon: "/brand/icon.png",
       fontUrl: ACME.fontUrl,
       style: "bold", // 10px corners, no shadow reading: the default preset (M34)
+      lang: "en", // ACME sets no `lang` — DEFAULT_LANG
     });
     expect(JSON.parse(readFileSync(join(helpApp, "public", "brand", "theme.json"), "utf8"))).toEqual({
       name: "Acme Events",
       primary: "hsl(235 55% 42%)",
       primaryForeground: "hsl(0 0% 100%)",
+      primaryText: "hsl(235 55% 42%)", // already >= 4.5:1 on the widget's own white panel
       logo: "/brand/logo.png",
       fontFamily: `"Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`,
     });
@@ -192,7 +266,7 @@ describe("writeHelpAppTheme", () => {
   it("writes defaults for a config with no brand", () => {
     const configDir = tmpDir();
     writeHelpAppTheme({ configDir }, configDir);
-    expect(JSON.parse(readFileSync(join(configDir, "lib", "brand.json"), "utf8"))).toEqual({ name: "Help", logo: null, logoDark: null, icon: null, fontUrl: null, style: "bold" });
+    expect(JSON.parse(readFileSync(join(configDir, "lib", "brand.json"), "utf8"))).toEqual({ name: "Help", logo: null, logoDark: null, icon: null, fontUrl: null, style: "bold", lang: "en" });
     expect(JSON.parse(readFileSync(join(configDir, "public", "brand", "theme.json"), "utf8")).fontFamily).toBeNull();
   });
 

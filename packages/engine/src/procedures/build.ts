@@ -2,14 +2,17 @@
 // (build-plan.md M15 step 1; scope.md "Agent connector (MCP server)" `get_procedure`). One
 // procedure per walkthrough whose page passed this run — never a walkthrough that failed, so an
 // agent is never handed steps that weren't actually seen working (scope.md "Truthfulness").
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { copyFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { displayWalkthrough, libraryPlacement, pathWalkthrough, type Walkthrough } from "../walkthrough/index.js";
+import { displayWalkthrough, libraryPlacement, pathWalkthrough, type Device, type Walkthrough } from "../walkthrough/index.js";
 import type { CaptureManifest, ValidationResult } from "../capture/index.js";
+import { usableDeviceCapture } from "../capture/secondary.js";
+import { alignManifestToSteps } from "../capture/align.js";
 import { readPathCaptures } from "../capture/path-files.js";
 import { stripMarkdown } from "../index-search/index.js";
 import { pathScreenshotFile, readerNameForRole, screenshotFile, type RoleNames } from "../pages/content.js";
+import { secondaryScreenshotFile } from "../pages/device-shots.js";
 import { personaRole } from "../walkthrough/persona.js";
 import { stepInstruction } from "../walkthrough/describe.js";
 import type { BuildProceduresResult, Procedure, ProcedurePath, ProcedureStep } from "./types.js";
@@ -58,32 +61,52 @@ export function buildProcedure(
   opts: { pagesDir?: string; videoDir?: string; publicDir?: string; lastChecked?: string; readerNames?: ReaderNames },
 ): Procedure | undefined {
   wf = displayWalkthrough(wf);
-  const manifest = readJsonIfExists<CaptureManifest>(join(captureDir, "manifest.json"));
-  const validation = readJsonIfExists<ValidationResult>(join(captureDir, "validation.json"));
-  if (!manifest || !validation?.ok) return undefined;
+  const usable = usableDeviceCapture(captureDir);
+  if (!usable) return undefined;
+  const { manifest, validation } = usable;
+  const primary: Device = manifest.device ?? "desktop";
 
   const id = wf.walkthrough;
   const sceneStarts = readSceneStarts(opts.videoDir, id);
 
   const steps: ProcedureStep[] = [];
   const impactRoutes = new Set<string>();
+  // Aligned by `stepIndex`, not array position — a device-only step (M43b `devices:`) is absent
+  // from `manifest.steps` entirely, so position `i` isn't this walkthrough step's own entry once
+  // any step is device-only.
+  const aligned = alignManifestToSteps(manifest.steps, wf.steps.length);
   for (let i = 0; i < wf.steps.length; i++) {
     const step = wf.steps[i];
-    const mStep = manifest.steps[i];
-    const vStep = validation.steps[i];
-    if (!mStep || (vStep && !vStep.ok)) continue; // never hand an agent a step that didn't pass
-
+    const a = aligned[i];
     const n = i + 1;
+    const deviceOnly = step.devices && step.devices.length > 0 ? { devices: step.devices } : {};
+    if (!a && step.devices && !step.devices.includes(primary)) {
+      // A step the primary device never runs (a phone-only "Open the menu"): listed only when a
+      // secondary device ran it — the page rendered its screenshot from that device's capture,
+      // which passed (pages/build.ts uses only a passing one), so it's verified.
+      if (!opts.pagesDir || !opts.publicDir) continue;
+      const src = join(opts.pagesDir, id, secondaryScreenshotFile("phone", n));
+      const phoneScreenshot = publishScreenshot(src, id, `phone-step-${String(n).padStart(2, "0")}.png`, opts.publicDir);
+      if (!phoneScreenshot) continue;
+      steps.push({ n, title: step.title ?? `Step ${n}`, instruction: instructionFor(step, wf.data), phoneScreenshot, ...deviceOnly });
+      continue;
+    }
+    const vStep = a ? validation.steps[a.index] : undefined;
+    if (!a || (vStep && !vStep.ok)) continue; // never hand an agent a step that didn't pass
+    const mStep = a.mStep;
+
     let screenshot: string | undefined;
     if (mStep.doc.image && opts.publicDir && opts.pagesDir) {
       const src = join(opts.pagesDir, id, screenshotFile(n));
-      if (existsSync(src)) {
-        const destRel = join("screenshots", id, `step-${String(n).padStart(2, "0")}.png`);
-        const dest = join(opts.publicDir, destRel);
-        mkdirSync(dirname(dest), { recursive: true });
-        copyFileSync(src, dest);
-        screenshot = `/${destRel.split("\\").join("/")}`;
-      }
+      screenshot = publishScreenshot(src, id, `step-${String(n).padStart(2, "0")}.png`, opts.publicDir);
+    }
+    // The phone's own screenshot for this step (decision 40, M43b), when the page rendered one —
+    // absent when the walkthrough has no secondary phone capture, or that step has none (a
+    // device-only step the phone doesn't run, or a failed/missing phone capture).
+    let phoneScreenshot: string | undefined;
+    if (opts.publicDir && opts.pagesDir) {
+      const src = join(opts.pagesDir, id, secondaryScreenshotFile("phone", n));
+      phoneScreenshot = publishScreenshot(src, id, `phone-step-${String(n).padStart(2, "0")}.png`, opts.publicDir);
     }
 
     const videoTimeSec = step.id ? sceneStarts.get(step.id) : undefined;
@@ -101,11 +124,14 @@ export function buildProcedure(
       title: step.title ?? `Step ${n}`,
       instruction: instructionFor(step, wf.data),
       ...(screenshot ? { screenshot } : {}),
+      ...(phoneScreenshot ? { phoneScreenshot } : {}),
+      ...deviceOnly,
       ...(videoTimeSec !== undefined ? { videoTimeSec } : {}),
     });
   }
 
   const paths = buildProcedurePaths(wf, captureDir, validation, steps, opts);
+  if (opts.publicDir) pruneStepScreenshots(opts.publicDir, id, [...steps, ...paths.flatMap((p) => p.steps)]);
   const roleId = personaRole(wf.start);
   return {
     id,
@@ -124,6 +150,28 @@ export function buildProcedure(
     ...(opts.lastChecked ? { lastChecked: opts.lastChecked } : {}),
     ...(paths.length > 0 ? { paths } : {}),
   };
+}
+
+/** Step screenshots `publishScreenshot` wrote for this walkthrough on an earlier build that this
+ * procedure no longer lists (a step removed, renumbered or now phone-only): removed, so a stale
+ * screenshot is never served next to the current steps. The page's poster (index-stage) is one of
+ * the current main step screenshots, so it stays. */
+const STEP_SHOT = /^(?:phone-)?step-\d+\.png$/;
+
+function pruneStepScreenshots(publicDir: string, id: string, steps: ProcedureStep[]): void {
+  const keep = new Set<string>();
+  for (const s of steps) {
+    for (const url of [s.screenshot, s.phoneScreenshot]) if (url) keep.add(url.slice(`/screenshots/${id}/`.length));
+  }
+  const dir = join(publicDir, "screenshots", id);
+  for (const [sub, test] of [["", (n: string) => STEP_SHOT.test(n)], ["paths", () => true]] as const) {
+    const at = join(dir, sub);
+    if (!existsSync(at)) continue;
+    for (const entry of readdirSync(at, { withFileTypes: true })) {
+      const rel = sub ? `${sub}/${entry.name}` : entry.name;
+      if (entry.isFile() && test(entry.name) && !keep.has(rel)) rmSync(join(at, entry.name), { force: true });
+    }
+  }
 }
 
 /** Copies a page's already-annotated screenshot into `<publicDir>/screenshots/<id>/<name>`,
@@ -161,11 +209,13 @@ function buildProcedurePaths(
     const run = pathWalkthrough(wf, path);
     const joinsAt = run.alone ? undefined : run.joinIndex + 1;
     if (joinsAt !== undefined && !mainSteps.some((s) => s.n === joinsAt)) continue; // the step it joins isn't a verified one
+    // Aligned by `stepIndex`, not array position — same reasoning as the main steps above.
+    const aligned = alignManifestToSteps(capture.manifest.steps, path.steps.length);
     const steps: ProcedureStep[] = path.steps.map((step, i) => {
       const n = i + 1;
       const rel = pathScreenshotFile(path.id, n);
       const screenshot =
-        capture.manifest!.steps[i]?.doc.image && opts.publicDir && opts.pagesDir
+        aligned[i]?.mStep.doc.image && opts.publicDir && opts.pagesDir
           ? publishScreenshot(join(opts.pagesDir, wf.walkthrough, rel), wf.walkthrough, rel.replace(/^screenshots\//, ""), opts.publicDir)
           : undefined;
       return { n, title: step.title ?? `Step ${n}`, instruction: instructionFor(step, wf.data), ...(screenshot ? { screenshot } : {}) };

@@ -3,8 +3,9 @@
 // that makes the same save as the main path, for the writer to inspect before adding a `paths:`
 // entry.
 import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { loadConfig } from "../config/index.js";
+import { primaryCaptureDir } from "../devices/index.js";
+import { briefPath, loadBrief } from "../brief/consumers.js";
 import { findWalkthrough } from "../outline/record.js";
 import { discoverPaths, formatDiscoverPaths } from "../paths/index.js";
 
@@ -32,7 +33,7 @@ export async function runPaths(opts: RunPathsOptions, json: boolean): Promise<nu
     if (!existsSync(appRepo)) return fail(`app repo not found: ${appRepo}`);
     const result = discoverPaths({
       walkthrough,
-      captureDir: join(config.buildDir, walkthrough.walkthrough, "capture"),
+      captureDir: primaryCaptureDir(config, walkthrough, loadBrief(briefPath(config))),
       appRepo,
       app: opts.app ?? config.impact?.app,
       limit: opts.limit,
