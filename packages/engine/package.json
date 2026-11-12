@@ -1,6 +1,6 @@
 {
   "name": "aida-docs",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "AIDA engine: turns walkthrough files into a help site with printable pages, narrated videos, a help chat and an agent connector, kept current from CI.",
   "license": "Apache-2.0",
   "repository": {
@@ -20,7 +20,12 @@
     "walkthrough",
     "playwright",
     "nextjs",
-    "mcp"
+    "mcp",
+    "mcp-server",
+    "claude-code",
+    "ai-agents",
+    "docs-as-code",
+    "text-to-speech"
   ],
   "type": "module",
   "engines": {
