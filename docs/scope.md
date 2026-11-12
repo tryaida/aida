@@ -68,6 +68,7 @@ One run produces five outputs from the same walkthroughs, plus the files that ke
 - **Printable guides.** Print-styled pages, a PDF per page, a full manual as one PDF, and one-page quick reference cards, laid out like a designed manual rather than a printed web page. Screenshots are cropped to the part of the screen that matters, with numbered callouts that match the steps and the full screen shown where context helps. Pages fill sensibly (no half-empty pages, a step never split from its screenshot), each guide links to its video with a QR code, and fonts are embedded so text stays crisp and searchable. Guide PDFs are tagged, with an outline, title and language, so screen readers can read them.
 - **Videos.** One short narrated video per walkthrough (aim for 2 minutes or less), with a chapter per step, captions (SRT and VTT) and a transcript. When the app's readers use it on a phone, the walkthrough is also captured at a phone size and gets a portrait phone video; pages offer phone screenshots beside the computer ones, shown by default on a phone. Short clips of single steps sit inline on the pages. Quality checks proven on the first pilot app are built in: correct colour range, −16 LUFS loudness, no black frames, captions timed to the narration.
 - **Help chat.** On the site and as a drop-in widget inside the app (one script tag or a React component). Answers cite the page, show the step's screenshot and jump to the right moment in the video. Inside the app it knows which screen the user is on. Questions it can't answer become suggested new walkthroughs.
+- **In-app help.** The same widget works with no chat key: it lists the guides for the screen the reader is on and searches the rest. A guide can also run as a "Show me" tour inside the app: it rings the element for each step and waits while the reader does it. A tour never clicks or types for the reader, never reads what they type and sends nothing anywhere; it exists only for steps that passed in capture. Searches that find nothing and "Was this helpful?" votes become suggestions for new or better walkthroughs, without the chat.
 - **Agent connector (MCP server).** Hosted with the site and versioned with it. Tools: `search_docs`, `get_page`, `list_walkthroughs`, `get_procedure`, which returns structured steps an agent can follow, and `get_app_overview`, which returns the app brief.
 - **Files in the repo.** A `help/` folder holding the Next.js help app with its walkthrough files, pages, config and Studio, plus the CI workflow.
 
@@ -429,11 +430,11 @@ flowchart TB
 | Phase | What ships |
 | --- | --- |
 | 0 · Prove the engine | Pull the first pilot app's tutorial pipeline into a standalone engine. Walkthrough format v0, voice adapters (Kokoro, MiniMax, ElevenLabs), video quality checks. Run it on that app plus one more. |
-| 1 · Docs from your coding agent | Skills for Claude Code, Codex and Cursor; the AIDA engine; the Next.js help app scaffold with print, PDF, video, search and an on-brand theme. Studio at /studio in local dev. Node only, no Docker. Deploys to Vercel, Amplify, Netlify, Cloudflare or any Node server. |
-| 2 · Always up to date | GitHub Action, PR check with screenshot diffs, deploy-preview hooks, three change tiers, agent repair. Studio timeline, callouts and blur boxes, edit history and locks. Playwright test import, versioned docs. The "Show me" recorder from the command line (`aida record`). |
-| 3 · Ask the docs | Help chat on the site and inside the app, MCP server with step-by-step procedures, unanswered questions turned into suggested walkthroughs. |
+| 1 · Docs from your coding agent | Skills for Claude Code, Codex and Cursor; the AIDA engine; `aida demo`, which builds every output from a bundled sample app with no setup; the Next.js help app scaffold with print, PDF, video, search and an on-brand theme. Studio at /studio in local dev. Node only, no Docker. Deploys to Vercel, Amplify, Netlify, Cloudflare or any Node server. |
+| 2 · Always up to date | GitHub Action, PR check with screenshot diffs, deploy-preview hooks, three change tiers, agent repair. Walkthroughs as tests (`aida test`, Playwright export) and a "what changed" video per release. Studio timeline, callouts and blur boxes, edit history and locks. Playwright test import, versioned docs. The "Show me" recorder from the command line (`aida record`). |
+| 3 · Ask the docs | Help chat on the site and inside the app, MCP server with step-by-step procedures, unanswered questions turned into suggested walkthroughs. In-app help with no chat key: guides for the current screen, search, "Show me" tours built from walkthroughs, and reader feedback (empty searches, helpful votes) feeding the same suggestions. |
 | 4 · The no-code door | Web app, Studio on preview deploys behind sign-in, GitHub App, "Show me" recorder in the hosted Studio, email approvals, hosted rendering, voices and hosting. Ready-made Help-button prompts for Lovable, Bolt, v0 and Replit. |
-| 5 · Reach | Other languages, voice questions and answers, in-app guided tours built from walkthroughs, mobile apps, private docs behind sign-in, export to Mintlify or Docusaurus. |
+| 5 · Reach | Other languages, voice questions and answers, tours for alternate paths and phone layouts, mobile apps, private docs behind sign-in, export to Mintlify or Docusaurus. |
 
 If Lovable and Bolt users are the first target, the GitHub App moves forward from Phase 4 to sit alongside Phase 2 (see Open decisions).
 
@@ -441,7 +442,6 @@ If Lovable and Bolt users are the first target, the GitHub App moves forward fro
 
 - Native mobile and desktop apps (web apps only)
 - API or developer reference docs (link out to existing tools; OpenAPI import later)
-- In-app guided product tours
 - Languages other than English
 - Voice Q&A with the help chat
 - Private docs behind sign-in or SSO

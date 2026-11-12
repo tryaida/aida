@@ -1,0 +1,87 @@
+walkthrough: mark-a-repair-ready
+version: 1
+title: Mark a repair ready for pickup
+summary: Move a job on as the work happens, from Waiting to In progress to Ready for pickup, with a note for the front desk.
+for: Workshop staff
+section: Repair jobs
+start:
+  page: /jobs
+data:
+  customer:
+    name: Dana Whitfield
+  note: New brake pads fitted and test-ridden.
+# The job take-in-a-repair leaves: `aida build` captures that walkthrough first (see `aida order`).
+needs: [new-repair-waiting]
+leaves: [new-repair-ready]
+steps:
+  - id: waiting
+    chapter: Find the job
+    title: Show the waiting jobs
+    say: Start from the jobs nobody has started yet. Select Waiting to see only those.
+    caption: Select Waiting.
+    page_text: On **Jobs**, select **Waiting** to see only the jobs nobody has started yet.
+    actions:
+      - do: click
+        target: { role: link, name: Waiting, within: { role: navigation, name: Filter by status } }
+        highlight: true
+      - do: waitForUrl
+        pattern: "status=waiting"
+  - id: open-job
+    title: Open the job
+    say: Select the customer's name to open their job.
+    caption: Select the customer's name.
+    page_text: Select the customer's name, here **{{customer.name}}**, to open the job.
+    actions:
+      - do: click
+        target: { role: link, name: "{{customer.name}}" }
+        highlight: true
+      - do: waitForUrl
+        pattern: "/jobs/J-"
+  - id: start-work
+    chapter: Update the status
+    title: Start work
+    say: When you start on the repair, select Start work, so everyone can see it's in progress.
+    caption: Select Start work.
+    page_text: Under **Status**, select **Start work**. The job moves to **In progress**.
+    actions:
+      - do: click
+        target: { role: button, name: Start work }
+        highlight: true
+      - do: expect
+        target: { role: status }
+        text: Work started
+  - id: mark-ready
+    title: Mark it ready for pickup
+    say: When the repair's done, select Mark ready for pickup, and add a note for whoever hands it back.
+    caption: Mark it ready and add a note.
+    page_text: When the repair is finished, select **Mark ready for pickup**. In **Note for the front desk**, add anything the customer should hear when they collect it.
+    actions:
+      - do: click
+        target: { role: button, name: Mark ready for pickup }
+      - do: type
+        target: { label: Note for the front desk }
+        text: "{{note}}"
+      - do: point
+        target: { role: textbox, name: Note for the front desk }
+        highlight: true
+  - id: confirm
+    title: Confirm
+    say: Select Mark ready.
+    caption: Select Mark ready.
+    page_text: Select **Mark ready**.
+    actions:
+      - do: click
+        target: { role: button, name: Mark ready, exact: true, within: { role: dialog } }
+        highlight: true
+      - do: expect
+        target: { role: status }
+        text: ready for pickup
+  - id: ready
+    title: Check the new status
+    say: The job is now ready for pickup, and your note is kept in its history for the front desk.
+    caption: The job is ready for pickup.
+    page_text: The status is now **Ready for pickup**, and your note is in the job's **History**, where the front desk can read it when the customer comes in.
+    actions:
+      - do: point
+        target: { role: region, name: Status }
+        highlight: true

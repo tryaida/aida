@@ -95,6 +95,69 @@ export interface ManifestStep {
    * the manifest stays identical across runs. Absent when nothing was seen.
    */
   seen?: string[];
+  /** Where this step ran and what its actions' elements looked like, for in-app tours (M46,
+   * capture/hints.ts). Absent in manifests written before M46 and in runs that record nothing. */
+  tour?: StepTourHints;
+}
+
+/**
+ * A small, deterministic description of an element an action resolved (M46), for the in-app
+ * tour (help app `public/tour.js`) to find the same element in the reader's browser. Every value
+ * passed the same redaction capture's reports use; anything masking or redaction would hide is
+ * left out, as are values holding the run id and generated-looking ids.
+ */
+export interface ElementHints {
+  tag: string;
+  role?: string;
+  /** Accessible name, computed the way tour.js computes it (capture/hints.ts). Capped. */
+  name?: string;
+  /** A form control's label text. */
+  label?: string;
+  /** Visible text, when it differs from `name`. Capped; a value at the cap is a prefix. */
+  text?: string;
+  /** `data-testid` (or `data-test-id`, `data-test`, `data-cy`, `data-qa`). */
+  testId?: string;
+  /** A stable-looking `id` (never a generated one such as `:r1:`, nor a record's: `delete-42`). */
+  id?: string;
+  /** The `name` attribute. */
+  nameAttr?: string;
+  placeholder?: string;
+  /** An input's or button's `type` attribute. */
+  type?: string;
+  /** A same-origin link's pathname as a screen pattern (record ids and tokens as `*`). */
+  href?: string;
+  /** The nearest named container, when the walkthrough target was scoped with `within`/`nth`. */
+  within?: ElementHints;
+}
+
+/** One action's element (M46): `action` is its index in the walkthrough step's `actions`. */
+export interface TourActionHints {
+  action: number;
+  /** Pathname the element was on, record ids and tokens as `*`. */
+  path: string;
+  target: ElementHints;
+  /** Masking or blur hid something of this element (or a step `mask` names its field): a tour
+   * shows no example value for it. */
+  masked?: true;
+  /** Where the element's words were on screen when the action ran, for the build to test against
+   * the screen's blur as the video applies it (tours/build.ts). Manifest only, never in a tour. */
+  at?: {
+    /** Viewport boxes of the element and every element its words come from (label,
+     * `aria-labelledby`). */
+    boxes: Box[];
+    /** The same for the `within` container, when `target.within` is kept. */
+    within?: Box[];
+    /** The page's scroll offset then. */
+    scroll?: Point;
+  };
+}
+
+export interface StepTourHints {
+  /** Pathname the step started on, record ids and tokens as `*`. */
+  path?: string;
+  /** The page's scroll offset when the step's blur boxes were resolved (`doc.blur`). */
+  scroll?: Point;
+  actions?: TourActionHints[];
 }
 
 /**

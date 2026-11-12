@@ -110,6 +110,44 @@ The generated `aida.yml` checks out that repo to `.aida-docs` in every job that 
 Same-repo docs (the default, no `--docs-repo`) needs neither of these — it uses the automatic
 `GITHUB_TOKEN` throughout.
 
+## Walkthroughs as tests
+
+Every walkthrough is already an end-to-end check of a real task. `aida test` replays them and
+reports like a test runner, for apps that have no end-to-end tests of their own:
+
+```bash
+npx aida-docs test --config help/aida.config.ts
+```
+
+- It goes through the same safety checks, sign-in, data states and capture order as `aida capture`
+  and `aida ci`. It makes no pages, video or voice and leaves the help site's captures alone (it
+  writes to the same scratch folder as `aida ci`, `<buildDir>/<id>/ci/capture`).
+- Each walkthrough is reported as passed, broken, app problem, environment problem, can't tell,
+  or blocked (one it depends on failed). A failure names the step, the reason, and where the
+  screenshot and failure report are.
+- A replay whose steps all passed while the app returned a server error or threw a page error is
+  an app problem, and it fails the run.
+- `--json` prints one JSON object. `--junit <file>` writes JUnit XML (a suite per walkthrough, a
+  case per step). `--bail` stops at the first failure. `--affected --base <ref>` runs only the
+  walkthroughs a diff touches, and all of them when it can't tell.
+- Exit code 0 when everything passed, 1 when anything didn't, 2 for a bad option.
+
+In GitHub Actions, after the steps that start the app on its demo data (the same ones `aida ci`
+needs):
+
+```yaml
+- name: Walkthroughs as tests
+  run: npx aida-docs test --config help/aida.config.ts --junit reports/aida-test.xml
+```
+
+`aida export playwright --config help/aida.config.ts --out e2e/` writes each walkthrough as
+`<id>.spec.ts` for a team's own Playwright suite. Locators mean what capture means (a few small
+helper functions at the top of a spec keep labels, dropdowns and pattern checks the same).
+Sign-in, data states, shown emails and run ids can't be carried by a spec and become
+`// TODO from walkthrough:` comments. The walkthrough stays the source of truth: regenerate the
+specs rather than editing them. The export never overwrites a file it didn't write unless
+`--force`, and never writes through a symlink.
+
 ## `aida ci` flags reference
 
 | Flag | Does |

@@ -20,7 +20,17 @@ import {
 import type { SharedProps } from "fumadocs-ui/contexts/search";
 import { FileText, Hash } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  feedbackOff,
+  hasRecordedSearch,
+  loadFeedbackEnabled,
+  markFeedbackOff,
+  markRecordedSearch,
+  postFeedback,
+  sessionStore,
+} from "./feedback-client";
+import { SearchMissRecorder } from "./search-feedback";
 
 export interface SearchIndexEntry {
   url: string;
@@ -124,10 +134,33 @@ export default function HelpSearchDialog(props: SharedProps) {
   const router = useRouter();
   const [index, setIndex] = useState<SearchIndexEntry[] | undefined>();
   const [search, setSearch] = useState("");
+  const [recordMisses, setRecordMisses] = useState(false);
 
   useEffect(() => {
     if (props.open && !index) void loadIndex().then(setIndex);
   }, [props.open, index]);
+
+  // Searches that found nothing go to /api/feedback for `aida suggest` (M47), unless the owner
+  // turned feedback off or this host has no route (components/site/search-feedback.ts).
+  useEffect(() => {
+    if (props.open && !recordMisses && !feedbackOff(sessionStore())) void loadFeedbackEnabled().then(setRecordMisses);
+  }, [props.open, recordMisses]);
+  const recordMissesRef = useRef(false);
+  recordMissesRef.current = recordMisses;
+  const [recorder] = useState(
+    () =>
+      new SearchMissRecorder({
+        isEnabled: () => recordMissesRef.current && !feedbackOff(sessionStore()),
+        isRecorded: (key) => hasRecordedSearch(sessionStore(), key),
+        markRecorded: (key) => markRecordedSearch(sessionStore(), key),
+        send: (query) => {
+          if (feedbackOff(sessionStore())) return;
+          void postFeedback({ kind: "no-results", query, page: window.location.pathname }).then((result) => {
+            if (result === "unavailable") markFeedbackOff(sessionStore());
+          });
+        },
+      }),
+  );
 
   const toItem = (entry: SearchIndexEntry, query: string, key: string): SearchItemType => ({
     id: key,
@@ -142,6 +175,13 @@ export default function HelpSearchDialog(props: SharedProps) {
     return rank(index, query).map((h, i) => toItem(h.entry, query, `${h.entry.url}#${h.entry.heading ?? ""}#${i}`));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- toItem only closes over router
   }, [index, query]);
+
+  useEffect(() => {
+    if (!recordMisses) return;
+    if (props.open) recorder.update(query, index && query.length >= 2 ? (items?.length ?? 0) : undefined);
+    else recorder.flush();
+  }, [recorder, recordMisses, props.open, query, index, items]);
+  useEffect(() => () => recorder.cancel(), [recorder]);
 
   // With nothing typed, list every guide once, so the dialog doubles as a quick index.
   const defaultItems = useMemo(() => {

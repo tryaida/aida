@@ -23,6 +23,14 @@ function parsePrNumber(subject: string): number | undefined {
  * prefix filtering (filter.ts) is what removes noise instead.
  */
 export async function listMergedCommits(runner: CommandRunner, appRepo: string, since?: string): Promise<MergeEntry[]> {
+  if (since) {
+    // `since` comes from a flag or a frozen version's stored ref: one starting with "-" would be
+    // read by git as an option (`--output=<file>` writes a file). Refuse it, and make sure it
+    // names a commit (with `--end-of-options`) before `<since>..HEAD` reaches any other command.
+    if (since.startsWith("-") || /[\0\n\r]/.test(since)) throw new Error(`"${since}" can't be a git ref`);
+    const check = await runner("git", ["rev-parse", "--verify", "--quiet", "--end-of-options", `${since}^{commit}`], { cwd: appRepo });
+    if (check.code !== 0) throw new Error(`git log failed: "${since}" isn't a commit in ${appRepo}${check.stderr ? `: ${check.stderr.trim()}` : ""}`);
+  }
   const range = since ? `${since}..HEAD` : "HEAD";
   const result = await runner("git", ["log", range, `--pretty=format:%H${UNIT_SEP}%aI${UNIT_SEP}%s`], { cwd: appRepo });
   if (result.code !== 0) {

@@ -133,6 +133,8 @@ export class FileUnansweredStore implements UnansweredStore {
  * console/host logs back). Kept distinct from `[aida:chat]`'s usage-log line format so the two
  * never get parsed as each other. */
 export const UNANSWERED_LOG_PREFIX = "aida-unanswered ";
+// feedback/store.ts's FEEDBACK_LOG_PREFIX, repeated here because that module imports this one.
+const FEEDBACK_LOG_PREFIX = "aida-feedback ";
 
 /**
  * Parses host log text (e.g. `aida suggest --from app.log`, or piped via stdin as `-`) for
@@ -149,6 +151,10 @@ export function parseUnansweredLogText(text: string): ParsedUnansweredLog {
   for (const rawLine of text.split("\n")) {
     const idx = rawLine.indexOf(UNANSWERED_LOG_PREFIX);
     if (idx === -1) continue;
+    // A reader-feedback line whose text happens to contain this prefix belongs to the feedback
+    // parser (feedback/store.ts), which takes whichever prefix comes first; do the same here.
+    const feedbackIdx = rawLine.indexOf(FEEDBACK_LOG_PREFIX);
+    if (feedbackIdx !== -1 && feedbackIdx < idx) continue;
     const jsonPart = rawLine.slice(idx + UNANSWERED_LOG_PREFIX.length).trim();
     if (!jsonPart) continue;
     try {

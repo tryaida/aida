@@ -1,0 +1,9 @@
+{
+  "name": "Acme Repairs",
+  "short_name": "Acme Repairs",
+  "start_url": "/jobs",
+  "display": "standalone",
+  "background_color": "#f7f4ef",
+  "theme_color": "#c2410c",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

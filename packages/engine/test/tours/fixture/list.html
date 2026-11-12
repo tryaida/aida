@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Acme things</title>
+  </head>
+  <body>
+    <h1>Things</h1>
+    <a href="/new.html">New thing</a>
+    <table>
+      <tr><td>Widget A</td><td><button type="button">Delete</button></td></tr>
+      <tr><td>Widget B</td><td><button type="button">Delete</button></td></tr>
+    </table>
+    <button type="button" id="open-details">Open details</button>
+    <div id="details"></div>
+    <script>
+      // A client-side route: the details view renders a moment after the address changes.
+      function render() {
+        var box = document.getElementById("details");
+        box.textContent = "";
+        if (location.pathname !== "/details") return;
+        setTimeout(function () {
+          var h = document.createElement("h2");
+          h.textContent = "Details";
+          var b = document.createElement("button");
+          b.type = "button";
+          b.textContent = "Save details";
+          box.appendChild(h);
+          box.appendChild(b);
+        }, 300);
+      }
+      document.getElementById("open-details").addEventListener("click", function () {
+        history.pushState({}, "", "/details");
+        render();
+      });
+      window.addEventListener("popstate", render);
+      render();
+    </script>
+    <script src="__HELP__/tour.js" data-help-url="__HELP__"></script>
+  </body>
+</html>

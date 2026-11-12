@@ -73,6 +73,7 @@ steps:
 | **Help page** | A page on a Next.js help site with numbered, highlighted screenshots, search, print styles and a "last checked" date. A page only publishes if every step passed against the real app. |
 | **Printable guides** | A PDF per guide, a full manual, and a one-page quick reference card. |
 | **Narrated video** | An MP4 per walkthrough with captions (SRT, VTT) and chapters. Narration uses a local voice (Kokoro) by default, so no API key is needed. |
+| **In-app help** *(experimental)* | One script tag in your app shows the guides for the screen the reader is on and searches the rest. A **Show me** button runs the guide as a tour in the live app: it rings each control and waits while the reader clicks. No API key. |
 | **Help chat** *(experimental)* | Answers questions from your guides only, with links to the pages it used. Runs on the site or inside your app via a script tag, using your Anthropic key. |
 | **Agent connector** *(experimental)* | A read-only MCP server so other agents can search your guides and fetch step-by-step procedures. |
 
@@ -116,6 +117,24 @@ out and never sent). Captions and chapters are generated with it.
 [Download the card (PDF)](docs/media/rallly/pick-the-final-date-card.pdf)
 
 <a href="docs/media/rallly/pick-the-final-date.pdf"><img alt="Pages 1 and 2 of the Pick the final date guide, and its quick reference card" src="docs/media/rallly/pdf-preview.png" width="720"></a>
+
+## Try it first
+
+```bash
+npx playwright install chromium
+npx aida-docs demo
+```
+
+`aida demo` needs Node 22+ and `ffmpeg`, and nothing else: no app, database or sign-in. It
+copies a small fictional app (Acme Repairs, data in memory) and four walkthroughs into
+`./aida-demo`, captures them in a real browser through the normal safety checks, and prints where
+the help page, PDF guide, quick reference card and narrated video are. Pages and PDFs appear after
+about three minutes, the video a few minutes later (the first run also downloads a 90 MB voice
+model). `--no-video` is quickest, `--site` installs and starts the help site, and the folder stays
+a working example: edit a walkthrough and run it again.
+
+On Linux, the local voice's runtime also downloads a 260 MB GPU library during install that AIDA
+doesn't use; `ONNXRUNTIME_NODE_INSTALL=skip npx aida-docs demo` skips it.
 
 ## Quick start
 
@@ -182,6 +201,11 @@ you've chosen, which works but costs more on a large app.
 The base workflow uses no model and no API keys. Details and options are in
 [docs/ci.md](docs/ci.md).
 
+The same walkthroughs work as end-to-end tests: `aida test --junit report.xml` replays them as
+checks only and fails on a broken step or an app error, and `aida export playwright` writes them
+as Playwright specs for your own suite. At release time, `aida whats-new --video` cuts one short
+"what changed" video from the steps that changed.
+
 ## Safe by default
 
 - Capture refuses to run unless every database the app could connect to is on your machine (or
@@ -208,7 +232,7 @@ users yet. Expect rough edges and breaking changes.
   your app
 - PDF guides, a full manual and quick reference cards
 - Narrated videos with captions and chapters using the local Kokoro voice
-- `aida init`, `doctor`, `digest`, `inspect`, and sign-in adapters for Auth.js, better-auth and Supabase Auth apps
+- `aida demo` (every output from a bundled sample app, no setup), `aida init`, `doctor`, `digest`, `inspect`, and sign-in adapters for Auth.js, better-auth and Supabase Auth apps
 - Emails in walkthroughs: the app's real email caught locally (never sent), or a written mock;
   codes and links in it can be typed into later steps (sign-in by emailed code)
 - Studio for editing text, callouts and blur boxes, with history and undo
@@ -219,6 +243,12 @@ users yet. Expect rough edges and breaking changes.
 **Experimental**
 
 - Help chat and agent connector (MCP)
+- In-app help: guides for the current screen and "Show me" tours in the live app (one script
+  tag, no key)
+- Reader feedback without a key: searches that found nothing and "Was this helpful?" votes, read
+  by `aida suggest`
+- `aida test` (walkthroughs as end-to-end checks, JUnit output) and `aida export playwright`
+- A "what changed" video per release (`aida whats-new --video`)
 - `aida publish` adapters for Vercel, Netlify, Amplify, Cloudflare, Node and static export. Dry
   runs are tested; most hosts haven't had a real deploy yet.
 - CI repair through the Claude Code GitHub Action, and keeping docs in a separate repo

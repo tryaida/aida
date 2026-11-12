@@ -19,7 +19,10 @@ import { HomeLibrary, SectionLibrary } from "@/components/site/library";
 import { SearchTrigger } from "@/components/site/search-trigger";
 import { BrandLogo } from "@/components/site/brand-mark";
 import { plural } from "@/components/site/format";
+import { PageFeedback } from "@/components/site/page-feedback";
 import { brand } from "@/lib/brand";
+import { join } from "node:path";
+import { readFeedbackEnabled } from "aida-docs/dist/feedback/index.js";
 
 type LoadedPage = NonNullable<ReturnType<typeof source.getPage>>;
 
@@ -156,6 +159,9 @@ function Guide({ page }: { page: LoadedPage }) {
       <DocsBody className="aida-guide">
         <MDX components={getMDXComponents()} />
       </DocsBody>
+      {/* Reader feedback (M47): off when aida.config sets `feedback.enabled: false`, which the
+       * build writes to public/feedback-config.json. Keyed by page so each guide starts fresh. */}
+      <PageFeedback key={page.url} page={page.url} enabled={readFeedbackEnabled(join(process.cwd(), "public"))} />
     </DocsPage>
   );
 }

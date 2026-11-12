@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { runValidate } from "./commands/validate.js";
 import { runImportPlaywright } from "./commands/import-playwright.js";
+import { runExportPlaywright } from "./commands/export-playwright.js";
+import { runTestCommand } from "./commands/test.js";
+import { runDemoCommand } from "./commands/demo.js";
 import { runRender } from "./commands/render.js";
 import { runCaptureCommand } from "./commands/capture.js";
 import { runOrder } from "./commands/order.js";
@@ -55,6 +58,7 @@ program.version(pkg.version);
 //   M6  build, digest
 //   M31 domain, brief
 //   M40 interview
+//   M49 test, export playwright
 
 program
   .command("validate <targets...>")
@@ -89,6 +93,59 @@ importCmd
   .option("--json", "print a single JSON object instead of a summary")
   .action(async (patterns: string[], opts: { out?: string; json?: boolean; force?: boolean }) => {
     process.exitCode = await runImportPlaywright(patterns, opts.out, Boolean(opts.json), Boolean(opts.force));
+  });
+
+const exportCmd = program.command("export").description("write walkthroughs out in another tool's format");
+
+exportCmd
+  .command("playwright [walkthroughs...]")
+  .description("write each walkthrough as a @playwright/test spec, <id>.spec.ts (regenerate, don't edit)")
+  .requiredOption("--config <path>", "path to aida.config.ts/.mjs")
+  .requiredOption("--out <dir>", "folder for the specs")
+  .option("--force", "overwrite spec files aida didn't generate (never a symlink or anything that isn't a plain file)")
+  .option("--json", "print a single JSON object instead of a summary")
+  .action(async (walkthroughs: string[], opts: { config: string; out: string; force?: boolean; json?: boolean }) => {
+    process.exitCode = await runExportPlaywright({
+      configPath: opts.config,
+      walkthroughIds: walkthroughs,
+      outDir: opts.out,
+      force: Boolean(opts.force),
+      json: Boolean(opts.json),
+    });
+  });
+
+program
+  .command("test [walkthroughs...]")
+  .description("replay walkthroughs as end-to-end checks and report like a test runner (no pages, video or voice)")
+  .requiredOption("--config <path>", "path to aida.config.ts/.mjs")
+  .option("--json", "print a single JSON object instead of a summary")
+  .option("--junit <file>", "also write JUnit XML (one suite per walkthrough, one case per step; a skipped suite for each walkthrough --bail didn't reach)")
+  .option("--bail", "stop at the first walkthrough that doesn't pass")
+  .option("--affected", "only the walkthroughs the diff --base...--head touches (all when it can't tell)")
+  .option("--base <ref>", "with --affected: git ref to diff against")
+  .option("--head <ref>", "with --affected: git ref to compare (default: HEAD)")
+  .option("--app-repo <path>", "with --affected: app repo to diff (default: config.impact.appRepo, then cwd)")
+  .action(async (walkthroughs: string[], opts: {
+    config: string;
+    json?: boolean;
+    junit?: string;
+    bail?: boolean;
+    affected?: boolean;
+    base?: string;
+    head?: string;
+    appRepo?: string;
+  }) => {
+    process.exitCode = await runTestCommand({
+      configPath: opts.config,
+      walkthroughIds: walkthroughs,
+      json: Boolean(opts.json),
+      junit: opts.junit,
+      bail: Boolean(opts.bail),
+      affected: Boolean(opts.affected),
+      base: opts.base,
+      head: opts.head,
+      appRepo: opts.appRepo,
+    });
   });
 
 program
@@ -639,27 +696,57 @@ versionCmd
 
 program
   .command("whats-new")
-  .description("build the What's new page from merged PRs since the last frozen version (or --since)")
+  .description("build the What's new page from merged PRs since the last frozen version (or --since); --video adds a \"what changed\" video")
   .requiredOption("--config <path>", "path to aida.config.ts/.mjs")
   .option("--since <ref>", "git ref to start from")
   .option("--from-github", "use gh pr list instead of git log")
   .option("--app-repo <path>", "app repo to read history from (default: config.impact.appRepo, then the config's directory)")
+  .option("--video", "also cut a \"what changed\" video for this release from the last build's scene segments and put it on the page")
+  .option("--base <ref>", "with --video: git ref the video measures changes from (default: --since, then the last frozen version's ref)")
+  .option("--release <name>", "with --video: version name for the opening card (default: the date of the app repo's latest commit)")
+  .option("--max-guides <n>", "with --video: most guides in the video (default 4)", (v: string) => parsePositiveInt(v, "--max-guides"))
+  .option("--max-steps <n>", "with --video: most changed steps per guide (default 3)", (v: string) => parsePositiveInt(v, "--max-steps"))
+  .option("--draft", "with --video: cut the draft segments (from aida build --draft)")
   .option("--json", "print a single JSON object instead of a summary")
-  .action(async (opts: { config: string; since?: string; fromGithub?: boolean; appRepo?: string; json?: boolean }) => {
+  .action(async (opts: {
+    config: string;
+    since?: string;
+    fromGithub?: boolean;
+    appRepo?: string;
+    video?: boolean;
+    base?: string;
+    release?: string;
+    maxGuides?: number;
+    maxSteps?: number;
+    draft?: boolean;
+    json?: boolean;
+  }) => {
     process.exitCode = await runWhatsNew(
-      { configPath: opts.config, since: opts.since, fromGithub: Boolean(opts.fromGithub), appRepo: opts.appRepo },
+      {
+        configPath: opts.config,
+        since: opts.since,
+        fromGithub: Boolean(opts.fromGithub),
+        appRepo: opts.appRepo,
+        video: Boolean(opts.video),
+        base: opts.base,
+        release: opts.release,
+        maxGuides: opts.maxGuides,
+        maxSteps: opts.maxSteps,
+        draft: Boolean(opts.draft),
+      },
       Boolean(opts.json),
     );
   });
 
 program
   .command("suggest")
-  .description("group logged unanswered chat questions into suggested new walkthroughs (keyword clustering, no model call)")
-  .option("--dir <path>", "directory holding .aida/unanswered.jsonl (default: cwd)")
-  .option("--from <logfile|->", "read unanswered questions from host log text instead (a file path, or - for stdin) — for a prod deployment that logs to the console instead of .aida/unanswered.jsonl")
+  .description("group unanswered chat questions into suggested new walkthroughs, and summarise reader feedback: searches with no results, guides marked not helpful (keyword clustering, no model call)")
+  .option("--dir <path>", "directory holding unanswered.jsonl and feedback.jsonl (default: <cwd>/.aida)")
+  .option("--from <logfile|->", "read unanswered questions and reader feedback from host log text instead (a file path, or - for stdin), for a deployment that logs to the console instead of .aida/")
+  .option("--site <dir>", "the help app folder, to check that pages named in feedback exist (default: beside --dir, then cwd, then ./help)")
   .option("--json", "print a single JSON object instead of a summary")
-  .action((opts: { dir?: string; from?: string; json?: boolean }) => {
-    process.exitCode = runSuggest({ dir: opts.dir, from: opts.from }, Boolean(opts.json));
+  .action((opts: { dir?: string; from?: string; site?: string; json?: boolean }) => {
+    process.exitCode = runSuggest({ dir: opts.dir, from: opts.from, siteDir: opts.site }, Boolean(opts.json));
   });
 
 const usageCmd = program.command("usage").description("track and report model token/cost usage for a build");
@@ -721,6 +808,22 @@ skillsCmd
   .option("--json", "print a single JSON object instead of a summary")
   .action((opts: { target?: string; agent?: string; json?: boolean }) => {
     process.exitCode = runSkillsInstall({ target: opts.target, agent: opts.agent }, Boolean(opts.json));
+  });
+
+program
+  .command("demo [dir]")
+  .description("see every output with no setup: builds a small fictional sample app's walkthroughs into a help page, PDF guide, quick reference card and narrated video (default folder ./aida-demo)")
+  .option("--no-video", "skip narration and video: the quickest run")
+  .option("--full", "a video for every walkthrough, at full quality (default: one draft video)")
+  .option("--site", "then install the help app (about 700 MB the first time) and start the help site")
+  .option("--port <port>", "the sample app's port (default 4310, or a free one if that's taken)")
+  .option("--keep-running", "leave the sample app running afterwards, to try aida inspect or aida record against it (Ctrl-C stops it)")
+  .option("--json", "print a single JSON object instead of a summary (progress goes to stderr)")
+  .action(async (dir: string | undefined, opts: { video: boolean; full?: boolean; site?: boolean; port?: string; keepRunning?: boolean; json?: boolean }) => {
+    process.exitCode = await runDemoCommand(
+      { dir, video: opts.video, full: Boolean(opts.full), site: Boolean(opts.site), port: opts.port, keepRunning: Boolean(opts.keepRunning) },
+      Boolean(opts.json),
+    );
   });
 
 program
@@ -987,6 +1090,12 @@ program.parseAsync().catch((err: unknown) => {
   // rejection this replaces exited at once. Unref'd, so a clean exit doesn't wait for it.
   setTimeout(() => process.exit(1), 2000).unref();
 });
+
+function parsePositiveInt(value: string, flag: string): number {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1) throw new InvalidArgumentError(`${flag} needs a whole number, 1 or more.`);
+  return n;
+}
 
 function parseNonNegativeInt(value: string, flag: string): number {
   const n = Number(value);

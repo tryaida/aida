@@ -1,5 +1,6 @@
 import ts from "typescript";
 import type { Target } from "../target.js";
+import { LABEL_HELPER } from "../../export/helpers.js";
 
 /**
  * Resolves a Playwright locator-chain expression (e.g. `page.getByRole("button", { name: "Save"
@@ -21,6 +22,17 @@ export function resolveLocatorExpr(
   pageNames: Set<string>,
 ): Resolved | undefined {
   if (ts.isParenthesizedExpression(expr)) return resolveLocatorExpr(expr.expression, vars, pageNames);
+
+  // `aida export playwright` writes a label target without `exact: true` as a call to the
+  // helper it puts in the spec (src/export/helpers.ts). Only that exact shape is read back.
+  if (ts.isAwaitExpression(expr)) {
+    const call = expr.expression;
+    if (!ts.isCallExpression(call) || !ts.isIdentifier(call.expression) || call.expression.text !== LABEL_HELPER || call.arguments.length !== 2) return undefined;
+    const base = resolveLocatorExpr(call.arguments[0], vars, pageNames);
+    const label = call.arguments[1];
+    if (!base || !(ts.isStringLiteral(label) || ts.isNoSubstitutionTemplateLiteral(label))) return undefined;
+    return { root: false, target: base.root ? { label: label.text } : { label: label.text, within: base.target } };
+  }
 
   if (ts.isIdentifier(expr)) {
     if (pageNames.has(expr.text)) return { root: true };
@@ -61,6 +73,8 @@ export function resolveLocatorExpr(
     // filter({ hasText: "..." })
     const obj = args[0];
     if (!obj || !ts.isObjectLiteralExpression(obj)) return undefined;
+    // filter({ visible: true }): capture only ever finds visible elements (capture/locate.ts).
+    if (obj.properties.length === 1 && readBoolProp(obj, "visible") === true) return base;
     const hasText = readStringProp(obj, "hasText");
     if (hasText === undefined) return undefined;
     return { root: false, target: { ...base.target, hasText } };

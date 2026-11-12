@@ -4,11 +4,19 @@ import type { Target } from "../target.js";
 import { describeTarget, resolveLocatorExpr, type LocatorVars } from "./locator.js";
 import { keyProblem, normaliseKey } from "../keys.js";
 import { literalPattern, textPattern, textPatternProblem } from "../text-pattern.js";
+import { SELECT_HELPER, TEXT_HELPER } from "../../export/helpers.js";
 
 export interface StepDraft {
+  /** A `test.step` title, for a step drafted from one. */
+  title?: string;
+  /** Drafted from a `test.step`: kept as a step of its own when it sits inside another. */
+  fromTestStep?: true;
   actions: Action[];
   /** Comment lines to attach before this step, e.g. `TODO from test: ...`. */
   todos: string[];
+  /** Comment lines to attach before the action at `index` (after the last when it's past it):
+   * the calls a `test.step` made between two of its actions that couldn't be read. */
+  todosAt?: { index: number; todos: string[] }[];
 }
 
 export interface ConvertResult {
@@ -116,6 +124,25 @@ function convertOne(
     return;
   }
 
+  // test.step("Title", async () => { ... }): one step, titled like it, with every call inside.
+  const step = testStepOf(expr);
+  if (step) {
+    const inner: ConvertResult = { steps: [], data: result.data, mapped: 0, unmapped: 0, signInNotes: 0 };
+    for (const s of step.body) convertOne(s, vars, pageNames, sourceFile, inner);
+    result.mapped += inner.mapped;
+    result.unmapped += inner.unmapped;
+    result.signInNotes += inner.signInNotes;
+    result.steps.push(...stepsOfTestStep(step.title, inner.steps));
+    return;
+  }
+
+  // await aidaSelect(page, <locator>, "Option"): an exported `select` (src/export/helpers.ts).
+  const select = helperSelect(expr, vars, pageNames);
+  if (select) {
+    mapped(select, result);
+    return;
+  }
+
   // expect(...).matcher(...)
   const asExpect = tryConvertExpect(expr, vars, pageNames, result.data);
   if (asExpect !== undefined) {
@@ -131,7 +158,7 @@ function convertOne(
 
     if (method === "goto") {
       const base = resolveLocatorExpr(callee.expression, vars, pageNames);
-      const path = stringArg(expr.arguments[0]);
+      const path = stringArg(expr.arguments[0]) ?? pageRelativePath(expr.arguments[0], pageNames);
       if (base?.root && path !== undefined) {
         mapped({ do: "goto", path }, result);
         return;
@@ -182,6 +209,71 @@ function convertOne(
   }
 
   todo(stmt, sourceFile, result);
+}
+
+/**
+ * The steps one `test.step` drafts: its own actions as one step with its title, with the TODOs of
+ * the calls between them kept in place, and a `test.step` nested in it as a step of its own (the
+ * actions after one continue in an untitled step).
+ */
+function stepsOfTestStep(title: string | undefined, inner: StepDraft[]): StepDraft[] {
+  const out: StepDraft[] = [];
+  let current: StepDraft = { ...(title !== undefined ? { title } : {}), fromTestStep: true, actions: [], todos: [] };
+  const flush = () => {
+    if (current.actions.length > 0 || current.todos.length > 0 || (current.todosAt ?? []).length > 0) out.push(current);
+    current = { fromTestStep: true, actions: [], todos: [] };
+  };
+  for (const s of inner) {
+    if (s.fromTestStep) {
+      flush();
+      out.push(s);
+      continue;
+    }
+    if (s.todos.length > 0) {
+      if (current.actions.length === 0) current.todos.push(...s.todos);
+      else (current.todosAt ??= []).push({ index: current.actions.length, todos: s.todos });
+    }
+    current.actions.push(...s.actions);
+  }
+  flush();
+  return out;
+}
+
+/** `new URL("<path>", page.url()).href`: an exported `goto` resolved against the current page. */
+function pageRelativePath(expr: ts.Expression | undefined, pageNames: Set<string>): string | undefined {
+  if (!expr || !ts.isPropertyAccessExpression(expr) || expr.name.text !== "href") return undefined;
+  const url = expr.expression;
+  if (!ts.isNewExpression(url) || !ts.isIdentifier(url.expression) || url.expression.text !== "URL" || url.arguments?.length !== 2) return undefined;
+  const [path, base] = url.arguments;
+  const isPageUrl =
+    ts.isCallExpression(base) &&
+    base.arguments.length === 0 &&
+    ts.isPropertyAccessExpression(base.expression) &&
+    base.expression.name.text === "url" &&
+    ts.isIdentifier(base.expression.expression) &&
+    pageNames.has(base.expression.expression.text);
+  return isPageUrl ? stringArg(path) : undefined;
+}
+
+/** `aidaSelect(page, <locator>, "Option")`, exactly as the export writes it. */
+function helperSelect(expr: ts.CallExpression, vars: LocatorVars, pageNames: Set<string>): Action | undefined {
+  if (!ts.isIdentifier(expr.expression) || expr.expression.text !== SELECT_HELPER || expr.arguments.length !== 3) return undefined;
+  const [page, dropdown, option] = expr.arguments;
+  if (!ts.isIdentifier(page) || !pageNames.has(page.text)) return undefined;
+  const resolved = resolveLocatorExpr(dropdown, vars, pageNames);
+  const value = stringArg(option);
+  if (!resolved || resolved.root || value === undefined) return undefined;
+  return { do: "select", target: resolved.target, option: value };
+}
+
+/** `test.step(title, fn)` with a block body: its title (when a plain string) and statements. */
+function testStepOf(expr: ts.CallExpression): { title: string | undefined; body: readonly ts.Statement[] } | undefined {
+  const callee = expr.expression;
+  if (!ts.isPropertyAccessExpression(callee) || callee.name.text !== "step") return undefined;
+  if (!ts.isIdentifier(callee.expression) || callee.expression.text !== "test") return undefined;
+  const fn = expr.arguments.find((a): a is ts.ArrowFunction | ts.FunctionExpression => ts.isArrowFunction(a) || ts.isFunctionExpression(a));
+  if (!fn || !ts.isBlock(fn.body)) return undefined;
+  return { title: stringArg(expr.arguments[0]), body: fn.body.statements };
 }
 
 function unwrapAwait(expr: ts.Expression): ts.Expression {
@@ -318,6 +410,7 @@ function tryConvertExpect(
   if (!ts.isPropertyAccessExpression(callee)) return undefined;
   const matcherName = callee.name.text;
   let inner = callee.expression;
+  if (matcherName === "toMatch") return polledText(expr, vars, pageNames);
 
   // Peel off a `.not` in the chain: expect(x).not.toBeVisible()
   const negated = ts.isPropertyAccessExpression(inner) && inner.name.text === "not";
@@ -360,6 +453,25 @@ function tryConvertExpect(
   // toHaveCount/toBeChecked/toBeEnabled/toBeDisabled have no Target-level equivalent.
   void data;
   return "todo";
+}
+
+/**
+ * `expect.poll(() => aidaText(<locator>), { timeout }).toMatch(/pattern/)`: an exported text
+ * check with a pattern (src/export/helpers.ts), read back as that check. Any other
+ * `expect.poll(...).toMatch(...)` is a TODO; anything else `.toMatch` isn't an expect at all.
+ */
+function polledText(expr: ts.CallExpression, vars: LocatorVars, pageNames: Set<string>): Action | "todo" | undefined {
+  const poll = (expr.expression as ts.PropertyAccessExpression).expression;
+  if (!ts.isCallExpression(poll) || !ts.isPropertyAccessExpression(poll.expression) || poll.expression.name.text !== "poll") return undefined;
+  if (!ts.isIdentifier(poll.expression.expression) || poll.expression.expression.text !== "expect") return undefined;
+  const [fn, opts] = poll.arguments;
+  if (!fn || !ts.isArrowFunction(fn) || fn.parameters.length > 0 || !optionsOnly(opts, new Set(["timeout"])) || poll.arguments.length > 2) return "todo";
+  const body = fn.body;
+  if (!ts.isCallExpression(body) || !ts.isIdentifier(body.expression) || body.expression.text !== TEXT_HELPER || body.arguments.length !== 1) return "todo";
+  const resolved = resolveLocatorExpr(body.arguments[0], vars, pageNames);
+  if (!resolved || resolved.root || expr.arguments.length !== 1 || !ts.isRegularExpressionLiteral(expr.arguments[0])) return "todo";
+  const value = expectedText(expr.arguments[0], false);
+  return value ? { do: "expect", target: resolved.target, text: value.text } : "todo";
 }
 
 function urlPattern(expr: ts.Expression | undefined): string | undefined {

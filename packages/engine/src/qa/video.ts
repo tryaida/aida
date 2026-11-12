@@ -57,6 +57,13 @@ function parseFrameRate(r?: string): number | undefined {
   return num / den
 }
 
+/** The container's duration in seconds, for a full decode's time limit; undefined when unknown
+ * (render/media-tool.ts then allows only its base time, so assume an hour). */
+function durationOf(info: FfprobeOutput): number {
+  const d = Number.parseFloat(info.format?.duration ?? '')
+  return Number.isFinite(d) && d > 0 ? d : 3600
+}
+
 async function probe(videoPath: string, ffprobe: string): Promise<FfprobeOutput> {
   const out = await runFfprobe(ffprobe, ['-v', 'error', '-print_format', 'json', '-show_streams', '-show_format', videoPath])
   return JSON.parse(out)
@@ -147,20 +154,20 @@ export async function checkVideo(videoPath: string, opts: VideoCheckOptions = {}
 
   // Loudness (EBU R128), only if there's audio to measure.
   if (audio) {
-    checks.push(await checkLoudness(videoPath, tools.ffmpeg, opts))
+    checks.push(await checkLoudness(videoPath, tools.ffmpeg, opts, durationOf(info)))
   }
 
   // Black frames.
-  checks.push(await checkBlackFrames(videoPath, tools.ffmpeg, opts))
+  checks.push(await checkBlackFrames(videoPath, tools.ffmpeg, opts, durationOf(info)))
 
   return checks
 }
 
-async function checkLoudness(videoPath: string, ffmpeg: string, opts: VideoCheckOptions): Promise<QaCheckResult> {
+async function checkLoudness(videoPath: string, ffmpeg: string, opts: VideoCheckOptions, durationSec: number | undefined): Promise<QaCheckResult> {
   const target = opts.targetLufs ?? -16
   const tolerance = opts.loudnessToleranceLufs ?? 2
   const maxTruePeak = opts.maxTruePeakDbtp ?? -1
-  const report = await runFfmpegReport(ffmpeg, ['-nostats', '-i', videoPath, '-map', '0:a', '-af', 'ebur128=peak=true', '-f', 'null', '-'])
+  const report = await runFfmpegReport(ffmpeg, ['-nostats', '-i', videoPath, '-map', '0:a', '-af', 'ebur128=peak=true', '-f', 'null', '-'], { durationSec })
   const summary = report.split('Summary:').pop() ?? ''
   const integrated = Number(/I:\s+(-?[\d.]+) LUFS/.exec(summary)?.[1])
   const truePeak = Number(/Peak:\s+(-?[\d.]+) dBFS/.exec(summary)?.[1])
@@ -180,12 +187,12 @@ async function checkLoudness(videoPath: string, ffmpeg: string, opts: VideoCheck
   )
 }
 
-async function checkBlackFrames(videoPath: string, ffmpeg: string, opts: VideoCheckOptions): Promise<QaCheckResult> {
+async function checkBlackFrames(videoPath: string, ffmpeg: string, opts: VideoCheckOptions, durationSec: number | undefined): Promise<QaCheckResult> {
   const minDuration = opts.blackMinDurationSec ?? 0.25
   const pixThreshold = opts.blackPixelThreshold ?? 0.06
   const report = await runFfmpegReport(ffmpeg, [
     '-i', videoPath, '-map', '0:v', '-vf', `blackdetect=d=${minDuration}:pix_th=${pixThreshold}`, '-an', '-f', 'null', '-',
-  ])
+  ], { durationSec })
   const blacks = [...report.matchAll(/black_start:([\d.]+) black_end:([\d.]+)/g)].map((m) => `${m[1]}–${m[2]}s`)
   return qaCheck('video:black-frames', blacks.length === 0, blacks.length ? blacks.join(', ') : 'none detected', blacks)
 }

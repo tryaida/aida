@@ -175,6 +175,41 @@ test('options', async ({ page }) => {
   });
 });
 
+describe("convertPlaywrightFile: test.step", () => {
+  const STEPS = [
+    'import { test } from "@playwright/test";',
+    'test("steps", async ({ page }) => {',
+    '  await test.step("Open the order", async () => {',
+    '    await page.getByRole("link", { name: "Orders" }).click();',
+    "    await page.waitForTimeout(500);",
+    '    await page.getByRole("link", { name: "Order 1" }).click();',
+    '    await test.step("Add a note", async () => {',
+    '      await page.getByLabel("Note").fill("Call first");',
+    "    });",
+    '    await page.getByRole("button", { name: "Save" }).click();',
+    "    await page.mouse.wheel(0, 200);",
+    "  });",
+    "});",
+  ].join("\n");
+
+  it("keeps a nested step's title, and each TODO between the actions it came between", async () => {
+    const [draft] = (await convertPlaywrightFile(STEPS, "steps.spec.ts")).drafts;
+    const raw = YAML.parse(draft.yaml);
+    expect(raw.steps.map((s: { title?: string; actions: { do: string }[] }) => [s.title, s.actions.map((a) => a.do)])).toEqual([
+      ["Open the order", ["click", "click"]],
+      ["Add a note", ["type"]],
+      [undefined, ["click"]],
+    ]);
+    // Each TODO sits where its call was: between the two clicks, and after the last action.
+    const lines = draft.yaml.split("\n");
+    const at = (needle: string) => lines.findIndex((l) => l.includes(needle));
+    expect(at("TODO from test: line 5")).toBeGreaterThan(at("name: Orders"));
+    expect(at("TODO from test: line 5")).toBeLessThan(at("name: Order 1"));
+    expect(at("TODO from test: line 11")).toBeGreaterThan(at("name: Save"));
+    expect(WalkthroughDocSchema.safeParse(raw).success).toBe(true);
+  });
+});
+
 describe("playwrightImportInstallHint", () => {
   it("recognizes a missing-typescript module error, however Node phrases it", () => {
     expect(playwrightImportInstallHint(new Error("Cannot find package 'typescript' imported from /x/extract.js"))).toBe(

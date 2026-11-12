@@ -33,6 +33,11 @@ export interface GetChangedFilesOptions {
  * one historic commit in isolation, rather than everything through the repo's current checkout.
  */
 export function getChangedFiles(appRepo: string, base: string, head = "HEAD", opts: GetChangedFilesOptions = {}): string[] {
+  // A ref is passed straight to git: one starting with "-" would be read as an option
+  // (`--output=<file>` writes a file), so refuse it before git sees it.
+  for (const ref of [base, head]) {
+    if (ref.startsWith("-")) throw new Error(`not a git ref: ${JSON.stringify(ref)}`);
+  }
   const files = new Set<string>();
   for (const line of splitLines(git(appRepo, ["diff", "--name-only", `${base}...${head}`]))) files.add(line);
 

@@ -296,6 +296,17 @@ export interface ChatConfig {
 }
 
 /**
+ * Reader feedback (M47): "Was this helpful?" on guide pages and searches that found nothing,
+ * read back by `aida suggest`. Works without a chat key. Stored redacted in the help app's own
+ * deployment (`.aida/feedback.jsonl`, or the host's log); no IP address, cookie or user id.
+ */
+export interface FeedbackConfig {
+  /** Default true. False removes the page control, stops search recording, and makes
+   * `/api/feedback` answer 404. */
+  enabled?: boolean;
+}
+
+/**
  * Theme colours. Values are any CSS colour (hex, `rgb()`, `hsl()`, `oklch()`) or a bare HSL
  * triplet like `235 55% 42%` (shadcn convention) — wrap with `toCssColor()` (src/theme/color.ts)
  * before use.
@@ -527,6 +538,8 @@ export interface AidaConfig {
   publish?: PublishConfig;
   /** Help chat settings; see `ChatConfig`. */
   chat?: ChatConfig;
+  /** Reader feedback on the help site; see `FeedbackConfig`. */
+  feedback?: FeedbackConfig;
   /** `aida affected` settings; see `ImpactConfig`. */
   impact?: ImpactConfig;
   /** `aida ci` settings; see `CiConfig`. */

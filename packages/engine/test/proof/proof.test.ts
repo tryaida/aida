@@ -117,3 +117,37 @@ describe("aida proof", () => {
     expect(html).not.toContain("<b>Acme</b>");
   });
 });
+
+describe("aida proof without video", () => {
+  it("leaves out the video panels, poster and 'Watch the video', and takes its own wording", async () => {
+    const config = project();
+    // A built page (as the pages stage caches it), so the site and print panels are made.
+    const pageDir = join(config.outDir, "pages", "add-order");
+    mkdirSync(pageDir, { recursive: true });
+    writeFileSync(join(pageDir, "index.mdx"), "---\ntitle: Add an order\n---\n\n1. Open Orders.\n");
+    writeFileSync(join(pageDir, "index.plain.md"), "1. Open Orders.\n");
+    const result0 = { id: "add-order", outDir: pageDir, indexFile: join(pageDir, "index.mdx"), plainFile: join(pageDir, "index.plain.md"), screenshotsDir: join(pageDir, "screenshots"), screenshots: [], passed: true, publishable: true, problems: [], suggestions: [] };
+    writeFileSync(join(config.buildDir, "add-order", "pages-cache.json"), JSON.stringify({ result: result0 }));
+    // Stale frames from an earlier run with video must not stay on the sheet.
+    mkdirSync(join(config.buildDir, "proof"), { recursive: true });
+    writeFileSync(join(config.buildDir, "proof", "intro.png"), frame());
+
+    const result = await buildProof(config, { video: false, intro: "Made from the sample app.", siteNote: "(try the real site)" });
+    expect(result.panels.map((p) => p.id)).toEqual(["page", "card", "site"]);
+    expect(result.panels.find((p) => p.id === "site")?.note).toBe("built page: no site URL (try the real site)");
+    expect(existsSync(join(result.dir, "intro.png"))).toBe(false);
+    expect(existsSync(join(result.dir, "step.png"))).toBe(false);
+    const sheet = readFileSync(result.html, "utf8");
+    expect(sheet).toContain("Made from the sample app.");
+    expect(sheet).not.toContain("checkpoint 1");
+    expect(sheet).not.toContain('class="row video"');
+    expect(sheet).toContain("how the brand lands on the help site and print");
+  }, 120_000);
+
+  it("keeps the default wording for existing callers", () => {
+    const html = proofSheetHtml(resolveArtifactBrand({ configDir: "/x", brand: { name: "Acme" } }), { walkthrough: "x", title: "T", steps: [] } as never, [], "2026-10-27T00:00:00Z");
+    expect(html).toContain("Approve once at checkpoint 1.");
+    expect(html).toContain('class="row video"');
+    expect(html).toContain("the video, help site and print");
+  });
+});

@@ -3,10 +3,10 @@
 // in by the caller. ffmpeg-static ships only the `ffmpeg` binary, not `ffprobe` — if PATH has no
 // ffprobe either, video checks that need it will fail with a clear error rather than silently
 // skipping.
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
-
-const execFileAsync = promisify(execFile)
+//
+// Every run goes through render/media-tool.ts: no stdin, SIGKILLed after a time limit (scaled
+// with the video's length for full decodes) or when the caller's AbortSignal aborts.
+import { mediaTimeoutMs, PROBE_TIMEOUT_MS, runMediaTool, SHORT_TOOL_TIMEOUT_MS, spawnMediaTool } from '../render/media-tool.js'
 
 export interface FfmpegTools {
   ffmpeg: string
@@ -24,7 +24,7 @@ let cached: FfmpegTools | undefined
 
 async function works(cmd: string): Promise<boolean> {
   try {
-    await execFileAsync(cmd, ['-version'])
+    await runMediaTool(cmd, ['-version'], { timeoutMs: SHORT_TOOL_TIMEOUT_MS })
     return true
   } catch {
     return false
@@ -70,23 +70,28 @@ export async function resolveFfmpegTools(opts: ResolveFfmpegOptions = {}): Promi
   return tools
 }
 
-/** Runs ffprobe and returns raw stdout (JSON text expected when called with -print_format json). */
-export async function runFfprobe(ffprobe: string, args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync(ffprobe, args, { maxBuffer: 64 << 20 })
-  return stdout
+/** Time limit and stop signal for a QA run of ffmpeg or ffprobe. */
+export interface QaToolOptions {
+  /** The video's length, in seconds: a full decode's time limit scales with it (`mediaTimeoutMs`). */
+  durationSec?: number
+  /** Overrides the time limit. */
+  timeoutMs?: number
+  signal?: AbortSignal
+}
+
+/** Runs ffprobe and returns raw stdout (JSON text expected when called with -print_format json).
+ * A header probe: `PROBE_TIMEOUT_MS` unless `timeoutMs` says otherwise. */
+export async function runFfprobe(ffprobe: string, args: string[], opts: QaToolOptions = {}): Promise<string> {
+  return runMediaTool(ffprobe, args, { timeoutMs: opts.timeoutMs ?? PROBE_TIMEOUT_MS, signal: opts.signal })
 }
 
 /**
  * Runs ffmpeg for its stderr analysis report (filters like ebur128/blackdetect/volumedetect
  * write their results to stderr, not stdout, and ffmpeg exits 0 even when the filter "fails").
  */
-export async function runFfmpegReport(ffmpeg: string, args: string[]): Promise<string> {
-  try {
-    const { stderr } = await execFileAsync(ffmpeg, args, { maxBuffer: 64 << 20 })
-    return stderr
-  } catch (err: any) {
-    // ffmpeg can exit non-zero yet still have written a usable report to stderr.
-    if (typeof err?.stderr === 'string') return err.stderr
-    throw err
-  }
+export async function runFfmpegReport(ffmpeg: string, args: string[], opts: QaToolOptions = {}): Promise<string> {
+  // ffmpeg can exit non-zero yet still have written a usable report to stderr, so any exit
+  // status returns it; only a failure to start, a time-out or an abort throws.
+  const run = await spawnMediaTool(ffmpeg, args, { timeoutMs: opts.timeoutMs ?? mediaTimeoutMs(opts.durationSec), signal: opts.signal, fullStderr: true })
+  return run.stderr
 }

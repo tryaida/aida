@@ -24,6 +24,8 @@ import type { RenderResult } from "../render/index.js";
 import { buildPage } from "../pages/index.js";
 import type { BuildPageResult } from "../pages/index.js";
 import { runQa } from "../qa/index.js";
+import { writeFeedbackConfig } from "../feedback/index.js";
+import { appScreens } from "./app-routes.js";
 import {
   buildManualPdf,
   buildWalkthroughPdf,
@@ -49,7 +51,7 @@ import { collectFailures, textCheckFailures } from "./failures.js";
 import { checkWalkthroughText, type WalkthroughTextProblem } from "../qa/walkthrough-text.js";
 import type { QaReport } from "../qa/index.js";
 import { mapLimit } from "./pool.js";
-import type { BuildOptions, BuildStageName, DeviceBuildResult, StageResult, WalkthroughBuildResult } from "./types.js";
+import type { BuildOptions, BuildProgressEvent, BuildStageName, DeviceBuildResult, StageResult, WalkthroughBuildResult } from "./types.js";
 import { ALL_STAGES } from "./types.js";
 import { voiceCostUsd } from "../usage/prices.js";
 import { resetDatabase } from "../capture/reset.js";
@@ -146,6 +148,32 @@ interface WalkthroughPipelineState {
 
 function selectedStages(opts: BuildOptions): Set<BuildStageName> {
   return new Set(opts.only && opts.only.length > 0 ? opts.only : ALL_STAGES);
+}
+
+/** Calls `opts.onProgress`, synchronously; a callback that throws never breaks the build. */
+function emitProgress(opts: BuildOptions, e: BuildProgressEvent): void {
+  if (!opts.onProgress) return;
+  try {
+    opts.onProgress(e);
+  } catch {
+    // progress is a nicety: ignore a broken callback
+  }
+}
+
+/**
+ * Runs one walkthrough's stage between a "start" and a "done" progress event. "start" is sent
+ * synchronously before `fn` is called, so it's out before a stage that blocks the event loop
+ * (narration) begins; "done" carries the status the stage recorded and its wall time.
+ */
+async function withProgress(opts: BuildOptions, state: WalkthroughPipelineState, stage: BuildStageName, fn: () => Promise<unknown>): Promise<void> {
+  const base = { walkthrough: state.wf.walkthrough, title: state.wf.title, stage };
+  const started = Date.now();
+  emitProgress(opts, { ...base, phase: "start" });
+  try {
+    await fn();
+  } finally {
+    emitProgress(opts, { ...base, phase: "done", status: state.stages[stage]?.status, ms: Date.now() - started });
+  }
 }
 
 /** True when this run's own capture validation failed, or its voice stage failed — in either
@@ -880,8 +908,19 @@ async function runQaStage(state: WalkthroughPipelineState, buildDir: string): Pr
   const started = Date.now();
   if (state.devices.slice(1).includes("phone")) await runPhoneQa(state);
   const targets = qaTargets(state);
+  // A QA run that can't say ok leaves a failing `qa.json`, never an older passing one: whatever
+  // reads it later (loadBuiltPage, `aida whats-new --video`) must agree with this build.
+  const recordFailure = (error: string): void => {
+    try {
+      mkdirSync(join(buildDir, state.wf.walkthrough), { recursive: true });
+      writeFileSync(join(buildDir, state.wf.walkthrough, "qa.json"), `${JSON.stringify({ ok: false, error, reports: [] }, null, 2)}\n`);
+    } catch {
+      // The stage has failed either way; the build reports that.
+    }
+  };
   if (targets.length === 0) {
     state.stages.qa = failed("nothing to check — pages/render stages did not produce output", Date.now() - started);
+    recordFailure("nothing to check");
     return;
   }
   try {
@@ -905,6 +944,7 @@ async function runQaStage(state: WalkthroughPipelineState, buildDir: string): Pr
     state.stages.qa.ms = Date.now() - started;
   } catch (err) {
     state.stages.qa = failed(firstLine((err as Error).message ?? String(err)), Date.now() - started);
+    recordFailure(firstLine((err as Error).message ?? String(err)));
   }
 }
 
@@ -1035,7 +1075,7 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
   let voiceCostUsdSoFar = 0;
   for (const state of states) {
     const item = run?.plan.walkthroughs.find((p) => p.id === state.wf.walkthrough);
-    if (stages.has("capture")) await runCaptureStage(state.wf, config, state, opts, run && item ? { run, item } : undefined);
+    if (stages.has("capture")) await withProgress(opts, state, "capture", () => runCaptureStage(state.wf, config, state, opts, run && item ? { run, item } : undefined));
     else {
       state.stages.capture = notSelected();
       // `--only pages,pdf,index` (etc) without "capture" means "reuse whatever's already
@@ -1067,7 +1107,7 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
       state.stages.voice = skipped("run budget exceeded — skipping remaining paid stages");
       continue;
     }
-    await runVoiceStage(state.wf, config, state);
+    await withProgress(opts, state, "voice", () => runVoiceStage(state.wf, config, state));
     voiceCostUsdSoFar += state.voiceReport?.costUsd ?? 0;
   }
 
@@ -1086,7 +1126,7 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
         state.stages.render = skipped("capture or voice failed this run — not rendering a stale video");
         return;
       }
-      await runRenderStage(state.wf, config, state, draft, workers);
+      await withProgress(opts, state, "render", () => runRenderStage(state.wf, config, state, draft, workers));
     });
   } else {
     for (const state of states) state.stages.render = notSelected();
@@ -1106,7 +1146,7 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
       state.stages.pages = skipped("capture or voice failed this run — not building a page from a failed capture");
       continue;
     }
-    await runPagesStage(state.wf, config, state);
+    await withProgress(opts, state, "pages", () => runPagesStage(state.wf, config, state));
   }
 
   // QA: per walkthrough, over whatever pages/render produced. Runs *before* the pdf stage (moved
@@ -1116,7 +1156,7 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
   for (const state of states) {
     // Text problems are QA problems found early: the qa stage fails with them whatever ran.
     if (textFailed(state)) state.stages.qa = failed(`${state.textProblems.length} text problem(s) (captions, chapter titles, unresolved {{placeholders}}) (aida validate shows them too)`);
-    else if (stages.has("qa")) await runQaStage(state, config.buildDir);
+    else if (stages.has("qa")) await withProgress(opts, state, "qa", () => runQaStage(state, config.buildDir));
     else state.stages.qa = notSelected();
   }
 
@@ -1144,7 +1184,7 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
             state.stages.pdf = textFailed(state) ? textSkip(state) : noPageSkip;
             continue;
           }
-          await runPdfStage(state.wf, config, state, pdfDir, browser, finalPublishable(state));
+          await withProgress(opts, state, "pdf", () => runPdfStage(state.wf, config, state, pdfDir, browser, finalPublishable(state)));
         }
         // manual.pdf covers every publishable page currently on disk (mirrors the index stage's
         // llms.txt/search-index behaviour, index-stage.ts), not just this run's selected walkthroughs.
@@ -1187,6 +1227,10 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
     } catch (err) {
       console.warn(`aida build: theme not written: ${(err as Error).message}`);
     }
+    // The owner's feedback switch (decision 43), where the help app's route and pages read it.
+    // The site address lets the route accept the help site's own posts behind a proxy that
+    // rewrites Host, without trusting a header any client can set.
+    writeFeedbackConfig(join(config.helpApp, "public"), config.feedback, { siteUrl: config.publish?.siteUrl });
   }
 
   // Index: once, over every walkthrough's page.
@@ -1230,6 +1274,7 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
     // passes `aida brief check` with no personal data and no template prompts left.
     const brief = briefForBuild(briefPath(config));
     if (brief.skipped) console.warn(`aida build: app brief not published: ${brief.skipped}; fix it and run aida brief check`);
+    const screens = appScreens(config);
     try {
       const result = runIndexStage({
         pagesDir: join(config.outDir, "pages"),
@@ -1250,6 +1295,8 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
         productName: config.brand?.name,
         appBrief: brief.artifacts,
         outlineOrder: outlineOrder(config),
+        knownRoutes: screens.knownRoutes,
+        appBasePath: screens.basePath,
         // Whether each walkthrough's phone video (M43c) is current: phone is a secondary device
         // and its capture passed. A failed phone render or QA already removed the files.
         phoneVideos: Object.fromEntries(
@@ -1262,6 +1309,9 @@ export async function runPipeline(config: ResolvedConfig, opts: BuildOptions): P
       });
       indexResult = { ...result, ms: Date.now() - started };
       indexStage = ok(`${result.pageCount} page(s) indexed -> ${result.searchIndexFile}`);
+      // A walkthrough with no tour isn't a failure (its page still publishes), but say why, since
+      // the usual reason, a capture older than tours, has a one-command fix.
+      for (const skip of result.tours?.skipped ?? []) console.warn(`aida build: no in-app tour for ${skip.id}: ${skip.reason}`);
       indexStage.ms = Date.now() - started;
     } catch (err) {
       indexStage = failed(firstLine((err as Error).message ?? String(err)), Date.now() - started);

@@ -1,0 +1,10 @@
+{
+  "name": "acme-repairs",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Acme Repairs: a small fictional repair-shop app for the AIDA demo. No dependencies, no database, no sign-in.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  }
+}

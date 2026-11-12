@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Acme dialog</title>
+  </head>
+  <body>
+    <h1>Things</h1>
+    <button type="button" id="open">Open dialog</button>
+    <dialog id="dlg">
+      <p>Archive this thing?</p>
+      <button type="button" id="confirm">Confirm</button>
+    </dialog>
+    <script>
+      document.getElementById("open").addEventListener("click", function () {
+        document.getElementById("dlg").showModal();
+      });
+      document.getElementById("confirm").addEventListener("click", function () {
+        document.getElementById("dlg").close();
+      });
+    </script>
+    <script src="__HELP__/tour.js" data-help-url="__HELP__"></script>
+  </body>
+</html>

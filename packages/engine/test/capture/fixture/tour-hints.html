@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Tour hints fixture</title>
+  </head>
+  <body>
+    <h1>Things</h1>
+    <button type="button" id="save-btn" data-testid="save">Save</button>
+    <form>
+      <label for="email">Email</label>
+      <input type="text" id="email" name="email" placeholder="Your work address" />
+      <input type="search" placeholder="Search things" />
+      <label>Colour
+        <select id="colour" name="colour">
+          <option>Red</option>
+          <option>Blue</option>
+        </select>
+      </label>
+    </form>
+    <p><span class="pill">Archived items</span></p>
+    <div id=":r1:" data-kind="chip" role="button" tabindex="0">Blue chip</div>
+    <table>
+      <tr><td>Widget A</td><td><button type="button">Delete</button></td></tr>
+      <tr><td>Widget B</td><td><button type="button">Delete</button></td></tr>
+    </table>
+    <button type="button" id="contact">Contact sophie.harrington@gmail.com</button>
+    <div class="secret-zone"><button type="button" id="reveal">Reveal Acme account</button></div>
+    <a href="/success.html?from=hints">Next page</a>
+    <!-- Masked words reaching a hint by every route: a row's cell, a link's inner text, part of a
+         label, an aria-labelledby referent. -->
+    <table>
+      <tr><td class="secret-zone">Jane Realperson</td><td><button type="button">Remove</button></td></tr>
+      <tr><td>Widget C</td><td><button type="button">Remove</button></td></tr>
+    </table>
+    <a href="/people/42"><span class="secret-zone">Jane Realperson</span></a>
+    <label for="nick"><span class="secret-zone">Jane's</span> nickname</label>
+    <input id="nick" name="nick" type="text" />
+    <span id="acct-label" class="secret-zone">Account 7731</span>
+    <button type="button" id="acct" aria-labelledby="acct-label">Open</button>
+    <!-- A record's ids. -->
+    <button type="button" id="delete-42" data-testid="row-delete-42" name="items[3]">Discard</button>
+    <!-- A field a step's mask names by label, reached by its placeholder. -->
+    <label for="tel">Phone</label>
+    <input id="tel" name="tel" type="text" placeholder="Your phone" />
+  </body>
+</html>

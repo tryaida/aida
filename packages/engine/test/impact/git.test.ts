@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -90,5 +90,17 @@ describe("getChangedFiles", () => {
     git(repo, ["commit", "-q", "-m", "init"]);
 
     expect(() => getChangedFiles(repo, "not-a-real-ref")).toThrow(/git diff/);
+  });
+
+  it("refuses a ref git would read as an option, before running git", () => {
+    const repo = initRepo();
+    writeFileSync(join(repo, "a.txt"), "1");
+    git(repo, ["add", "-A"]);
+    git(repo, ["commit", "-q", "-m", "init"]);
+
+    const out = join(repo, "injected");
+    expect(() => getChangedFiles(repo, `--output=${out}`)).toThrow(/not a git ref/);
+    expect(() => getChangedFiles(repo, "HEAD", "--output=x")).toThrow(/not a git ref/);
+    expect(existsSync(`${out}...HEAD`)).toBe(false);
   });
 });

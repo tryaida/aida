@@ -1,0 +1,67 @@
+walkthrough: find-a-job
+version: 1
+title: Find a repair job
+summary: Search the jobs list by name, item or job number, or filter it by status.
+for: Front desk staff
+section: Getting started
+start:
+  page: /jobs
+data:
+  search: kettle
+# The list shows every job, so start from the sample data: a job another walkthrough added
+# would change these screens.
+setup:
+  steps:
+    - id: sample-data
+      title: Put back the sample data
+      actions:
+        - do: goto
+          path: /settings
+        - do: click
+          target: { role: button, name: Reset sample data }
+        - do: waitForUrl
+          pattern: "done=sample-data"
+        - do: goto
+          path: /jobs
+steps:
+  - id: jobs-list
+    title: Open the jobs list
+    say: Jobs lists every repair the shop has taken in, newest first, with where each one is up to.
+    caption: Every repair job, newest first.
+    page_text: Select **Jobs** at the top of any screen. Every repair is listed, newest first, with its job number, the customer, the item and its status.
+    actions:
+      - do: point
+        target: { role: link, name: Jobs, exact: true, within: { role: navigation, name: Main } }
+        highlight: true
+  - id: search
+    title: Search by name or item
+    say: To find one job, type part of the customer's name, the item or the job number. The list narrows as you type.
+    caption: Type a name, item or job number.
+    page_text: In **Search jobs**, type part of the customer's name, the item or the job number, such as "{{search}}". The list narrows as you type.
+    actions:
+      - do: type
+        target: { label: Search jobs }
+        text: "{{search}}"
+      - do: point
+        target: { role: link, name: Owen Price }
+        highlight: true
+  - id: filter
+    title: Filter by status
+    say: Or filter the list by status. Ready for pickup shows the jobs waiting for their owners to collect them.
+    caption: Or filter the list by status.
+    page_text: To see only the jobs at one stage, select **Waiting**, **In progress**, **Ready for pickup** or **Collected**. The number beside each one says how many jobs are at that stage.
+    actions:
+      - do: click
+        target: { role: link, name: Ready for pickup, within: { role: navigation, name: Filter by status } }
+        highlight: true
+      - do: waitForUrl
+        pattern: "status=ready"
+  - id: open-job
+    title: Open a job
+    say: Select a customer's name to open their job, with their phone number, what's wrong and the job's history.
+    caption: Select a name to open the job.
+    page_text: Select the customer's name to open the job. It shows their contact details, what's wrong, the job's status and its history.
+    actions:
+      - do: point
+        target: { role: link, name: Lena Fischer }
+        highlight: true

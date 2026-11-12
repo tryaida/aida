@@ -9,6 +9,8 @@
 // sidecar JSON, keyed by path+size+mtime: unchanged files are never re-read, only re-stat'd.
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { stableStringify } from "../build/hash.js";
 import type { Timeline } from "./types.js";
 
 export interface HashSettings {
@@ -92,4 +94,17 @@ export function matchesCachedHash(outputFile: string, hash: string): boolean {
 
 export function writeHashSidecar(outputFile: string, hash: string): void {
   writeFileSync(hashSidecarPath(outputFile), `${hash}\n`);
+}
+
+/** A walkthrough's content hash as loaded (key order never matters). Recorded beside a render
+ * (`renderSourcePath`) so `aida whats-new --video` can tell a walkthrough edited since its last
+ * render from one that wasn't (M48); never part of any cache key. */
+export function walkthroughHash(wf: unknown): string {
+  return createHash("sha256").update(stableStringify(wf)).digest("hex");
+}
+
+/** The record of what the render in `stepOutDir` was made from: `{ "walkthrough": <hash> }`.
+ * `suffix` is the device's file suffix (".phone"), as the render's own files use. */
+export function renderSourcePath(stepOutDir: string, suffix = ""): string {
+  return join(stepOutDir, `rendered-from${suffix}.json`);
 }

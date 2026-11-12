@@ -47,7 +47,9 @@ describe("buildWhatsNew", () => {
 
     await buildWhatsNew({ appRepo: "/app", helpApp, runner });
 
-    expect(calls[0].args).toContain("v1.0.0..HEAD");
+    // The frozen ref is checked as a commit first (`--end-of-options`), then logged from.
+    expect(calls[0].args).toEqual(["rev-parse", "--verify", "--quiet", "--end-of-options", "v1.0.0^{commit}"]);
+    expect(calls[1].args).toContain("v1.0.0..HEAD");
   });
 
   it("groups entries by walkthrough id via the injected mapper, with unmapped entries under General", async () => {

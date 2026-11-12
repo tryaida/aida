@@ -85,6 +85,28 @@ export interface BuildOptions {
   /** Pull in walkthroughs that leave the states the selected ones need (decision 28). */
   withDeps?: boolean;
   json: boolean;
+  /**
+   * Called as each walkthrough's stage starts and finishes (capture, voice, render, pages, qa,
+   * pdf; not the run-wide index stage, and not stages skipped without running). Called
+   * synchronously, before the stage's own work: narration (Kokoro) blocks the event loop for
+   * minutes, so a timer or a later tick would only fire once it's over. A callback that throws
+   * is ignored; it never breaks the build.
+   */
+  onProgress?: (e: BuildProgressEvent) => void;
+}
+
+/** One `BuildOptions.onProgress` call. */
+export interface BuildProgressEvent {
+  /** The walkthrough's id. */
+  walkthrough: string;
+  /** The walkthrough's title, for display. */
+  title?: string;
+  stage: BuildStageName;
+  phase: "start" | "done";
+  /** The stage's status, on "done" (unset when the stage threw). */
+  status?: StageStatus;
+  /** Wall time of the stage, on "done". */
+  ms?: number;
 }
 
 export interface ModelsUsageSection {

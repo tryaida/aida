@@ -10,8 +10,9 @@ describe("listMergedCommits", () => {
       stderr: "",
     });
     const result = await listMergedCommits(runner, "/repo", "v1.0");
-    expect(calls[0]).toMatchObject({ cmd: "git", cwd: "/repo" });
-    expect(calls[0].args).toContain("v1.0..HEAD");
+    expect(calls[0]).toMatchObject({ cmd: "git", cwd: "/repo", args: ["rev-parse", "--verify", "--quiet", "--end-of-options", "v1.0^{commit}"] });
+    expect(calls[1]).toMatchObject({ cmd: "git", cwd: "/repo" });
+    expect(calls[1].args).toContain("v1.0..HEAD");
     expect(result).toHaveLength(2);
     expect(result[0]).toMatchObject({ id: "abc123", prNumber: 42 });
     expect(result[1]).toMatchObject({ id: "def456", prNumber: undefined });
@@ -22,6 +23,18 @@ describe("listMergedCommits", () => {
     await listMergedCommits(runner, "/repo");
     expect(calls[0].args).toContain("HEAD");
     expect(calls[0].args.some((a) => a.includes(".."))).toBe(false);
+  });
+
+  it("refuses a since that git would read as an option, before running anything", async () => {
+    const { runner, calls } = createFakeCommandRunner({ code: 0, stdout: "", stderr: "" });
+    await expect(listMergedCommits(runner, "/repo", "--output=/tmp/injected")).rejects.toThrow(/can't be a git ref/);
+    expect(calls).toEqual([]);
+  });
+
+  it("refuses a since that isn't a commit, before git log sees it", async () => {
+    const { runner, calls } = createFakeCommandRunner((_cmd, args) => (args[0] === "rev-parse" ? { code: 1, stdout: "", stderr: "" } : { code: 0, stdout: "", stderr: "" }));
+    await expect(listMergedCommits(runner, "/repo", "v9")).rejects.toThrow(/"v9" isn't a commit/);
+    expect(calls.map((c) => c.args[0])).toEqual(["rev-parse"]);
   });
 
   it("throws with git's stderr on a non-zero exit", async () => {

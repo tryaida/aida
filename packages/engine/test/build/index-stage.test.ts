@@ -241,6 +241,54 @@ describe("runIndexStage", () => {
     expect(existsSync(path.join(helpApp, "content", "docs", "how-do-i", "flaky"))).toBe(false);
   });
 
+  // In-app help (decisions 41, 42) is built from the same publishable sources as procedures.json:
+  // nothing else calls buildHelpMap or buildTours, so without this the widget has no guides.
+  it("writes help-map.json for publishable walkthroughs and takes a guide and its tour out when it stops being publishable", async () => {
+    const helpApp = path.join(dir, "help");
+    const wf = {
+      walkthrough: "edit-poll",
+      title: "Edit a poll",
+      start: { page: "/polls/1042/edit" },
+      steps: [],
+    } as unknown as import("../../src/walkthrough/index.js").Walkthrough;
+    const good = await writeFakePage(pagesDir, "edit-poll", "Edit a poll", true);
+    const captureDir = path.join(dir, "capture");
+    await mkdir(path.join(captureDir, "frames"), { recursive: true });
+    await writeFile(path.join(captureDir, "manifest.json"), JSON.stringify({ steps: [] }));
+    await writeFile(path.join(captureDir, "validation.json"), JSON.stringify({ ok: true, steps: [] }));
+
+    const r1 = runIndexStage({
+      pagesDir,
+      outDir,
+      helpApp,
+      pages: [good],
+      procedureSources: [{ walkthrough: wf, captureDir }],
+      knownRoutes: ["/polls/[id]/edit", "/polls/[id]"],
+    });
+    expect(r1.helpMapFile).toBe(path.join(helpApp, "public", "help-map.json"));
+    const map1 = JSON.parse(await readFile(r1.helpMapFile!, "utf8")) as { guides: { id: string; starts?: string; tour?: boolean }[] };
+    expect(map1.guides.map((g) => [g.id, g.starts, g.tour])).toEqual([["edit-poll", "/polls/*/edit", undefined]]);
+    // This capture predates tour hints, so there is no tour, and the build can say why.
+    expect(r1.tours?.ids).toEqual([]);
+    expect(r1.tours?.skipped.map((t) => t.id)).toEqual(["edit-poll"]);
+
+    // A tour left by an earlier build must go when the walkthrough is no longer publishable.
+    const tourFile = path.join(helpApp, "public", "tours", "edit-poll.json");
+    await mkdir(path.dirname(tourFile), { recursive: true });
+    await writeFile(tourFile, JSON.stringify({ version: 1, id: "edit-poll", steps: [] }));
+    const failing = await writeFakePage(pagesDir, "edit-poll", "Edit a poll", false);
+    const r2 = runIndexStage({
+      pagesDir,
+      outDir,
+      helpApp,
+      pages: [failing],
+      procedureSources: [{ walkthrough: wf, captureDir }],
+    });
+    const map2 = JSON.parse(await readFile(r2.helpMapFile!, "utf8")) as { guides: unknown[] };
+    expect(map2.guides).toEqual([]);
+    expect(existsSync(tourFile)).toBe(false);
+  });
+
   it("keeps an existing procedures.json entry for a walkthrough this run didn't touch at all", async () => {
     const helpApp = path.join(dir, "help");
     const proceduresFile = path.join(helpApp, "public", "procedures.json");

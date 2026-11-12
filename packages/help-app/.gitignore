@@ -2,6 +2,9 @@ node_modules/
 .next/
 .build/
 .aida-session/
+# Reader questions and feedback collected by the running help site: redacted, but not for git.
+.aida/unanswered.jsonl
+.aida/feedback.jsonl
 *.tsbuildinfo
 next-env.d.ts
 .env*.local

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Acme busy</title>
+  </head>
+  <body>
+    <h1>Live board</h1>
+    <p id="clock">0</p>
+    <button type="button">Steady</button>
+    <script>
+      // A page that never rests: a ticking counter and a class toggled every 20ms.
+      var tick = document.getElementById("clock").firstChild;
+      var n = 0;
+      setInterval(function () {
+        n += 1;
+        tick.data = String(n);
+        document.body.classList.toggle("tick");
+      }, 20);
+    </script>
+    <script src="__HELP__/tour.js" data-help-url="__HELP__"></script>
+  </body>
+</html>

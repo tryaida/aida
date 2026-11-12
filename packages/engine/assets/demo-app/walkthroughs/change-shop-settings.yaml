@@ -1,0 +1,57 @@
+walkthrough: change-shop-settings
+version: 1
+title: Change the shop's settings
+summary: Update the shop's details and the turnaround it promises on new jobs.
+for: Shop managers
+section: Screens and settings
+start:
+  page: /jobs
+data:
+  hours: Mon to Sat, 8am to 6pm
+  turnaround: 7 working days
+steps:
+  - id: open-settings
+    title: Open Settings
+    say: The shop's settings are under Settings, at the top of every screen.
+    caption: Select Settings.
+    page_text: Select **Settings** at the top of any screen.
+    actions:
+      - do: click
+        target: { role: link, name: Settings, within: { role: navigation, name: Main } }
+        highlight: true
+      - do: waitForUrl
+        pattern: "/settings"
+  - id: opening-hours
+    title: Update the opening hours
+    say: Update the shop's details, such as its opening hours.
+    caption: Update the opening hours.
+    page_text: Under **Shop details**, change the **Shop name**, **Shop phone** or **Opening hours**, for example to "{{hours}}".
+    actions:
+      - do: type
+        target: { label: Opening hours }
+        text: "{{hours}}"
+      - do: point
+        target: { role: textbox, name: Opening hours }
+        highlight: true
+  - id: turnaround
+    title: Choose the standard turnaround
+    say: Standard turnaround is what the shop promises when it takes in a repair. Every new job shows it.
+    caption: Choose the standard turnaround.
+    page_text: Under **New jobs**, choose the **Standard turnaround**. Every new job shows it, and so does the **Take in a repair** form.
+    actions:
+      - do: select
+        target: { label: Standard turnaround }
+        option: "{{turnaround}}"
+        highlight: true
+  - id: save
+    title: Save the settings
+    say: Select Save settings. The change applies to every job from now on.
+    caption: Select Save settings.
+    page_text: Select **Save settings**. The new settings apply straight away.
+    actions:
+      - do: click
+        target: { role: button, name: Save settings }
+        highlight: true
+      - do: expect
+        target: { role: status }
+        text: Settings saved

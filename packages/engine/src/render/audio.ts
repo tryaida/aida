@@ -1,16 +1,15 @@
 // Narration mix: each clip at its cue, soft ticks on clicks, loudness-normalised to -16 LUFS.
 // Ported from compose.mjs lines ~196-218.
-import { execFile } from "node:child_process";
 import path from "node:path";
-import { promisify } from "node:util";
 import type { Timeline } from "./types.js";
+import { mediaTimeoutMs, runMediaTool, SHORT_TOOL_TIMEOUT_MS } from "./media-tool.js";
 
-const execFileAsync = promisify(execFile);
-
-/** Builds `<outDir>/narration.m4a`: every narration clip at its cue, plus soft click ticks. */
-export async function buildNarrationTrack(tl: Timeline, outDir: string, ffmpeg: string): Promise<string> {
+/** Builds `<outDir>/narration.m4a`: every narration clip at its cue, plus soft click ticks. Both
+ * ffmpeg runs have no stdin and a time limit (the mix's scales with the video's length; see
+ * media-tool.ts), and stop when `signal` aborts. */
+export async function buildNarrationTrack(tl: Timeline, outDir: string, ffmpeg: string, opts: { signal?: AbortSignal } = {}): Promise<string> {
   const tick = path.join(outDir, "tick.wav");
-  await execFileAsync(ffmpeg, [
+  await runMediaTool(ffmpeg, [
     "-y",
     "-v",
     "error",
@@ -21,7 +20,7 @@ export async function buildNarrationTrack(tl: Timeline, outDir: string, ffmpeg: 
     "-ac",
     "1",
     tick,
-  ]);
+  ], { timeoutMs: SHORT_TOOL_TIMEOUT_MS, signal: opts.signal });
 
   const inputs: string[] = [];
   const filters: string[] = [];
@@ -39,11 +38,11 @@ export async function buildNarrationTrack(tl: Timeline, outDir: string, ffmpeg: 
   const totalInputs = tl.audio.length + tl.clicks.length;
   filters.push(
     `${labels}amix=inputs=${totalInputs}:normalize=0:dropout_transition=0,` +
-      `apad,atrim=0:${tl.duration},loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000[out]`,
+      `apad=whole_dur=${tl.duration},atrim=0:${tl.duration},loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000[out]`,
   );
 
   const narrationFile = path.join(outDir, "narration.m4a");
-  await execFileAsync(ffmpeg, [
+  await runMediaTool(ffmpeg, [
     "-y",
     "-v",
     "error",
@@ -57,6 +56,6 @@ export async function buildNarrationTrack(tl: Timeline, outDir: string, ffmpeg: 
     "-b:a",
     "192k",
     narrationFile,
-  ]);
+  ], { timeoutMs: mediaTimeoutMs(tl.duration), signal: opts.signal });
   return narrationFile;
 }

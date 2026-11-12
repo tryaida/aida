@@ -1,13 +1,26 @@
 // Playwright renderAt(t) -> ffmpeg libx264 (yuv420p, bt709, tv range), then mux with the
 // narration track and +faststart. Ported from compose.mjs lines ~232-280.
-import { execFile, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
 import { frameSignature } from "./state.js";
 import type { RenderQuality, Timeline } from "./types.js";
+import { KILL_GRACE_MS, mediaTimeoutMs, runMediaTool, stopProcess, trackMediaProcess } from "./media-tool.js";
 
-const execFileAsync = promisify(execFile);
+/** Media length assumed for a time limit when the caller doesn't say: an hour, so a long video
+ * is never cut off (media-tool.ts `mediaTimeoutMs`). */
+const UNKNOWN_DURATION_SEC = 3600;
+
+/** Time limit and stop signal for one ffmpeg run over a video. */
+export interface MediaRunOptions {
+  /** Length of the media, in seconds; sets the time limit (`mediaTimeoutMs`). */
+  durationSec?: number;
+  signal?: AbortSignal;
+}
+
+function runOpts(o: MediaRunOptions): { timeoutMs: number; signal?: AbortSignal } {
+  return { timeoutMs: mediaTimeoutMs(o.durationSec ?? UNKNOWN_DURATION_SEC), signal: o.signal };
+}
 
 export function qualityFor(draft: boolean, fpsOverride?: number): RenderQuality {
   // Draft trades resolution for speed via deviceScaleFactor (player.css lays out a fixed
@@ -138,8 +151,11 @@ async function stepFrames(
   return { framesSkipped };
 }
 
+/** The frame encoder: no time limit (it lives as long as frames keep coming on its stdin, and a
+ * full-quality render of a long guide takes a long time), but killed with this process and, on
+ * the error path, by `abortFrameEncoder`. */
 function spawnFrameEncoder(ffmpeg: string, quality: RenderQuality, frameCount: number, outFile: string) {
-  return spawn(
+  const child = spawn(
     ffmpeg,
     [
       "-y",
@@ -184,6 +200,8 @@ function spawnFrameEncoder(ffmpeg: string, quality: RenderQuality, frameCount: n
     ],
     { stdio: ["pipe", "inherit", "inherit"] },
   );
+  trackMediaProcess(child);
+  return child;
 }
 
 /** `<dir>/<base>.tmp-<pid>-<random>.mp4` — ffmpeg writes here first so a crash or an early
@@ -198,14 +216,15 @@ function tmpPathFor(outFile: string): string {
   return path.join(dir, `${base}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}.mp4`);
 }
 
-/** Ends an ffmpeg encoder's stdin, waits for it to exit (killing it if it doesn't on its own),
- * and deletes its (partial) output — used on the error path so a thrown `page.evaluate`/
- * screenshot never leaves the ffmpeg child process running with its stdin open (segments.ts's
- * concurrent workers would otherwise leak one ffmpeg process per failed scene) nor a partial
- * file behind. */
-async function abortFrameEncoder(ff: ReturnType<typeof spawn>, ffDone: Promise<void>, tmpFile: string): Promise<void> {
+/** Ends an ffmpeg encoder's stdin, stops it (SIGTERM, then SIGKILL after `graceMs`: an ffmpeg
+ * stuck in its filter graph ignores SIGTERM), waits for it to exit, and deletes its (partial)
+ * output — used on the error path so a thrown `page.evaluate`/screenshot never leaves the ffmpeg
+ * child process running with its stdin open (segments.ts's concurrent workers would otherwise
+ * leak one ffmpeg process per failed scene) nor a partial file behind. */
+export async function abortFrameEncoder(ff: ReturnType<typeof spawn>, ffDone: Promise<void>, tmpFile: string, graceMs: number = KILL_GRACE_MS): Promise<void> {
   ff.stdin?.destroy();
-  if (!ff.killed) ff.kill();
+  // A process that never started (`error` instead of `spawn`) has nothing to stop.
+  if (ff.pid !== undefined) await stopProcess(ff, graceMs);
   await ffDone.catch(() => {});
   await rm(tmpFile, { force: true }).catch(() => {});
 }
@@ -339,12 +358,12 @@ export async function openRenderBrowser(
 
 /** Concatenates already-encoded segments (same codec params, closed GOP) with the ffmpeg
  * concat demuxer and `-c copy` — no re-encoding, so this is cheap regardless of video length. */
-export async function concatSegments(segmentFiles: string[], outFile: string, ffmpeg: string): Promise<void> {
+export async function concatSegments(segmentFiles: string[], outFile: string, ffmpeg: string, opts: MediaRunOptions = {}): Promise<void> {
   const listFile = `${outFile}.concat.txt`;
   const { writeFile, rm } = await import("node:fs/promises");
   await writeFile(listFile, segmentFiles.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join("\n"));
   try {
-    await execFileAsync(ffmpeg, ["-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", listFile, "-c", "copy", outFile]);
+    await runMediaTool(ffmpeg, ["-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", listFile, "-c", "copy", outFile], runOpts(opts));
   } finally {
     await rm(listFile, { force: true });
   }
@@ -382,7 +401,7 @@ export function iso6392(lang: string | undefined): string {
   return ISO_639_2[primary] ?? "und";
 }
 
-export interface MuxOptions {
+export interface MuxOptions extends MediaRunOptions {
   /** config.lang (BCP-47); tags the muxed audio stream's language. Default "en". */
   lang?: string;
   /** A `.vtt`/`.srt` captions file to embed as a soft `mov_text` subtitle track, same language
@@ -401,7 +420,7 @@ export interface MuxOptions {
  * video to the subtitle track's shorter duration. */
 export async function muxVideo(silentVideo: string, narrationTrack: string, outFile: string, title: string, ffmpeg: string, opts: MuxOptions = {}): Promise<void> {
   const language = iso6392(opts.lang);
-  await execFileAsync(ffmpeg, [
+  await runMediaTool(ffmpeg, [
     "-y",
     "-v",
     "error",
@@ -425,17 +444,17 @@ export async function muxVideo(silentVideo: string, narrationTrack: string, outF
     "-metadata:s:a:0",
     `language=${language}`,
     outFile,
-  ]);
-  if (opts.captionsFile) await addSubtitleTrack(outFile, opts.captionsFile, language, ffmpeg);
+  ], runOpts(opts));
+  if (opts.captionsFile) await addSubtitleTrack(outFile, opts.captionsFile, language, ffmpeg, opts);
 }
 
 /** Remuxes `file` in place with `captionsFile` added as a `mov_text` subtitle track — a plain
  * stream copy of everything already in `file` (no `-shortest`: see `muxVideo`'s doc comment),
  * not forced (see `MuxOptions.captionsFile`'s doc comment). */
-async function addSubtitleTrack(file: string, captionsFile: string, language: string, ffmpeg: string): Promise<void> {
+async function addSubtitleTrack(file: string, captionsFile: string, language: string, ffmpeg: string, opts: MediaRunOptions): Promise<void> {
   const tmp = `${file}.tmp.mp4`;
   try {
-    await execFileAsync(ffmpeg, [
+    await runMediaTool(ffmpeg, [
       "-y",
       "-v",
       "error",
@@ -458,7 +477,7 @@ async function addSubtitleTrack(file: string, captionsFile: string, language: st
       "-disposition:s:0",
       "0",
       tmp,
-    ]);
+    ], runOpts(opts));
     await rename(tmp, file);
   } catch (err) {
     await rm(tmp, { force: true });

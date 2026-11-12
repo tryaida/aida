@@ -82,6 +82,10 @@ export interface InitOptions {
   /** Read the brand from the running app too when it answers (M34). Default true; also off with
    * `AIDA_INIT_FROM_APP=0`. */
   fromApp?: boolean;
+  /** Packs the engine into `help/vendor/` and points the help app's `aida-docs` dependency at it
+   * (then installs, see `install`). Default true. `aida demo` turns it off: its first outputs don't
+   * need the help app installed, and it vendors the engine itself only when the site is asked for. */
+  vendorEngine?: boolean;
 }
 
 export interface InitResult {
@@ -100,8 +104,8 @@ export interface InitResult {
   theme?: { files: string[]; written: string[]; warnings: string[] };
   ci?: { file: string; written: boolean };
   claudeRepair?: { file: string; written: boolean };
-  /** The packed engine and the help app's dependency on it. */
-  engine: { tarball: string; spec: string; built: boolean; packageJsonUpdated: boolean; removed: string[] };
+  /** The packed engine and the help app's dependency on it. Absent only with `vendorEngine: false`. */
+  engine?: { tarball: string; spec: string; built: boolean; packageJsonUpdated: boolean; removed: string[] };
   /** Whether `npm install` ran in the help app. */
   installed: boolean;
   /** help/.env.local's Studio hosts and access key, when `--tunnel-host` was given.
@@ -214,13 +218,18 @@ export function runInitCommand(options: InitOptions): InitResult {
   // Last, after every file is written, so a failed build or install leaves a complete scaffold
   // to re-run init on. Decisions #29: never a bare registry name. Pack this engine (built first when running from
   // source, so the tarball matches the code) and point the help app at the tarball.
-  const built = ensureEngineBuilt(runner, options.engineDir);
-  const pack = packEngine(destDir, runner, options.engineDir);
-  const packageJsonUpdated = setAidaDependency(destDir, pack.spec);
-  // Only now that package.json points at the new tarball: a failure before here leaves the old
-  // tarball the help app still depends on.
-  const removed = pruneOldTarballs(destDir, pack.spec);
-  const install = options.install !== false;
+  let engine: InitResult["engine"];
+  if (options.vendorEngine !== false) {
+    const built = ensureEngineBuilt(runner, options.engineDir);
+    const pack = packEngine(destDir, runner, options.engineDir);
+    const packageJsonUpdated = setAidaDependency(destDir, pack.spec);
+    // Only now that package.json points at the new tarball: a failure before here leaves the old
+    // tarball the help app still depends on.
+    const removed = pruneOldTarballs(destDir, pack.spec);
+    engine = { tarball: pack.file, spec: pack.spec, built, packageJsonUpdated, removed };
+  }
+  // Without the vendored engine the help app's package.json has no usable aida-docs dependency.
+  const install = engine !== undefined && options.install !== false;
   if (install) installDependencies(destDir, runner);
 
   return {
@@ -236,7 +245,7 @@ export function runInitCommand(options: InitOptions): InitResult {
     theme,
     ci,
     claudeRepair,
-    engine: { tarball: pack.file, spec: pack.spec, built, packageJsonUpdated, removed },
+    engine,
     installed: install,
     tunnelHosts,
     signIn: signInFile ? { ...signInFile, configured: signInConfigured } : undefined,
@@ -376,8 +385,10 @@ export async function runInit(options: InitOptions, json: boolean): Promise<numb
   if (result.claudeRepair) {
     console.log(result.claudeRepair.written ? `  wrote ${result.claudeRepair.file}` : `  left existing ${result.claudeRepair.file} untouched`);
   }
-  console.log(`  aida-docs dependency: ${result.engine.spec}${result.engine.built ? " (engine built first)" : ""}`);
-  if (result.engine.removed.length > 0) console.log(`  removed older tarball(s): ${result.engine.removed.join(", ")}`);
+  if (result.engine) {
+    console.log(`  aida-docs dependency: ${result.engine.spec}${result.engine.built ? " (engine built first)" : ""}`);
+    if (result.engine.removed.length > 0) console.log(`  removed older tarball(s): ${result.engine.removed.join(", ")}`);
+  }
   console.log(result.installed ? "  installed dependencies (npm install)" : "  skipped npm install (--no-install)");
   if (result.tunnelHosts) {
     const t = result.tunnelHosts;

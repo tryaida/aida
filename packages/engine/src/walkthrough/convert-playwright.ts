@@ -109,7 +109,7 @@ interface BuildArgs {
   describeTitles: string[];
   data: Record<string, string>;
   chapter?: string;
-  steps: { actions: Action[]; todos: string[] }[];
+  steps: { title?: string; actions: Action[]; todos: string[]; todosAt?: { index: number; todos: string[] }[] }[];
 }
 
 function buildYamlDoc(args: BuildArgs): string {
@@ -117,6 +117,7 @@ function buildYamlDoc(args: BuildArgs): string {
     .filter((s) => s.actions.length > 0)
     .map((s) => ({
       ...(args.chapter ? { chapter: args.chapter } : {}),
+      ...(s.title ? { title: s.title } : {}),
       say: placeholderSay(s.actions[0]),
       actions: s.actions,
     }));
@@ -168,6 +169,16 @@ function buildYamlDoc(args: BuildArgs): string {
         doc.comment = appendComments(doc.comment ?? undefined, step.todos);
       }
       continue;
+    }
+    // A step drafted from a `test.step` keeps the TODOs of the calls inside it, where they were:
+    // before the step, or between (or after) its actions.
+    const node = stepsNode.items[nodeIndex] as YAML.YAMLMap;
+    if (step.todos.length > 0) node.commentBefore = appendComments(node.commentBefore, step.todos);
+    const actionsNode = node.get("actions", true) as unknown as YAML.YAMLSeq;
+    for (const at of step.todosAt ?? []) {
+      const action = actionsNode.items[at.index] as YAML.YAMLMap | undefined;
+      if (action) action.commentBefore = appendComments(action.commentBefore, at.todos);
+      else actionsNode.comment = appendComments(actionsNode.comment ?? undefined, at.todos);
     }
     nodeIndex++;
   }

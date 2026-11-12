@@ -64,6 +64,9 @@ describe("help-site panel (proof)", () => {
     expect(html).toContain("Download PDF");
     expect(html).toContain("… and 1 more step on the page.");
     expect(html).toContain('<a class="active">Add an order</a>');
+    // No poster (a proof sheet without video): no video panel and no "Watch the video".
+    expect(html).not.toContain("Watch the video");
+    expect(html).not.toContain('class="video"');
   });
 });
 

@@ -1,8 +1,5 @@
 // Minimal WAV helpers: enough to generate silent clips and read back duration without ffprobe.
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
-
-const execFileAsync = promisify(execFile)
+import { PROBE_TIMEOUT_MS, runMediaTool } from '../render/media-tool.js'
 
 export interface WavOptions {
   sampleRate?: number
@@ -199,12 +196,12 @@ export function estimateSpokenDurationMs(text: string, wordsPerMinute = 150): nu
 
 async function ffprobeDurationMs(filePath: string): Promise<number | null> {
   try {
-    const { stdout } = await execFileAsync('ffprobe', [
+    const stdout = await runMediaTool('ffprobe', [
       '-v', 'error',
       '-show_entries', 'format=duration',
       '-of', 'csv=p=0',
       filePath,
-    ])
+    ], { timeoutMs: PROBE_TIMEOUT_MS })
     const seconds = Number(stdout.trim())
     if (!Number.isFinite(seconds)) return null
     return seconds * 1000

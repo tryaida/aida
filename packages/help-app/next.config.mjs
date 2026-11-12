@@ -31,6 +31,20 @@ const config = {
     .split(",")
     .map((h) => h.trim())
     .filter(Boolean),
+  // The in-app widget (public/widget.js) and the tour script (public/tour.js) run on the
+  // documented app's origin and read these from the help site. They are already-public,
+  // read-only published docs data (brand/theme.json holds only the brand's name, colours, font
+  // and logo path), so any origin may read them; nothing else on the site gets the header (chat
+  // keeps its own allow-list).
+  // A static export can't send headers (Next warns if asked to); the static host sets them.
+  ...(process.env.AIDA_STATIC_EXPORT === "1"
+    ? {}
+    : {
+        async headers() {
+          const anyOrigin = [{ key: "Access-Control-Allow-Origin", value: "*" }];
+          return ["/help-map.json", "/search-index.json", "/brand/theme.json", "/tours/:path*"].map((source) => ({ source, headers: anyOrigin }));
+        },
+      }),
 };
 
 export default withMDX(config);

@@ -25,6 +25,7 @@ import { accessibleName, pageHeadings, seenField } from "./seen.js";
 import { ImpactTracker } from "./impact.js";
 import { gotoReady } from "./page-ready.js";
 import { seenTargets } from "./target-names.js";
+import { pageScroll, StepHintRecorder } from "./hints.js";
 import { startMailCatcher, type CaughtEmail, type MailCatcher } from "../mail/catcher.js";
 import { emailCardBox, hideEmailOverlay, showEmailOverlay, type EmailView } from "../mail/overlay.js";
 import type { MockEmail } from "../walkthrough/action.js";
@@ -434,6 +435,8 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
       const highlightState: HighlightState = { target: null };
       const progress: ActionProgress = {};
       const seen: (string | undefined)[] = [];
+      // Tour hints (M46): where the step starts, and each action's element as it resolves.
+      const hints = record ? new StepHintRecorder(page, { runId, maskSelectors: config.mask?.selectors, stepMask: step.mask }) : undefined;
       watch.start();
       problemStep = step.id;
 
@@ -465,6 +468,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
             mail,
             emailValues,
             touch: settings.hasTouch,
+            hints,
           });
           progress.lastOk = { index: ai + 1, do: acts[ai].do };
         }
@@ -537,6 +541,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureRunResult
         checks: stepResult.checks,
         ...seenTargets(rawWt.steps[si]?.actions),
         ...seenField(seen, runId),
+        ...(hints ? { tour: hints.finish(blurBoxes, await pageScroll(page)) } : {}),
       });
       if (!stepResult.ok) break;
       if (opts.stopAfterStep && step.id === opts.stopAfterStep) {
@@ -736,6 +741,8 @@ interface RunActionArgs {
    * mouse to hover with (so `hover` actions fail with a clear message), and the pre-action
    * pointer frame skips the real mouse-move "settle" a hover has no equivalent for. */
   touch: boolean;
+  /** This step's tour hints (M46), when the run records. */
+  hints?: StepHintRecorder;
 }
 
 /** `action` with `{{inbox.<key>}}` filled in where a value is used: typed text, a goto path, an
@@ -1004,6 +1011,7 @@ async function runAction(args: RunActionArgs): Promise<number> {
       const loc = await locate(a.target, page);
       await loc.waitFor({ state: "visible" });
       seen.push(await accessibleName(loc));
+      await args.hints?.record(ai, loc, a.target);
       const box = await boxOf(a.target, page);
       const pt = center(box);
       if (a.do === "click" && a.target.label) pt.x = Math.round(box.x + Math.min(box.w * 0.3, 140 * placementScale));
@@ -1072,6 +1080,7 @@ async function runAction(args: RunActionArgs): Promise<number> {
         loc = await locate(a.target, page);
         await loc.waitFor({ state: "visible" });
         seen.push(await accessibleName(loc));
+        await args.hints?.record(ai, loc, a.target);
         const hasFocus = () => loc!.evaluate((el) => el === document.activeElement || el.contains(document.activeElement)).catch(() => false);
         if (!(await hasFocus())) await loc.focus();
         // A target that can't take focus would send the key to the page instead: say so.
@@ -1101,6 +1110,7 @@ async function runAction(args: RunActionArgs): Promise<number> {
       const loc = await locate(a.target, page);
       await loc.waitFor({ state: "visible" });
       seen.push(await accessibleName(loc));
+      await args.hints?.record(ai, loc, a.target);
       await loc.focus();
       await paint(page);
       events.push({ type: "frame", image: await shot("state", step.mask), transition: "cut" });
@@ -1125,6 +1135,7 @@ async function runAction(args: RunActionArgs): Promise<number> {
       const loc = await locate(a.target, page);
       await loc.waitFor({ state: "visible" });
       seen.push(await accessibleName(loc));
+      await args.hints?.record(ai, loc, a.target);
       const box = await boxOf(a.target, page);
       const pt = center(box);
       if (a.target.label) pt.x = Math.round(box.x + Math.min(box.w * 0.3, 140 * placementScale));
@@ -1179,6 +1190,7 @@ async function runAction(args: RunActionArgs): Promise<number> {
       const loc = await locate(a.target, page);
       const isFocused = await loc.evaluate((el) => el === document.activeElement);
       seen.push(await accessibleName(loc));
+      await args.hints?.record(ai, loc, a.target);
       if (!isFocused) await loc.focus();
       // `type` sets the field to `text`: select what's already there so the first key replaces
       // it, as a person would, instead of appending (a combobox showing its current choice).

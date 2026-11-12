@@ -318,3 +318,17 @@ phone failure never costs the desktop page. Steps that only happen on one device
 radio group per date instead of the desktop grid). The same pass upgraded every dependency and
 cleared `npm audit`: Kokoro is vendored onto transformers 4, since kokoro-js pins transformers 3
 and with it a vulnerable `sharp`.
+
+## 2026-11-11 · What would make it more useful: first result, in-app help, tours
+
+A review of the whole package against the plan. The engine is wide (43 milestones) but the first
+result still sits behind a throwaway database, a sign-in adapter and a production build; the
+in-app widget does nothing until the owner adds a chat key, which most never will; and several
+things the engine already knows go unused (which screens a guide covers, which walkthroughs a
+release touched, that every walkthrough is an end-to-end check). The owner keeps the trust
+blockers (an outside user, the first-capture pass rate, more stacks and sign-in helpers,
+real deploys) and asked for the rest to be built now. Agreed, decisions 41–46: `aida demo` on a
+bundled sample app (M44); in-app help with no key (M45); "Show me" tours pulled forward from
+Phase 5, on the condition that a tour only ever points and waits (M46); reader feedback without
+the chat (M47); a "what changed" video per release (M48); and walkthroughs as tests (M49). A
+public live demo of the example help site needs a hosting account and stays with the owner.

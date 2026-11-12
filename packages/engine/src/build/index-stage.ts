@@ -8,6 +8,9 @@ import { buildSearchIndex } from "../index-search/index.js";
 import type { BuildPageResult } from "../pages/index.js";
 import { buildProcedures, type ReaderNames } from "../procedures/index.js";
 import type { Procedure } from "../procedures/index.js";
+import { buildTours } from "../tours/index.js";
+import { buildHelpMap, HELP_MAP_FILE } from "../help-map/index.js";
+import { retireStaleReleaseVideo } from "../whats-new/published.js";
 import { displayWalkthrough, libraryPlacement, type LibraryPlacement, type Walkthrough } from "../walkthrough/index.js";
 import { pathClipFiles, pathClipLinks } from "../render/clips.js";
 import type { ResolvedChatConfig } from "../chat/index.js";
@@ -392,6 +395,12 @@ export interface IndexStageOptions {
    * devices itself). False removes `<id>.phone.*` from the site and the page's phone keys; an id
    * left out stages its phone video when one exists. */
   phoneVideos?: Record<string, boolean>;
+  /** The app's page routes in framework form ("/polls/[id]"), when they can be read: in-app help
+   * (help-map.json, tours) turns captured paths into screen patterns with them. */
+  knownRoutes?: string[];
+  /** The path the app is served under ("/app"), when it isn't "/": screen patterns in
+   * help-map.json are written relative to it. */
+  appBasePath?: string;
 }
 
 export interface IndexStageResult {
@@ -409,6 +418,11 @@ export interface IndexStageResult {
   chatConfigFile?: string;
   /** Set when `appBrief` gave an overview. */
   appOverviewFile?: string;
+  /** Set when `procedureSources` was given: walkthroughs with an in-app tour file after this run,
+   * and the ones this run attempted that got none, with the reason. */
+  tours?: { ids: string[]; skipped: { id: string; reason: string }[] };
+  /** Set when `procedureSources` was given: `public/help-map.json`, the guides for each screen. */
+  helpMapFile?: string;
 }
 
 /** Every id currently staged in `contentDir` — i.e. every published page on disk, not just the
@@ -499,6 +513,10 @@ export function runIndexStage(opts: IndexStageOptions): IndexStageResult {
     if (opts.helpApp) for (const id of removed) removePublishedMedia(publicDir, id, videoDir);
   }
 
+  // 3b. The release video (M48) holds copies of guides' own scenes: it comes down, with its page
+  //     block, once any guide in it is deleted, unpublished, edited or rendered again.
+  if (opts.helpApp && opts.videoDir) retireStaleReleaseVideo({ helpApp: opts.helpApp, videoDir: opts.videoDir, walkthroughs: opts.walkthroughs ? walkthroughs.values() : undefined });
+
   // 4. The library around the pages: section folders, their index pages and sidebar order, the
   //    root order and the home page. Only for a real help app — the no-help-app search staging
   //    dir just needs the pages themselves.
@@ -522,6 +540,8 @@ export function runIndexStage(opts: IndexStageOptions): IndexStageResult {
 
   let procedures: Procedure[] | undefined;
   let proceduresFile: string | undefined;
+  let tours: IndexStageResult["tours"];
+  let helpMapFile: string | undefined;
   if (opts.procedureSources) {
     // Only publishable pages get a procedure — same filter stagePageContent() applies, keyed by
     // id so a walkthrough whose page build failed never hands an agent steps (scope.md
@@ -551,6 +571,28 @@ export function runIndexStage(opts: IndexStageOptions): IndexStageResult {
     procedures = result.procedures;
     proceduresFile = result.outFile;
     pruneUnpublishedScreenshots(publicDir, attemptedIds, publishableIds, validIds);
+
+    // In-app help (decisions 41, 42), from the same publishable sources as the procedures: a tour
+    // file per walkthrough whose capture recorded how to find its elements, then the map of which
+    // guides belong to which screen. The map comes second because it marks guides that have a tour.
+    const tourResult = buildTours({
+      sources: sources.map((s) => ({ wf: s.wf, captureDir: s.captureDir })),
+      publicDir,
+      attemptedIds: [...attemptedIds],
+      validIds: opts.walkthroughIds,
+      knownRoutes: opts.knownRoutes,
+      basePath: opts.appBasePath,
+    });
+    tours = { ids: tourResult.ids, skipped: tourResult.skipped };
+    buildHelpMap({
+      procedures,
+      publicDir,
+      knownRoutes: opts.knownRoutes,
+      basePath: opts.appBasePath,
+      tourIds: tourResult.ids,
+      walkthroughs: [...walkthroughs.values()],
+    });
+    helpMapFile = join(publicDir, HELP_MAP_FILE);
   }
 
   let chatConfigFile: string | undefined;
@@ -570,5 +612,5 @@ export function runIndexStage(opts: IndexStageOptions): IndexStageResult {
     writeFileSync(overviewPath, `${overview}\n`, "utf8");
   } else if (existsSync(overviewPath)) rmSync(overviewPath);
 
-  return { contentDir, searchIndexFile, llmsTxtFile, pageCount, copiedToHelpApp, procedures, proceduresFile, chatConfigFile, appOverviewFile };
+  return { contentDir, searchIndexFile, llmsTxtFile, pageCount, copiedToHelpApp, procedures, proceduresFile, chatConfigFile, appOverviewFile, tours, helpMapFile };
 }

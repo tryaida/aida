@@ -40,6 +40,14 @@ export interface ProofOptions {
   siteUrl?: string;
   /** Output dir (default `<buildDir>/proof`). */
   outDir?: string;
+  /** `false`: no video on the sheet (no intro or step panels, no poster or "Watch the video" on
+   * the site page), for a build that made none. Default: the video panels are shown. */
+  video?: false;
+  /** The sheet's line under the title, after the walkthrough's name (default: "Approve once at
+   * checkpoint 1."). */
+  intro?: string;
+  /** What the site panel's note says when there's no site URL (default: "(pass --site-url)"). */
+  siteNote?: string;
 }
 
 export interface ProofPanel {
@@ -264,34 +272,42 @@ export async function buildProof(config: ResolvedConfig, opts: ProofOptions = {}
   const brand: ArtifactBrand = resolveArtifactBrand(config);
   const panels: ProofPanel[] = [];
   const siteUrl = opts.siteUrl ?? config.publish?.siteUrl;
+  const video = opts.video !== false;
+  // Panel images an earlier run left: a sheet without video mustn't show its stale frames.
+  if (!video) for (const f of ["intro.png", "step.png"]) rmSync(path.join(dir, f), { force: true });
 
   // Video: the real player, the real timeline (estimated narration lengths if not voiced yet).
-  const narration = narrationFor(wf, path.join(config.buildDir, wf.walkthrough, "voice"));
-  const tl = buildTimeline(wf, manifest, narration, {
-    fps: qualityFor(true).fps,
-    frameSrc: (f) => path.join(captureDir, "frames", f),
-    brand,
-  });
   const bundleDir = path.join(dir, ".player");
-  await writePlayerBundle(bundleDir, tl);
-  const at = proofInstants(tl);
+  let at: { intro: number; step: number } | undefined;
+  if (video) {
+    const narration = narrationFor(wf, path.join(config.buildDir, wf.walkthrough, "voice"));
+    const tl = buildTimeline(wf, manifest, narration, {
+      fps: qualityFor(true).fps,
+      frameSrc: (f) => path.join(captureDir, "frames", f),
+      brand,
+    });
+    await writePlayerBundle(bundleDir, tl);
+    at = proofInstants(tl);
+  }
 
   const browser = await launchBrowser();
   try {
-    const { openRenderBrowser } = await import("../render/video.js");
-    const player = await openRenderBrowser(bundleDir, 0.5, 1);
-    try {
-      const page = player.pages[0];
-      for (const [id, t, label] of [
-        ["intro", at.intro, "Video: intro card"],
-        ["step", at.step, "Video: a step"],
-      ] as const) {
-        await page.evaluate((t) => (window as unknown as { renderAt: (t: number) => Promise<void> }).renderAt(t), t);
-        writeFileSync(path.join(dir, `${id}.png`), await page.screenshot({ type: "png" }));
-        panels.push({ id, label, file: `${id}.png` });
+    if (at) {
+      const { openRenderBrowser } = await import("../render/video.js");
+      const player = await openRenderBrowser(bundleDir, 0.5, 1);
+      try {
+        const page = player.pages[0];
+        for (const [id, t, label] of [
+          ["intro", at.intro, "Video: intro card"],
+          ["step", at.step, "Video: a step"],
+        ] as const) {
+          await page.evaluate((t) => (window as unknown as { renderAt: (t: number) => Promise<void> }).renderAt(t), t);
+          writeFileSync(path.join(dir, `${id}.png`), await page.screenshot({ type: "png" }));
+          panels.push({ id, label, file: `${id}.png` });
+        }
+      } finally {
+        await player.close();
       }
-    } finally {
-      await player.close();
     }
 
     // Print: needs the built page (its print figures). Real PDFs when poppler can rasterize them.
@@ -348,11 +364,11 @@ export async function buildProof(config: ResolvedConfig, opts: ProofOptions = {}
         },
       });
       await shootFullPage(browser, html, path.join(dir, "site.png"), SITE_PAGE_WIDTH);
-      panels.push({ id: "site", label: "Help site", file: "site.png", note: guideUrl ? "built page: the site didn't answer" : "built page: no site URL (pass --site-url)" });
+      panels.push({ id: "site", label: "Help site", file: "site.png", note: guideUrl ? "built page: the site didn't answer" : `built page: no site URL ${opts.siteNote ?? "(pass --site-url)"}` });
     }
 
     const generatedAt = new Date().toISOString();
-    const sheet = proofSheetHtml(brand, wf, panels, generatedAt);
+    const sheet = proofSheetHtml(brand, wf, panels, generatedAt, { intro: opts.intro, video });
     const htmlFile = path.join(dir, "proof.html");
     writeFileSync(htmlFile, sheet);
     const png = path.join(dir, "proof.png");
@@ -382,9 +398,17 @@ export async function buildProof(config: ResolvedConfig, opts: ProofOptions = {}
   }
 }
 
-/** The sheet: brand header (logo, name, style, colours, fonts), the two video frames, then the
- * site page, printed page and card. Images by relative path, so proof.html opens on its own. */
-export function proofSheetHtml(brand: ArtifactBrand, wf: Walkthrough, panels: ProofPanel[], generatedAt: string): string {
+/** The sheet: brand header (logo, name, style, colours, fonts), the two video frames (unless
+ * `video: false`), then the site page, printed page and card. Images by relative path, so
+ * proof.html opens on its own. `intro` replaces the "Approve once at checkpoint 1." line. */
+export function proofSheetHtml(
+  brand: ArtifactBrand,
+  wf: Walkthrough,
+  panels: ProofPanel[],
+  generatedAt: string,
+  opts: { intro?: string; video?: boolean } = {},
+): string {
+  const video = opts.video !== false;
   const t = pdfTheme(brand);
   const logo = imageDataUrl(brand.logoPath) ?? imageDataUrl(brand.logoDarkPath);
   const by = (id: ProofPanel["id"]) => panels.find((p) => p.id === id);
@@ -418,10 +442,10 @@ export function proofSheetHtml(brand: ArtifactBrand, wf: Walkthrough, panels: Pr
   figcaption span { color: var(--muted-fg); }
   footer { font-size: 12px; color: var(--muted-fg); }
   </style></head><body>
-  <header>${logo ? `<img src="${logo}" alt="" />` : ""}<div><h1>${escapeHtml(brand.name ?? wf.product ?? "Brand")} · proof sheet</h1><p>${escapeHtml(wf.title)} — how the brand lands on the video, help site and print. Approve once at checkpoint 1.</p></div>
+  <header>${logo ? `<img src="${logo}" alt="" />` : ""}<div><h1>${escapeHtml(brand.name ?? wf.product ?? "Brand")} · proof sheet</h1><p>${escapeHtml(wf.title)} — how the brand lands on ${video ? "the video, help site and print" : "the help site and print"}. ${escapeHtml(opts.intro ?? "Approve once at checkpoint 1.")}</p></div>
     <div class="meta"><span>Style <b>${escapeHtml(brand.style)}</b></span><span>Font <b>${escapeHtml(fonts)}</b></span>
     <ul class="swatches">${swatch("Primary", t.colors.primary)}${swatch("Accent", t.colors.accent)}${swatch("Text", t.colors.foreground)}${swatch("Surface", t.colors.background)}</ul></div></header>
-  <section class="row video">${fig(by("intro"), "v")}${fig(by("step"), "v")}</section>
+  ${video ? `<section class="row video">${fig(by("intro"), "v")}${fig(by("step"), "v")}</section>` : ""}
   <section class="row print">${fig(by("site"), "s")}${fig(by("page"), "p")}${fig(by("card"), "c")}</section>
   <footer>Generated ${escapeHtml(generatedAt.slice(0, 16).replace("T", " "))} UTC by aida proof · change the look in aida.config's brand (or brand.md), then run aida proof again.</footer>
   </body></html>`;

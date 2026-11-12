@@ -13,7 +13,9 @@ import {
   computeContentHash,
   loadFileHashCache,
   matchesCachedHash,
+  renderSourcePath,
   saveFileHashCache,
+  walkthroughHash,
   writeHashSidecar,
   type HashSettings,
 } from "./hash.js";
@@ -31,7 +33,7 @@ import type { Timeline } from "./types.js";
 export * from "./types.js";
 export { beatIds, buildTimeline } from "./timeline.js";
 export { captionsFor, toSrt, toVtt, toChaptersVtt, wrapCaption, wrapCaptions } from "./captions.js";
-export { computeContentHash, matchesCachedHash, writeHashSidecar, hashSidecarPath } from "./hash.js";
+export { computeContentHash, matchesCachedHash, writeHashSidecar, hashSidecarPath, renderSourcePath, walkthroughHash } from "./hash.js";
 export { writePlayerBundle } from "./bundle.js";
 export {
   resolveArtifactBrand,
@@ -165,6 +167,9 @@ export async function render(written: Walkthrough, optionsIn: RenderOptions): Pr
     durationSec: timeline.duration,
   };
   if (encoded.stills) return { ...base, stills: encoded.stills, skipped: false, frames: 0, wallTimeMs: 0 };
+  // Only once the video and its segments are written: a render that fails part way keeps the
+  // previous record, so its scenes never look newer than they are (M48).
+  await writeFile(renderSourcePath(stepOutDir, suffix), `${JSON.stringify({ walkthrough: walkthroughHash(written) })}\n`);
 
   // One short clip per path whose capture passed (M35), next to the main video — primary device
   // only (decision 34's paths are captured once, on the primary device: pipeline.ts): a secondary
@@ -283,7 +288,7 @@ export async function encodeTimeline(timeline: Timeline, files: EncodeFiles, ctx
   // audio changes rather than caching it separately.
   const narrationTrack = await buildNarrationTrack(timeline, ctx.bundleDir, tools.ffmpeg);
   await copyFile(narrationTrack, path.join(ctx.bundleDir, "narration.m4a"));
-  await muxVideo(silentVideo, narrationTrack, files.mp4, ctx.title, tools.ffmpeg, { lang: options.lang, captionsFile: files.vtt });
+  await muxVideo(silentVideo, narrationTrack, files.mp4, ctx.title, tools.ffmpeg, { lang: options.lang, captionsFile: files.vtt, durationSec: timeline.duration });
   writeHashSidecar(files.mp4, hash);
   return {
     skipped: false,

@@ -49,6 +49,9 @@ export interface BuildWhatsNewOptions {
   /** Maps a merge entry to the walkthrough(s) it affects — see `WalkthroughMapper`. Omit while
    * the impact map (M17) isn't built yet; every entry renders ungrouped. */
   mapper?: WalkthroughMapper;
+  /** The release video's block (M48, `release-video.ts`): its new content, `null` to remove it,
+   * unset to leave whatever the page has as it is. */
+  videoBlock?: import("../pages/markers.js").GeneratedBlock | null;
   now?: () => Date;
 }
 

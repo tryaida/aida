@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Acme rows</title>
+  </head>
+  <body>
+    <h1>Rows</h1>
+    <table>
+      <tr><td>Widget A</td><td><button type="button">Delete</button></td></tr>
+      <tr><td>Widget B</td><td><button type="button">Delete</button></td></tr>
+      <tr><td>Widget B</td><td><button type="button">Delete</button></td></tr>
+    </table>
+    <a href="/things/1">Open</a>
+    <a href="/other/2">Open</a>
+    <div id="tools"><button type="button">Archive</button></div>
+    <script>
+      window.addTwin = function () {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.textContent = "Archive";
+        document.getElementById("tools").appendChild(b);
+      };
+    </script>
+    <script src="__HELP__/tour.js" data-help-url="__HELP__"></script>
+  </body>
+</html>

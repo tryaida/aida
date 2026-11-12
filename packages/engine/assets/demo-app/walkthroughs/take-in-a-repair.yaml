@@ -1,0 +1,107 @@
+walkthrough: take-in-a-repair
+version: 1
+title: Take in a repair
+summary: Record an item when a customer drops it off, so it's on the jobs list with its own job number.
+for: Front desk staff
+section: Repair jobs
+start:
+  page: /jobs
+data:
+  customer:
+    name: Dana Whitfield
+    phone: (415) 555-0193
+    email: dana.whitfield@example.com
+  item:
+    name: Mountain bike
+    type: Bike
+    problem: Front brake squeals and barely stops the bike.
+# Starts from the sample data, so the new job always gets the same number. mark-a-repair-ready
+# needs the job this leaves, so `aida build` captures this one first.
+setup:
+  steps:
+    - id: sample-data
+      title: Put back the sample data
+      actions:
+        - do: goto
+          path: /settings
+        - do: click
+          target: { role: button, name: Reset sample data }
+        - do: waitForUrl
+          pattern: "done=sample-data"
+        - do: goto
+          path: /jobs
+leaves: [new-repair-waiting]
+steps:
+  - id: new-job
+    chapter: Start a new job
+    title: Start a new job
+    say: When a customer drops something off, start a new job from the jobs list.
+    caption: Select New job.
+    page_text: On **Jobs**, select **New job**.
+    actions:
+      - do: click
+        target: { role: link, name: New job }
+        highlight: true
+      - do: waitForUrl
+        pattern: "/jobs/new"
+  - id: customer
+    chapter: Fill in the details
+    title: Enter the customer's details
+    say: Enter the customer's name and a phone number, so the shop can call them when it's ready. Email is optional.
+    caption: Enter their name and phone number.
+    page_text: Under **Customer**, enter the **Customer name** and **Phone**. **Email** is optional, unless the shop asks for one in **Settings**.
+    actions:
+      - do: type
+        target: { label: Customer name }
+        text: "{{customer.name}}"
+      - do: type
+        target: { label: Phone }
+        text: "{{customer.phone}}"
+      - do: type
+        target: { label: Email }
+        text: "{{customer.email}}"
+      - do: point
+        target: { role: group, name: Customer }
+        highlight: true
+  - id: item
+    title: Describe the item
+    say: Then say what the item is, choose its type, and describe what's wrong. The customer's own words are fine.
+    caption: Describe the item and what's wrong.
+    page_text: Under **Item**, enter the **Item**, choose its **Type** and describe **What's wrong**. The customer's own words are fine.
+    actions:
+      - do: type
+        target: { label: Item, exact: true }
+        text: "{{item.name}}"
+      - do: select
+        target: { label: Type }
+        option: "{{item.type}}"
+      - do: type
+        target: { label: What's wrong }
+        text: "{{item.problem}}"
+      - do: point
+        target: { role: group, name: Item }
+        highlight: true
+  - id: save
+    chapter: Save the job
+    title: Save the job
+    say: Select Save job. If a detail is missing, the form says which one and keeps what you've typed.
+    caption: Select Save job.
+    page_text: Select **Save job**. If a detail is missing, the form says which one and keeps everything you've typed.
+    actions:
+      - do: click
+        target: { role: button, name: Save job }
+        highlight: true
+      - do: waitForUrl
+        pattern: "/jobs/J-"
+  - id: saved
+    title: Note the job number
+    say: The job is saved with its own number, and it's on the list as Waiting. Write the number on the ticket you attach to the item.
+    caption: Write the job number on the item's ticket.
+    page_text: The job opens with its own number, such as **J-1043**, and its status is **Waiting**. Write the job number on the ticket you attach to the item.
+    actions:
+      - do: expect
+        target: { role: status }
+        text: saved
+      - do: point
+        target: { role: heading, name: "{{item.name}}" }
+        highlight: true

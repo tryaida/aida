@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Acme tall</title>
+  </head>
+  <body>
+    <h1>A long page</h1>
+    <div style="height: 2500px"></div>
+    <div id="slot"><button type="button">Far away</button></div>
+    <script>
+      // The app re-rendering the button (a new element, same description).
+      window.rerender = function () {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.textContent = "Far away";
+        var slot = document.getElementById("slot");
+        slot.replaceChildren(b);
+      };
+    </script>
+    <script src="__HELP__/tour.js" data-help-url="__HELP__"></script>
+  </body>
+</html>

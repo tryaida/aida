@@ -160,6 +160,14 @@ export async function POST(request: Request): Promise<Response> {
   });
 }
 
-export async function GET(): Promise<Response> {
-  return NextResponse.json({ error: "use POST {question, currentPath?, history?, version?}" }, { status: 405 });
+/**
+ * Whether help chat works here, for the in-app widget to read before it shows a chat tab: true
+ * only when the owner's key is set. Same CORS as POST, so an app origin chat would refuse can't
+ * read it either and keeps chat hidden. A static export has no route at all (the request fails).
+ */
+export async function GET(request: Request): Promise<Response> {
+  const chatConfig = STATIC_EXPORT ? DEFAULT_CHAT_CONFIG : await getChatConfig();
+  const headers = corsHeaders(request, chatConfig.allowedOrigins);
+  const available = !STATIC_EXPORT && Boolean(process.env.ANTHROPIC_API_KEY);
+  return NextResponse.json({ available }, { headers: { ...headers, "Cache-Control": "no-store" } });
 }

@@ -847,3 +847,58 @@ describe("runPipeline: a secondary phone video (M43c, decision 40)", () => {
     expect(existsSync(join(config.buildDir, "fixture", "phone", "qa.json"))).toBe(false);
   });
 });
+
+describe("runPipeline onProgress", () => {
+  function setUp() {
+    const config = fakeConfig();
+    writeWalkthrough(config.walkthroughsDir, "add-thing");
+    mockCaptureOnce(true);
+    vi.mocked(buildPage).mockResolvedValueOnce(fakePageResult("add-thing", join(config.outDir, "pages")));
+    return config;
+  }
+  const voiceResult = { id: "add-thing", manifestFile: "/tmp/f.json", report: { results: [], summary: { synthesized: 0, cached: 1, charsBilled: 0 } }, skipped: true };
+
+  it("reports each stage's start (before the stage's own work) and done, with its status and time", async () => {
+    const config = setUp();
+    const events: Array<{ walkthrough: string; title?: string; stage: string; phase: string; status?: string; ms?: number }> = [];
+    let seenAtVoice: string[] = [];
+    vi.mocked(buildVoiceManifest).mockImplementationOnce(async () => {
+      seenAtVoice = events.map((e) => `${e.stage}:${e.phase}`);
+      return voiceResult;
+    });
+
+    await runPipeline(config, { configPath: "x", walkthroughIds: [], only: ["capture", "voice", "pages"], json: false, onProgress: (e) => events.push(e) });
+
+    expect(events.map((e) => `${e.stage}:${e.phase}`)).toEqual(["capture:start", "capture:done", "voice:start", "voice:done", "pages:start", "pages:done"]);
+    // Narration blocks the event loop, so "start" must already be out when the stage begins.
+    expect(seenAtVoice).toEqual(["capture:start", "capture:done", "voice:start"]);
+    expect(events[0]).toEqual({ walkthrough: "add-thing", title: "add-thing", stage: "capture", phase: "start" });
+    const done = events.filter((e) => e.phase === "done");
+    expect(done.map((e) => e.status)).toEqual(["ok", "skipped", "ok"]);
+    for (const e of done) expect(e.ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it("doesn't report stages skipped without running", async () => {
+    const config = fakeConfig();
+    writeWalkthrough(config.walkthroughsDir, "broken-flow");
+    mockCaptureOnce(false);
+    const events: string[] = [];
+    await runPipeline(config, { configPath: "x", walkthroughIds: [], only: ["capture", "voice", "pages"], json: false, onProgress: (e) => events.push(`${e.stage}:${e.phase}:${e.status ?? ""}`) });
+    expect(events).toEqual(["capture:start:", "capture:done:failed"]);
+    expect(buildVoiceManifest).not.toHaveBeenCalled();
+  });
+
+  it("a callback that throws doesn't break the build", async () => {
+    const config = setUp();
+    vi.mocked(buildVoiceManifest).mockResolvedValueOnce(voiceResult);
+    const onProgress = vi.fn(() => {
+      throw new Error("broken progress printer");
+    });
+    const result = await runPipeline(config, { configPath: "x", walkthroughIds: [], only: ["capture", "voice", "pages"], json: false, onProgress });
+    expect(onProgress).toHaveBeenCalledTimes(6);
+    const w = result.walkthroughs[0];
+    expect(w.stages.capture?.status).toBe("ok");
+    expect(w.stages.voice?.status).toBe("skipped");
+    expect(w.stages.pages?.status).toBe("ok");
+  });
+});
